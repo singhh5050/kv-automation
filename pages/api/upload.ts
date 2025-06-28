@@ -32,46 +32,85 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
-// PDF extraction using Python serverless function
+// PDF extraction using Python - hybrid approach for local dev and Vercel
 async function extractPdfWithPython(filePath: string, fileName: string): Promise<{ text: string, tables: any[], metadata: any }> {
-  try {
-    // Read the PDF file
-    const pdfBuffer = fs.readFileSync(filePath)
-    const pdfBase64 = pdfBuffer.toString('base64')
+  // Check if we're running on Vercel (production) or locally
+  const isVercel = process.env.VERCEL === '1'
+  
+  if (isVercel) {
+    // Production: Use Python serverless function
+    try {
+      const pdfBuffer = fs.readFileSync(filePath)
+      const pdfBase64 = pdfBuffer.toString('base64')
+      
+      const response = await fetch(`https://${process.env.VERCEL_URL}/api/extract-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdf_data: pdfBase64,
+          filename: fileName
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('Vercel PDF extraction error:', error)
+      throw error
+    }
+  } else {
+    // Local development: Use original Python script approach
+    const { spawn } = require('child_process')
     
-    // Determine the API endpoint based on environment
-    const apiUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}/api/extract-pdf`
-      : 'http://localhost:3000/api/extract-pdf'
-    
-    // Call the Python serverless function
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        pdf_data: pdfBase64,
-        filename: fileName
+    return new Promise((resolve, reject) => {
+      const pythonScript = path.join(process.cwd(), 'pdf_extractor.py')
+      const pythonProcess = spawn('python3', [pythonScript, filePath, '--filename', fileName])
+      
+      let output = ''
+      let errorOutput = ''
+      
+      pythonProcess.stdout.on('data', (data: Buffer) => {
+        output += data.toString()
+      })
+      
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString()
+      })
+      
+      pythonProcess.on('close', (code: number | null) => {
+        if (code !== 0) {
+          console.error('Python script error:', errorOutput)
+          reject(new Error(`Python script exited with code ${code}: ${errorOutput}`))
+          return
+        }
+        
+        try {
+          const result = JSON.parse(output)
+          if (result.error) {
+            reject(new Error(result.error))
+          } else {
+            resolve(result)
+          }
+        } catch (parseError) {
+          console.error('JSON parsing error:', parseError)
+          console.error('Raw output:', output)
+          reject(new Error(`Failed to parse Python output: ${parseError}`))
+        }
+      })
+      
+      pythonProcess.on('error', (error: Error) => {
+        console.error('Failed to start Python process:', error)
+        reject(new Error(`Failed to start Python process: ${error.message}`))
       })
     })
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    
-    if (result.error) {
-      throw new Error(result.error)
-    }
-    
-    return result
-    
-  } catch (error) {
-    console.error('PDF extraction error:', error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to extract PDF: ${errorMessage}`)
   }
 }
 
