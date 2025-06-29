@@ -3,15 +3,12 @@ import json
 import base64
 import tempfile
 import os
-import sys
-
-# Add the project root to the path so we can import our modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
 except ImportError:
-    pdfplumber = None
+    PDFPLUMBER_AVAILABLE = False
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -57,7 +54,7 @@ class handler(BaseHTTPRequestHandler):
     def extract_pdf_content(self, pdf_bytes, filename):
         """Extract text and tables from PDF using pdfplumber"""
         
-        if not pdfplumber:
+        if not PDFPLUMBER_AVAILABLE:
             return {
                 "error": "pdfplumber not available",
                 "text": "",
