@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/extract-pdf.py": {
-      "runtime": "python3.9"
+      "runtime": "@vercel/python"
     }
   }
 } 
