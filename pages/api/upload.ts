@@ -32,8 +32,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
+// Helper function to get the correct base URL for the current deployment
+function getBaseUrl(req: NextApiRequest) {
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  // fallback: use the host from the request (current deployment)
+  const host = req.headers.host!
+  return `https://${host}`
+}
+
 // PDF extraction using Python - hybrid approach for local dev and Vercel
-async function extractPdfWithPython(filePath: string, fileName: string): Promise<{ text: string, tables: any[], metadata: any }> {
+async function extractPdfWithPython(filePath: string, fileName: string, req: NextApiRequest): Promise<{ text: string, tables: any[], metadata: any }> {
   // Check if we're running on Vercel (production) or locally
   const isVercel = process.env.VERCEL === '1'
   
@@ -44,9 +52,7 @@ async function extractPdfWithPython(filePath: string, fileName: string): Promise
       const pdfBase64 = pdfBuffer.toString('base64')
       
       // Get the current request's origin to construct the proper URL
-      const baseUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
-        : 'https://kv-automation.vercel.app'
+      const baseUrl = getBaseUrl(req)
       
       console.log('Making request to Python function at:', `${baseUrl}/api/extract-pdf`)
       
@@ -287,7 +293,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Extract PDF data using Python pdfplumber
     let pdfData
     try {
-      pdfData = await extractPdfWithPython(file.filepath, file.originalFilename || 'Unknown')
+      pdfData = await extractPdfWithPython(file.filepath, file.originalFilename || 'Unknown', req)
       console.log('PDF data extracted with pdfplumber, text length:', pdfData.text.length, 'tables found:', pdfData.tables.length)
     } catch (error) {
       console.error('PDF extraction failed, using fallback:', error)
