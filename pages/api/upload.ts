@@ -56,7 +56,8 @@ async function extractPdfWithPython(filePath: string, fileName: string, req: Nex
       
       console.log('Making request to Python function at:', `${baseUrl}/api/extract-pdf`)
       
-      const response = await fetch(`${baseUrl}/api/extract-pdf`, {
+      // Try Python endpoint first
+      let response = await fetch(`${baseUrl}/api/extract-pdf`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -65,28 +66,60 @@ async function extractPdfWithPython(filePath: string, fileName: string, req: Nex
         body: JSON.stringify({
           pdf_data: pdfBase64,
           filename: fileName
+        }),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(25000) // 25 second timeout
+      }).catch(async (error) => {
+        console.error('Python endpoint failed, trying Node.js fallback:', error)
+        // Fallback to Node.js endpoint
+        return fetch(`${baseUrl}/api/extract-pdf-node`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'kv-automation-internal'
+          },
+          body: JSON.stringify({
+            pdf_data: pdfBase64,
+            filename: fileName
+          })
         })
       })
       
-      console.log('Python function response status:', response.status)
+      console.log('PDF extraction response status:', response.status)
       
       if (!response.ok) {
         const errorText = await response.text()
         console.error('PDF extraction API error:', response.status, errorText)
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        // Don't throw here, let it fall through to OpenAI extraction
+        return {
+          text: '',
+          tables: [],
+          metadata: { filename: fileName, pages: 0, error: `HTTP ${response.status}: ${errorText}` }
+        }
       }
       
       const result = await response.json()
-      console.log('Python function result:', result.metadata || 'No metadata')
+      console.log('PDF extraction result:', result.metadata || 'No metadata')
       
-      if (result.error) {
-        throw new Error(result.error)
+      // If there's an error or no text, it will fall through to OpenAI
+      if (result.error && !result.text) {
+        console.log('PDF extraction returned error, will use OpenAI fallback')
+        return {
+          text: '',
+          tables: [],
+          metadata: { filename: fileName, pages: 0, error: result.error }
+        }
       }
       
       return result
     } catch (error) {
       console.error('Vercel PDF extraction error:', error)
-      throw error
+      // Return empty result to trigger OpenAI fallback
+      return {
+        text: '',
+        tables: [],
+        metadata: { filename: fileName, pages: 0, error: String(error) }
+      }
     }
   } else {
     // Local development: Use original Python script approach
