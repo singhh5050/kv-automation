@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/extract-pdf.py": {
-      "runtime": "@vercel/python"
+      "maxDuration": 30
     }
   }
 } 
