@@ -38,25 +38,41 @@ async function extractPdfWithPython(filePath: string, fileName: string): Promise
   const isVercel = process.env.VERCEL === '1'
   
   if (isVercel) {
-    // Production: Use Python serverless function
+    // Production: Call Python serverless function with proper URL construction
     try {
       const pdfBuffer = fs.readFileSync(filePath)
       const pdfBase64 = pdfBuffer.toString('base64')
       
-      const response = await fetch(`https://${process.env.VERCEL_URL}/api/extract-pdf`, {
+      // Get the current request's origin to construct the proper URL
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'https://kv-automation.vercel.app'
+      
+      console.log('Making request to Python function at:', `${baseUrl}/api/extract-pdf`)
+      
+      const response = await fetch(`${baseUrl}/api/extract-pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'kv-automation-internal'
+        },
         body: JSON.stringify({
           pdf_data: pdfBase64,
           filename: fileName
         })
       })
       
+      console.log('Python function response status:', response.status)
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('PDF extraction API error:', response.status, errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
       }
       
       const result = await response.json()
+      console.log('Python function result:', result.metadata || 'No metadata')
+      
       if (result.error) {
         throw new Error(result.error)
       }
@@ -66,51 +82,52 @@ async function extractPdfWithPython(filePath: string, fileName: string): Promise
       console.error('Vercel PDF extraction error:', error)
       throw error
     }
+  }
   } else {
     // Local development: Use original Python script approach
     const { spawn } = require('child_process')
     
-    return new Promise((resolve, reject) => {
-      const pythonScript = path.join(process.cwd(), 'pdf_extractor.py')
-      const pythonProcess = spawn('python3', [pythonScript, filePath, '--filename', fileName])
-      
-      let output = ''
-      let errorOutput = ''
-      
+  return new Promise((resolve, reject) => {
+    const pythonScript = path.join(process.cwd(), 'pdf_extractor.py')
+    const pythonProcess = spawn('python3', [pythonScript, filePath, '--filename', fileName])
+    
+    let output = ''
+    let errorOutput = ''
+    
       pythonProcess.stdout.on('data', (data: Buffer) => {
-        output += data.toString()
-      })
-      
-      pythonProcess.stderr.on('data', (data: Buffer) => {
-        errorOutput += data.toString()
-      })
-      
-      pythonProcess.on('close', (code: number | null) => {
-        if (code !== 0) {
-          console.error('Python script error:', errorOutput)
-          reject(new Error(`Python script exited with code ${code}: ${errorOutput}`))
-          return
-        }
-        
-        try {
-          const result = JSON.parse(output)
-          if (result.error) {
-            reject(new Error(result.error))
-          } else {
-            resolve(result)
-          }
-        } catch (parseError) {
-          console.error('JSON parsing error:', parseError)
-          console.error('Raw output:', output)
-          reject(new Error(`Failed to parse Python output: ${parseError}`))
-        }
-      })
-      
-      pythonProcess.on('error', (error: Error) => {
-        console.error('Failed to start Python process:', error)
-        reject(new Error(`Failed to start Python process: ${error.message}`))
-      })
+      output += data.toString()
     })
+    
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+      errorOutput += data.toString()
+    })
+    
+      pythonProcess.on('close', (code: number | null) => {
+      if (code !== 0) {
+        console.error('Python script error:', errorOutput)
+        reject(new Error(`Python script exited with code ${code}: ${errorOutput}`))
+        return
+      }
+      
+      try {
+        const result = JSON.parse(output)
+        if (result.error) {
+          reject(new Error(result.error))
+        } else {
+          resolve(result)
+        }
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError)
+        console.error('Raw output:', output)
+        reject(new Error(`Failed to parse Python output: ${parseError}`))
+      }
+    })
+    
+      pythonProcess.on('error', (error: Error) => {
+      console.error('Failed to start Python process:', error)
+      reject(new Error(`Failed to start Python process: ${error.message}`))
+    })
+  })
   }
 }
 
