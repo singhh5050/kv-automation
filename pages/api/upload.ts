@@ -169,33 +169,12 @@ async function extractPdfWithPython(filePath: string, fileName: string, req: Nex
   }
 }
 
-// Fallback data generation when PDF extraction fails
-function getFallbackData(fileName: string): ExtractedData {
-  const companyName = fileName.replace('.pdf', '').replace(/[_-]/g, ' ')
-    .split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-  
-  return {
-    companyName,
-    reportDate: 'N/A - PDF Extraction Failed',
-    reportPeriod: 'N/A - PDF Extraction Failed',
-    filename: fileName,
-    cashOnHand: 'N/A - PDF Extraction Failed',
-    monthlyBurnRate: 'N/A - PDF Extraction Failed',
-    cashOutDate: 'N/A - PDF Extraction Failed',
-    runway: 'N/A - PDF Extraction Failed',
-    budgetVsActual: 'N/A - PDF Extraction Failed',
-    financialSummary: 'PDF extraction failed. Please ensure Python and pdfplumber are properly installed.',
-    clinicalProgress: 'PDF extraction failed. Unable to analyze clinical progress.',
-    researchDevelopment: 'PDF extraction failed. Unable to analyze R&D information.'
-  }
-}
-
 // AI-powered extraction function using OpenAI
 async function extractFinancialData(text: string, fileName: string): Promise<ExtractedData> {
   // Check if OpenAI API key is available
   if (!process.env.OPENAI_API_KEY) {
-    console.warn('OpenAI API key not found. Using fallback extraction.')
-    return getFallbackData(fileName)
+    console.warn('OpenAI API key not found. Cannot perform extraction.')
+    throw new Error('OpenAI API key not configured.')
   }
   const prompt = `You are a financial analyst specializing in biotech and healthcare companies. Analyze the following PDF content and extract key financial and business information.
 
@@ -298,9 +277,8 @@ Return ONLY the JSON object with string values, no additional text or formatting
 
   } catch (error) {
     console.error('OpenAI API Error for file', fileName, ':', error)
-    
-    // Fallback if API fails
-    return getFallbackData(fileName)
+    // Re-throw the error to be caught by the main handler
+    throw new Error(`Failed to extract data using OpenAI: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -327,13 +305,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let pdfData
     try {
       pdfData = await extractPdfWithPython(file.filepath, file.originalFilename || 'Unknown', req)
+      // If there's no text, we can't proceed with OpenAI
+      if (!pdfData.text || pdfData.text.trim().length === 0) {
+        throw new Error('PDF text extraction failed or returned empty content.')
+      }
       console.log('PDF data extracted with pdfplumber, text length:', pdfData.text.length, 'tables found:', pdfData.tables.length)
     } catch (error) {
-      console.error('PDF extraction failed, using fallback:', error)
+      console.error('PDF extraction failed, aborting for this file:', error)
       // Clean up temporary file
       fs.unlinkSync(file.filepath)
-      const fallbackData = getFallbackData(file.originalFilename || 'Unknown')
-      return res.status(200).json(fallbackData)
+      return res.status(500).json({ 
+        error: `Failed to extract text from PDF. ${error instanceof Error ? error.message : String(error)}`
+      })
     }
     
     // Extract financial data using OpenAI
@@ -347,6 +330,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(200).json(extractedData)
   } catch (error) {
     console.error('Error processing PDF:', error)
-    res.status(500).json({ error: 'Error processing PDF' })
+    // Ensure file path exists before unlinking
+    const form = formidable({
+      maxFileSize: 10 * 1024 * 1024,
+    });
+    const [fields, files] = await form.parse(req);
+    const file = Array.isArray(files.file) ? files.file[0] : files.file;
+    if (file && file.filepath && fs.existsSync(file.filepath)) {
+      fs.unlinkSync(file.filepath);
+    }
+    res.status(500).json({ error: `Error processing PDF: ${error instanceof Error ? error.message : String(error)}` })
   }
 } 
