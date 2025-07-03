@@ -40,7 +40,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
 
     setLoadingCompetitive(true)
     try {
-      const response = await fetch('/api/competitive-landscape', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/competitive-landscape`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -62,7 +62,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
   const handleCompetitiveAction = useCallback(async (action: string) => {
     setLoadingCompetitive(true)
     try {
-      const response = await fetch('/api/competitive-landscape', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/competitive-landscape`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
