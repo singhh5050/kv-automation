@@ -19,16 +19,21 @@ if ! command -v vercel &> /dev/null; then
     npm install -g vercel
 fi
 
-# Get backend URL
-BACKEND_URL="https://bofkx8cojk.execute-api.us-east-1.amazonaws.com/prod"
+# Check for required environment variable
+if [ -z "$NEXT_PUBLIC_BACKEND_URL" ]; then
+    echo -e "${RED}❌ Error: NEXT_PUBLIC_BACKEND_URL environment variable is not set${NC}"
+    echo "Please set the backend URL environment variable before deploying:"
+    echo "export NEXT_PUBLIC_BACKEND_URL=your_api_gateway_url"
+    exit 1
+fi
 
 echo -e "${BLUE}🔧 Configuration:${NC}"
-echo -e "  Backend URL: ${BACKEND_URL}"
+echo -e "  Backend URL: $NEXT_PUBLIC_BACKEND_URL"
 echo ""
 
 # Set environment variable for deployment
 echo -e "${YELLOW}🔑 Setting environment variables...${NC}"
-vercel env add NEXT_PUBLIC_BACKEND_URL production <<< "${BACKEND_URL}"
+vercel env add NEXT_PUBLIC_BACKEND_URL production <<< "${NEXT_PUBLIC_BACKEND_URL}"
 
 # Deploy to Vercel
 echo -e "${YELLOW}🚀 Deploying to Vercel...${NC}"
@@ -41,7 +46,7 @@ if [ $? -eq 0 ]; then
     echo ""
     echo -e "${BLUE}📋 Deployment complete:${NC}"
     echo "  • Frontend: Available on your Vercel domain"
-    echo "  • Backend: ${BACKEND_URL}"
+    echo "  • Backend: $NEXT_PUBLIC_BACKEND_URL"
     echo ""
     echo -e "${GREEN}🎉 Your KV Automation platform is now live!${NC}"
 else

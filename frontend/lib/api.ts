@@ -1,9 +1,12 @@
 /**
- * API client for connecting to the AWS Lambda backend via ALB
+ * API client for connecting to the AWS Lambda backend
  */
 
-// Get backend URL from environment or use the AWS ALB URL
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://kv-pdf-alb-536586805.us-east-1.elb.amazonaws.com'
+// Get backend URL from environment
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL
+if (!BACKEND_URL) {
+  throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set')
+}
 
 interface ApiResponse<T = any> {
   data?: T
