@@ -32,3 +32,6 @@ Thumbs.db
 
 # Backup directory
 backup/
+
+# Backend files (keep local only)
+backend-local/
