@@ -3,6 +3,15 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Company, calculateKVStake } from '../types'
 
+// Company name normalization for display (removes legal suffixes but preserves case)
+const normalizeCompanyName = (name: string): string => {
+  return name
+    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/gi, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 interface CompanyModalProps {
   company: Company
   currentReportIndex: number
@@ -27,6 +36,9 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
   const hasReports = company.reports.length > 0
   const canGoToPrevious = currentReportIndex < company.reports.length - 1
   const canGoToNext = currentReportIndex > 0
+
+  // Get clean display name
+  const displayName = normalizeCompanyName(company.name)
 
   // Auto-switch to cap table tab if no reports available
   useEffect(() => {
@@ -121,7 +133,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500">No competitors found for {company.name}</p>
+              <p className="text-gray-500">No competitors found for {displayName}</p>
             )}
           </div>
         )
@@ -167,7 +179,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                 )}
               </div>
             ) : (
-              <p className="text-gray-500">No headcount data found for {company.name}</p>
+              <p className="text-gray-500">No headcount data found for {displayName}</p>
             )}
           </div>
         )
@@ -216,7 +228,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                 )}
               </div>
             ) : (
-              <p className="text-gray-500">No investor data found for {company.name}</p>
+              <p className="text-gray-500">No investor data found for {displayName}</p>
             )}
           </div>
         )
@@ -261,7 +273,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                 )}
               </div>
             ) : (
-              <p className="text-gray-500">No news data found for {company.name}</p>
+              <p className="text-gray-500">No news data found for {displayName}</p>
             )}
           </div>
         )
@@ -321,11 +333,11 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
             <div className="flex items-center space-x-3">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                 <span className="text-blue-600 font-semibold text-xl">
-                  {company.name.charAt(0).toUpperCase()}
+                  {displayName.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">{company.name}</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{displayName}</h2>
                 <div className="flex items-center space-x-2">
                   {hasReports ? (
                     <>

@@ -1,7 +1,16 @@
 'use client'
 
 import React from 'react'
-import { Company, calculateKVStake } from '../types'
+import { Company } from '../types'
+
+// Company name normalization for display (removes legal suffixes but preserves case)
+const normalizeCompanyName = (name: string): string => {
+  return name
+    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/gi, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 interface CompanyCardProps {
   company: Company
@@ -12,6 +21,9 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
   const latestReport = company.latestReport;
   const reportCount = company.reports.length;
   const hasCapTable = !!company.capTable;
+
+  // Get clean display name
+  const displayName = normalizeCompanyName(company.name);
 
   // Dynamically find KV funds and calculate total stake
   const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
@@ -28,11 +40,11 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
             <span className="text-blue-600 font-semibold text-lg">
-              {company.name.charAt(0).toUpperCase()}
+              {displayName.charAt(0).toUpperCase()}
             </span>
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">{company.name}</h3>
+            <h3 className="font-semibold text-gray-900">{displayName}</h3>
             <div className="flex items-center space-x-2 flex-wrap">
               <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
                 {reportCount} Report{reportCount !== 1 ? 's' : ''}
