@@ -26,6 +26,65 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
+// Coalesce companies with the same normalized name
+const coalesceCompanies = (companies: Company[]): Company[] => {
+  const companyMap = new Map<string, Company>()
+  
+  console.log('🔄 Starting company coalescing...')
+  
+  for (const company of companies) {
+    const normalizedName = normalizeCompanyName(company.name)
+    
+    if (companyMap.has(normalizedName)) {
+      // Merge with existing company
+      const existing = companyMap.get(normalizedName)!
+      console.log(`🔗 Merging "${company.name}" into "${existing.name}" (normalized: "${normalizedName}")`)
+      
+      // Combine reports and remove duplicates by ID
+      const allReports = [...existing.reports, ...company.reports]
+      const uniqueReports = allReports.filter((report, index, self) => 
+        index === self.findIndex(r => r.id === report.id)
+      )
+      
+      // Sort reports by date (newest first)
+      uniqueReports.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
+      
+      // Use the most recent cap table (or prefer one with data)
+      let mergedCapTable = existing.capTable
+      if (!mergedCapTable && company.capTable) {
+        mergedCapTable = company.capTable
+        console.log(`  📊 Using cap table from "${company.name}"`)
+      } else if (existing.capTable && company.capTable) {
+        // Use the one with the most recent round_date
+        const existingDate = existing.capTable.round_date ? new Date(existing.capTable.round_date) : new Date(0)
+        const companyDate = company.capTable.round_date ? new Date(company.capTable.round_date) : new Date(0)
+        mergedCapTable = companyDate > existingDate ? company.capTable : existing.capTable
+        console.log(`  📊 Using cap table from "${mergedCapTable === company.capTable ? company.name : existing.name}" (more recent)`)
+      }
+      
+      console.log(`  📄 Combined ${existing.reports.length} + ${company.reports.length} = ${uniqueReports.length} unique reports`)
+      
+      // Update the existing company with merged data
+      companyMap.set(normalizedName, {
+        ...existing,
+        name: existing.name, // Keep the first company name encountered
+        reports: uniqueReports,
+        latestReport: uniqueReports[0] || null,
+        capTable: mergedCapTable
+      })
+    } else {
+      // First time seeing this normalized name
+      console.log(`✨ New company: "${company.name}" (normalized: "${normalizedName}")`)
+      companyMap.set(normalizedName, { ...company })
+    }
+  }
+  
+  const coalesced = Array.from(companyMap.values())
+  console.log(`🎯 Coalescing complete: ${companies.length} companies → ${coalesced.length} unique companies`)
+  
+  return coalesced
+}
+
 // Convert database company format to frontend format using new overview API
 const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]> => {
   const companies: Company[] = []
@@ -118,7 +177,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
   }
   
   console.log('🎯 Conversion complete. Total companies:', companies.length)
-  return companies
+  return coalesceCompanies(companies)
 }
 
 export default function Home() {
