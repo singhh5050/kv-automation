@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Company } from '../types'
+import { Company, calculateKVStake } from '../types'
 
 interface CompanyCardProps {
   company: Company
@@ -9,9 +9,15 @@ interface CompanyCardProps {
 }
 
 export default function CompanyCard({ company, onClick }: CompanyCardProps) {
-  const latestReport = company.latestReport
-  const reportCount = company.reports.length
-  
+  const latestReport = company.latestReport;
+  const reportCount = company.reports.length;
+  const hasCapTable = !!company.capTable;
+
+  // Dynamically find KV funds and calculate total stake
+  const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
+  const kvStake = kvInvestors.reduce((total, investor) => total + (investor.final_fds || 0), 0);
+  const kvFundNames = kvInvestors.map(investor => investor.investor_name).join(', ');
+
   return (
     <div
       onClick={onClick}
@@ -27,13 +33,20 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
           </div>
           <div>
             <h3 className="font-semibold text-gray-900">{company.name}</h3>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap">
               <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
                 {reportCount} Report{reportCount !== 1 ? 's' : ''}
               </span>
-              <span className="text-xs text-gray-500">
-                Latest: {latestReport.reportPeriod}
-              </span>
+              {hasCapTable && (
+                <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+                  📊 Cap Table
+                </span>
+              )}
+              {latestReport && (
+                <span className="text-xs text-gray-500">
+                  Latest: {latestReport.reportPeriod}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -44,49 +57,58 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
 
       {/* Financial Metrics */}
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-500">Cash on Hand</p>
-            <p className="font-semibold text-lg text-gray-900">{latestReport.cashOnHand}</p>
+        {hasCapTable ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-gray-500">Valuation</p>
+                <p className="font-semibold text-lg text-gray-900">
+                  {company.capTable!.valuation ? `$${(company.capTable!.valuation / 1000000).toFixed(1)}M` : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">KV Ownership</p>
+                <p className="font-semibold text-lg text-blue-600">
+                  {kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-gray-500">Series</p>
+                <p className="font-semibold text-lg text-gray-900">{company.capTable!.round_name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Cash Out Date</p>
+                <p className="font-semibold text-lg text-gray-900">
+                  {latestReport ? latestReport.cashOutDate : 'N/A'}
+                </p>
+              </div>
+            </div>
+            {kvFundNames && (
+              <div>
+                <p className="text-sm text-gray-500">KV Funds</p>
+                <p className="text-sm font-medium text-gray-700 truncate" title={kvFundNames}>
+                  {kvFundNames}
+                </p>
+              </div>
+            )}
           </div>
-          <div>
-            <p className="text-sm text-gray-500">Monthly Burn</p>
-            <p className="font-semibold text-lg text-gray-900">{latestReport.monthlyBurnRate}</p>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No cap table data available</p>
+            <p className="text-sm text-gray-400 mt-1">Upload cap table to see details</p>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-500">Latest Deck Date</p>
-            <p className="font-semibold text-lg text-gray-900">{new Date(latestReport.reportDate).toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              year: 'numeric' 
-            })}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Cash Out Date</p>
-            <p className="font-semibold text-lg text-gray-900">{latestReport.cashOutDate}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-500">Runway</p>
-            <p className="font-semibold text-gray-900">{latestReport.runway}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Budget vs Actual</p>
-            <p className="font-semibold text-gray-900">{latestReport.budgetVsActual}</p>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Footer */}
       <div className="mt-6 pt-4 border-t border-gray-100">
         <div className="flex justify-between items-center text-sm text-gray-500">
-          <span>Uploaded: {latestReport.uploadDate}</span>
-          <span className="text-blue-600 hover:text-blue-700">View Summary</span>
+          <span>
+            {latestReport ? `Uploaded: ${latestReport.uploadDate}` : hasCapTable ? 'Cap table available' : 'No data'}
+          </span>
+          <span className="text-blue-600 hover:text-blue-700">View Details</span>
         </div>
       </div>
     </div>
