@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect } from 'react'
 import FileUpload from '@/components/FileUpload'
+import CapTableUpload from '@/components/CapTableUpload'
 import CompanyCard from '@/components/CompanyCard'
 import CompanyModal from '@/components/CompanyModal'
-import { FinancialReport, Company } from '@/types'
+import { FinancialReport, Company, CompanyOverview, CapTableData } from '@/types'
 import { 
   uploadFile, 
   saveFinancialReport, 
   getCompanies, 
-  getCompanyReports,
+  getCompanyOverview,
   healthCheck,
   testDatabaseConnection,
   createDatabaseSchema 
@@ -25,7 +26,7 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
-// Convert database company format to frontend format
+// Convert database company format to frontend format using new overview API
 const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]> => {
   const companies: Company[] = []
   
@@ -35,16 +36,16 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
     try {
       console.log('🏢 Processing company:', dbCompany.name, 'ID:', dbCompany.id)
       
-      // Get reports for this company
-      const reportsResult = await getCompanyReports(dbCompany.id.toString())
-      console.log('📊 Reports result for', dbCompany.name, ':', reportsResult)
+      // Get complete overview for this company
+      const overviewResult = await getCompanyOverview(dbCompany.id.toString())
+      console.log('📊 Overview result for', dbCompany.name, ':', overviewResult)
       
-      if (reportsResult.data && !reportsResult.error) {
-        const dbReports = reportsResult.data.data?.reports || []
-        console.log('📄 Found', dbReports.length, 'reports for', dbCompany.name)
+      if (overviewResult.data && !overviewResult.error) {
+        const overview: CompanyOverview = overviewResult.data.data
+        console.log('📄 Found overview for', dbCompany.name, ':', overview)
         
-        // Convert reports to frontend format
-        const reports: FinancialReport[] = dbReports.map((report: any) => ({
+        // Convert financial reports to frontend format
+        const reports: FinancialReport[] = overview.financial_reports.map((report: any) => ({
           id: report.id.toString(),
           fileName: report.file_name || 'Unknown File',
           reportDate: report.report_date || new Date().toISOString().split('T')[0],
@@ -63,23 +64,60 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
         // Sort reports by date (newest first)
         reports.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
 
+        // Transform cap table data to match frontend interface (remove kv_stake and is_kv)
+        let capTable: CapTableData | null = null
+        if (overview.current_cap_table) {
+          const ct = overview.current_cap_table
+          capTable = {
+            round_id: ct.round_id,
+            round_name: ct.round_name || 'Current',
+            valuation: ct.valuation,
+            amount_raised: ct.amount_raised,
+            round_date: ct.round_date,
+            total_pool_size: ct.total_pool_size,
+            pool_available: ct.pool_available,
+            investors: (ct.investors || []).map((inv: any) => ({
+              investor_name: inv.investor_name,
+              total_invested: inv.total_invested,
+              final_fds: inv.final_fds,
+              final_round_investment: inv.final_round_investment
+            }))
+          }
+        }
+
         companies.push({
           id: dbCompany.id.toString(),
           name: dbCompany.name,
           reports: reports,
-          latestReport: reports[0] || null
+          latestReport: reports[0] || null,
+          capTable: capTable
         })
         
-        console.log('✅ Successfully converted company:', dbCompany.name, 'with', reports.length, 'reports')
+        console.log('✅ Successfully converted company:', dbCompany.name, 'with', reports.length, 'reports and cap table:', !!overview.current_cap_table)
       } else {
-        console.warn('⚠️ No reports found for company:', dbCompany.name, 'Error:', reportsResult.error)
+        // Check if error is due to missing cap_table_current table
+        const isCapTableError = overviewResult.error && overviewResult.error.includes('cap_table_current')
+        if (isCapTableError) {
+          console.info('ℹ️ Company has no cap table data (table not initialized):', dbCompany.name)
+        } else {
+          console.warn('⚠️ No overview found for company:', dbCompany.name, 'Error:', overviewResult.error)
+        }
+        
+        // Create basic company without data
+        companies.push({
+          id: dbCompany.id.toString(),
+          name: dbCompany.name,
+          reports: [],
+          latestReport: null,
+          capTable: null
+        })
       }
     } catch (error) {
-      console.error(`💥 Error loading reports for company ${dbCompany.name}:`, error)
+      console.error(`💥 Error loading overview for company ${dbCompany.name}:`, error)
     }
   }
   
-  console.log('🎯 Conversion complete. Total companies with reports:', companies.length)
+  console.log('🎯 Conversion complete. Total companies:', companies.length)
   return companies
 }
 
@@ -201,6 +239,13 @@ export default function Home() {
     setIsLoading(false)
   }
 
+  const handleCapTableUpload = async (success: boolean) => {
+    if (success) {
+      // Reload companies to show the new cap table data
+      await loadCompanies()
+    }
+  }
+
   const handleCompanyClick = (company: Company) => {
     setSelectedCompany(company)
     setCurrentReportIndex(0) // Always start with latest report
@@ -241,13 +286,13 @@ export default function Home() {
       const companiesResult = await getCompanies()
       console.log('📊 Companies result:', companiesResult)
       
-      if (companiesResult.data?.companies?.length > 0) {
-        const firstCompany = companiesResult.data.companies[0]
+      if (companiesResult.data?.data?.companies?.length > 0) {
+        const firstCompany = companiesResult.data.data.companies[0]
         console.log('🏢 First company:', firstCompany)
         
-        // Test getting reports for the first company
-        const reportsResult = await getCompanyReports(firstCompany.id.toString())
-        console.log('📄 Reports for first company:', reportsResult)
+        // Test getting overview for the first company
+        const overviewResult = await getCompanyOverview(firstCompany.id.toString())
+        console.log('📄 Overview for first company:', overviewResult)
       }
       
       alert('Check console for detailed database contents')
@@ -261,10 +306,21 @@ export default function Home() {
   const initializeDatabase = async () => {
     setIsLoading(true)
     try {
+      console.log('🔧 Initializing database schema...')
       const result = await createDatabaseSchema()
-      alert(JSON.stringify(result, null, 2))
+      console.log('📊 Schema initialization result:', result)
+      
+      if (result.data && !result.error) {
+        alert('✅ Database schema initialized successfully!')
+        // Reload companies after schema creation
+        await loadCompanies()
+      } else {
+        console.error('❌ Schema initialization failed:', result.error)
+        alert(`❌ Database schema initialization failed: ${result.error}`)
+      }
     } catch (error) {
-      alert(`Error: ${error}`)
+      console.error('💥 Exception during schema initialization:', error)
+      alert(`💥 Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
     setIsLoading(false)
   }
@@ -309,6 +365,7 @@ export default function Home() {
                 <span>Refresh</span>
               </button>
               <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
+              <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
               <button 
                 onClick={clearAllData}
                 className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
@@ -338,6 +395,13 @@ export default function Home() {
                 className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
               >
                 Test DB Connection
+              </button>
+              <button
+                onClick={initializeDatabase}
+                disabled={isLoading}
+                className="px-3 py-1 bg-purple-500 text-white rounded text-sm hover:bg-purple-600 disabled:opacity-50"
+              >
+                Initialize Schema
               </button>
               <button
                 onClick={testDatabaseContents}

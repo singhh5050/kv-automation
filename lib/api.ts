@@ -205,6 +205,54 @@ export async function healthCheck() {
 }
 
 /**
+ * Save cap table round data
+ */
+export async function saveCapTableRound(capTableData: any) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'save_cap_table_round',
+      ...capTableData,
+    }),
+  })
+}
+
+/**
+ * Get complete company overview (cap table + financial reports)
+ */
+export async function getCompanyOverview(companyId: string) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_company_overview',
+      company_id: companyId,
+    }),
+  })
+}
+
+/**
+ * Process cap table XLSX file and extract data
+ */
+export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }) {
+  return apiRequest('/process-cap-table', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'process_cap_table_xlsx',
+      ...xlsxData,
+    }),
+  })
+}
+
+/**
  * Get competitive landscape (if needed for future use)
  */
 export async function getCompetitiveLandscape(financialData: any) {

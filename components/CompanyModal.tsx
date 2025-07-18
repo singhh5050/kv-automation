@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Company } from '../types'
+import { Company, calculateKVStake } from '../types'
 
 interface CompanyModalProps {
   company: Company
@@ -10,7 +10,7 @@ interface CompanyModalProps {
   onClose: () => void
 }
 
-type TabType = 'financial' | 'clinical' | 'research' | 'competitive'
+type TabType = 'financial' | 'captable' | 'clinical' | 'research' | 'competitive'
 
 export default function CompanyModal({ company, currentReportIndex, onReportChange, onClose }: CompanyModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('financial')
@@ -18,9 +18,22 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
   const [competitiveData, setCompetitiveData] = useState<any>(null)
   const [loadingCompetitive, setLoadingCompetitive] = useState(false)
   
+  // Calculate KV stake dynamically from investors that start with "KV"
+  const kvStake = company.capTable?.investors 
+    ? calculateKVStake(company.capTable.investors) 
+    : 0
+  
   const currentReport = company.reports[currentReportIndex]
+  const hasReports = company.reports.length > 0
   const canGoToPrevious = currentReportIndex < company.reports.length - 1
   const canGoToNext = currentReportIndex > 0
+
+  // Auto-switch to cap table tab if no reports available
+  useEffect(() => {
+    if (!hasReports && company.capTable) {
+      setActiveTab('captable')
+    }
+  }, [hasReports, company.capTable])
 
   const handlePreviousReport = useCallback(() => {
     if (canGoToPrevious) {
@@ -300,14 +313,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
   }, [canGoToPrevious, canGoToNext, onClose, handlePreviousReport, handleNextReport])
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-        onClick={onClose}
-      ></div>
-
-      {/* Modal */}
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
           {/* Header */}
@@ -321,131 +327,150 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">{company.name}</h2>
                 <div className="flex items-center space-x-2">
-                  <p className="text-sm text-gray-500">{currentReport.reportPeriod}</p>
-                  <span className="text-gray-300">•</span>
-                  <p className="text-sm text-gray-500">{currentReport.fileName}</p>
+                  {hasReports ? (
+                    <>
+                      <p className="text-sm text-gray-500">{currentReport.reportPeriod}</p>
+                      <span className="text-gray-300">•</span>
+                      <p className="text-sm text-gray-500">{currentReport.fileName}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      {company.capTable ? 'Cap table data available' : 'No financial data available'}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              {/* Report Navigation */}
-              {company.reports.length > 1 && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handlePreviousReport}
-                    disabled={!canGoToPrevious}
-                    className={`p-2 rounded-lg ${
-                      canGoToPrevious 
-                        ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100' 
-                        : 'text-gray-300 cursor-not-allowed'
-                    }`}
-                    title="Previous report (older)"
-                  >
-                    ←
-                  </button>
-                  <span className="text-sm text-gray-500">
-                    {currentReportIndex + 1} of {company.reports.length}
-                  </span>
-                  <button
-                    onClick={handleNextReport}
-                    disabled={!canGoToNext}
-                    className={`p-2 rounded-lg ${
-                      canGoToNext 
-                        ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100' 
-                        : 'text-gray-300 cursor-not-allowed'
-                    }`}
-                    title="Next report (newer)"
-                  >
-                    →
-                  </button>
-                </div>
-              )}
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+            >
+              <span className="text-xl">×</span>
+            </button>
+          </div>
+
+          {/* Navigation */}
+          {hasReports && (
+            <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
               <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                onClick={handlePreviousReport}
+                disabled={!canGoToPrevious}
+                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="text-2xl">×</span>
+                <span>←</span>
+                <span>Previous Report</span>
+              </button>
+              
+              <span className="text-sm text-gray-500">
+                Report {currentReportIndex + 1} of {company.reports.length}
+              </span>
+              
+              <button
+                onClick={handleNextReport}
+                disabled={!canGoToNext}
+                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Next Report</span>
+                <span>→</span>
               </button>
             </div>
-          </div>
+          )}
 
           {/* Content */}
           <div className="p-6 overflow-y-auto max-h-[60vh]">
-            {/* Key Metrics Grid */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Financial Metrics</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Cash on Hand</p>
-                  <p className="text-2xl font-bold text-gray-900">{currentReport.cashOnHand}</p>
-                  <p className="text-xs text-gray-500 mt-1">Most important raw number</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Monthly Burn Rate</p>
-                  <p className="text-2xl font-bold text-gray-900">{currentReport.monthlyBurnRate}</p>
-                  <p className="text-xs text-gray-500 mt-1">Determines pace of cash use</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Cash Out Date</p>
-                  <p className="text-2xl font-bold text-gray-900">{currentReport.cashOutDate}</p>
-                  <p className="text-xs text-gray-500 mt-1">The investor&apos;s clock</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Runway</p>
-                  <p className="text-2xl font-bold text-gray-900">{currentReport.runway}</p>
-                  <p className="text-xs text-gray-500 mt-1">Useful shorthand derived from above</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Budget vs Actual</p>
-                  <p className="text-2xl font-bold text-gray-900">{currentReport.budgetVsActual}</p>
-                  <p className="text-xs text-gray-500 mt-1">Signals fiscal discipline or drift</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-gray-500">Report Date</p>
-                  <p className="text-2xl font-bold text-gray-900">{new Date(currentReport.reportDate).toLocaleDateString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric', 
-                    year: 'numeric' 
-                  })}</p>
-                  <p className="text-xs text-gray-500 mt-1">When this deck was created</p>
+            {/* Key Metrics Grid - Only show if we have reports */}
+            {hasReports && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Financial Metrics</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Cash on Hand</p>
+                    <p className="text-2xl font-bold text-gray-900">{currentReport.cashOnHand}</p>
+                    <p className="text-xs text-gray-500 mt-1">Most important raw number</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Monthly Burn Rate</p>
+                    <p className="text-2xl font-bold text-gray-900">{currentReport.monthlyBurnRate}</p>
+                    <p className="text-xs text-gray-500 mt-1">Determines pace of cash use</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Cash Out Date</p>
+                    <p className="text-2xl font-bold text-gray-900">{currentReport.cashOutDate}</p>
+                    <p className="text-xs text-gray-500 mt-1">The investor&apos;s clock</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Runway</p>
+                    <p className="text-2xl font-bold text-gray-900">{currentReport.runway}</p>
+                    <p className="text-xs text-gray-500 mt-1">Useful shorthand derived from above</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Budget vs Actual</p>
+                    <p className="text-2xl font-bold text-gray-900">{currentReport.budgetVsActual}</p>
+                    <p className="text-xs text-gray-500 mt-1">Signals fiscal discipline or drift</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm font-medium text-gray-500">Report Date</p>
+                    <p className="text-2xl font-bold text-gray-900">{new Date(currentReport.reportDate).toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric', 
+                      year: 'numeric' 
+                    })}</p>
+                    <p className="text-xs text-gray-500 mt-1">When this deck was created</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Tabbed Summary Sections */}
             <div className="mt-8">
               <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-8">
+                  {hasReports && (
+                    <button
+                      onClick={() => setActiveTab('financial')}
+                      className={`${
+                        activeTab === 'financial'
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    >
+                      Financial Summary
+                    </button>
+                  )}
                   <button
-                    onClick={() => setActiveTab('financial')}
+                    onClick={() => setActiveTab('captable')}
                     className={`${
-                      activeTab === 'financial'
+                      activeTab === 'captable'
                         ? 'border-blue-500 text-blue-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                   >
-                    Financial Summary
+                    Cap Table
                   </button>
-                  <button
-                    onClick={() => setActiveTab('clinical')}
-                    className={`${
-                      activeTab === 'clinical'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                  >
-                    Clinical Progress
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('research')}
-                    className={`${
-                      activeTab === 'research'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                  >
-                    Research & Development
-                  </button>
+                  {hasReports && (
+                    <>
+                      <button
+                        onClick={() => setActiveTab('clinical')}
+                        className={`${
+                          activeTab === 'clinical'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                      >
+                        Clinical Progress
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('research')}
+                        className={`${
+                          activeTab === 'research'
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                      >
+                        R&D Status
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => setActiveTab('competitive')}
                     className={`${
@@ -454,13 +479,13 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                   >
-                    Competitive Landscape
+                    Competitive Intel
                   </button>
                 </nav>
               </div>
 
               <div className="mt-6">
-                {activeTab === 'financial' && (
+                {activeTab === 'financial' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Financial Overview</h3>
                     <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -469,7 +494,108 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                   </div>
                 )}
 
-                {activeTab === 'clinical' && (
+                {activeTab === 'captable' && (
+                  <div className="space-y-6">
+                    {company.capTable ? (
+                      <>
+                        {/* Round Overview */}
+                        <div className="bg-green-50 p-6 rounded-lg">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Round: {company.capTable.round_name || 'Unknown'}</h3>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">Valuation</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {company.capTable.valuation ? `$${(company.capTable.valuation / 1000000).toFixed(1)}M` : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">Amount Raised</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {company.capTable.amount_raised ? `$${(company.capTable.amount_raised / 1000000).toFixed(1)}M` : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">KV Stake</p>
+                              <p className="text-xl font-bold text-blue-600">
+                                {kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">Round Date</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {company.capTable.round_date ? new Date(company.capTable.round_date).toLocaleDateString() : 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Employee Pool */}
+                        <div className="bg-purple-50 p-6 rounded-lg">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-4">Employee Option Pool</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">Total Pool Size</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {company.capTable.total_pool_size ? `${(company.capTable.total_pool_size * 100).toFixed(1)}%` : '0.0%'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-500">Available</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {company.capTable.pool_available ? `${(company.capTable.pool_available * 100).toFixed(1)}%` : '0.0%'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Investors */}
+                        {company.capTable.investors && company.capTable.investors.length > 0 && (
+                          <div className="bg-gray-50 p-6 rounded-lg">
+                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Investor Breakdown</h4>
+                            <div className="space-y-3">
+                              {company.capTable.investors.map((investor, index) => {
+                                const isKV = investor.investor_name.startsWith('KV')
+                                return (
+                                  <div key={index} className={`p-4 rounded-lg border ${isKV ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`}>
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <h5 className={`font-medium ${isKV ? 'text-blue-900' : 'text-gray-900'}`}>
+                                          {investor.investor_name}
+                                          {isKV && <span className="ml-2 text-blue-600 text-sm">🏠 KV</span>}
+                                        </h5>
+                                      <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Total Invested:</span>
+                                          <p className="font-medium">
+                                            {investor.total_invested ? `$${(investor.total_invested / 1000000).toFixed(1)}M` : 'N/A'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Ownership:</span>
+                                          <p className="font-medium">
+                                            {investor.final_fds ? `${(investor.final_fds * 100).toFixed(1)}%` : 'N/A'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="bg-gray-50 p-6 rounded-lg text-center">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Cap Table Data</h3>
+                        <p className="text-gray-600">Upload cap table data to see funding and investor information.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'clinical' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Clinical Progress</h3>
                     <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -478,7 +604,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                   </div>
                 )}
 
-                {activeTab === 'research' && (
+                {activeTab === 'research' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Research & Development Status</h3>
                     <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -582,13 +708,15 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
               </div>
             </div>
 
-            {/* File Info */}
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <div className="flex justify-between items-center text-sm text-gray-500">
-                <span>Source: {currentReport.fileName}</span>
-                <span>Uploaded: {currentReport.uploadDate}</span>
+            {/* File Info - Only show if we have reports */}
+            {hasReports && (
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <div className="flex justify-between items-center text-sm text-gray-500">
+                  <span>Source: {currentReport.fileName}</span>
+                  <span>Uploaded: {currentReport.uploadDate}</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Footer */}
