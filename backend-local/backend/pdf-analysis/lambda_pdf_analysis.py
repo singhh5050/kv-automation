@@ -5,6 +5,7 @@ import os
 import sys
 import traceback
 from datetime import datetime
+from typing import Dict, Any
 
 # Add the Lambda layer path for dependencies
 sys.path.insert(0, '/opt/python')
@@ -42,6 +43,11 @@ def lambda_handler(event, context):
             body = json.loads(event['body'])
         else:
             body = event.get('body', {})
+            
+        # Handle direct Lambda invoke (no HTTP wrapper)
+        if not body and 'pdf_b64' in event:
+            body = event
+            
     except json.JSONDecodeError:
         return {
             'statusCode': 400,
@@ -49,9 +55,11 @@ def lambda_handler(event, context):
             'body': json.dumps({'error': 'Invalid JSON in request body'})
         }
     
-    # Get PDF data
-    pdf_base64 = body.get('pdf_data')
+    # Get PDF data (support both parameter names)
+    pdf_base64 = body.get('pdf_data') or body.get('pdf_b64')
     filename = body.get('filename', 'document.pdf')
+    company_name_override = body.get('company_name_override')
+    compressed = body.get('compressed', False)
     
     if not pdf_base64:
         return {
@@ -63,9 +71,14 @@ def lambda_handler(event, context):
     try:
         print(f"Starting PDF processing for: {filename}")
         
-        # Decode base64 PDF
-        pdf_bytes = base64.b64decode(pdf_base64)
-        print(f"Decoded PDF, size: {len(pdf_bytes)} bytes")
+        # Decode base64 PDF with optional gzip decompression
+        if compressed:
+            import gzip
+            pdf_bytes = gzip.decompress(base64.b64decode(pdf_base64))
+            print(f"Decompressed PDF, size: {len(pdf_bytes)} bytes")
+        else:
+            pdf_bytes = base64.b64decode(pdf_base64)
+            print(f"Decoded PDF, size: {len(pdf_bytes)} bytes")
         
         # Extract text from PDF (optimized for speed)
         extracted_text = extract_pdf_text_optimized(pdf_bytes, filename)
@@ -79,8 +92,8 @@ def lambda_handler(event, context):
         
         print(f"Extracted text length: {len(extracted_text)} characters")
         
-        # Analyze with OpenAI
-        analysis_result = analyze_with_openai(extracted_text, filename)
+        # Analyze with OpenAI (with optional company name override)
+        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override)
         
         return {
             'statusCode': 200,
@@ -240,7 +253,38 @@ def extract_pdf_text(pdf_bytes, filename):
     return None
 
 
-def analyze_with_openai(text, filename):
+def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
+    """
+    Analyze PDF with company name override for mass import
+    """
+    try:
+        # Decode base64 PDF
+        pdf_bytes = base64.b64decode(pdf_data)
+        
+        # Extract text from PDF
+        extracted_text = extract_pdf_text_optimized(pdf_bytes, filename)
+        
+        if not extracted_text:
+            return {
+                "success": False,
+                "error": "Failed to extract text from PDF"
+            }
+        
+        # Analyze with OpenAI
+        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override)
+        
+        return {
+            "success": True,
+            "data": analysis_result
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"PDF analysis failed: {str(e)}"
+        }
+
+def analyze_with_openai(text, filename, company_name_override: str = None):
     """Analyze PDF text with OpenAI using o3 model - simple approach"""
     
     # Check for API key
@@ -356,6 +400,11 @@ Do your analysis and reasoning internally, but in the output:
                 if field not in analysis_result:
                     analysis_result[field] = 'N/A'
             
+            # Override company name if provided
+            if company_name_override:
+                analysis_result['companyName'] = company_name_override
+                print(f"Overrode company name to: {company_name_override}")
+            
             print(f"Successfully parsed JSON response for {analysis_result.get('companyName', filename)}")
             return analysis_result
             
@@ -364,8 +413,9 @@ Do your analysis and reasoning internally, but in the output:
             print(f"Raw response: {content[:500]}...")
             
             # Return fallback response with the raw content
+            fallback_company_name = company_name_override if company_name_override else filename.replace('.pdf', '')
             return {
-                'companyName': filename.replace('.pdf', ''),
+                'companyName': fallback_company_name,
                 'reportDate': datetime.now().strftime('%Y-%m-%d'),
                 'reportPeriod': 'Analysis Period',
                 'filename': filename,

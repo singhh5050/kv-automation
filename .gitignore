@@ -35,3 +35,17 @@ backup/
 
 # Backend files (keep local only)
 backend-local/
+
+# Secret/credential files
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!components.json
+!vercel.json
+!next-env.d.ts
+decoded_key.json
+*-key.json
+*-keys.json
+*service-account*.json
+kv-automation-*.json

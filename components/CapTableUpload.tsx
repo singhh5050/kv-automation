@@ -15,49 +15,51 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
     
-    const file = acceptedFiles[0]
     setIsProcessing(true)
+    let allSuccess = true
     
-    try {
-      console.log(`Processing cap table XLSX: ${file.name}`)
-      
-      // Convert file to base64
-      const base64Data = await fileToBase64(file)
-      const cleanBase64 = base64Data.replace(/^data:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet;base64,/, '')
-      
-      const result = await processCapTableXlsx({
-        xlsx_data: cleanBase64,
-        filename: file.name
-      })
-      
-      if (result.error) {
-        alert(`Error processing cap table: ${result.error}`)
-        onUpload(false)
-      } else {
-        const data = result.data?.data
-        const summary = data?.processing_summary
-        let message = `Cap table processed successfully!\n\nCompany: ${data?.company_name || 'Unknown'}`
-        message += `\nInvestors: ${data?.investors_count || 0}`
+    for (const file of acceptedFiles) {
+      try {
+        console.log(`Processing cap table XLSX: ${file.name}`)
         
-        if (summary) {
-          message += `\n\nData Extracted:`
-          message += `\n• Valuation: ${summary.valuation_extracted ? '✅ From metadata' : '❌ Not found'}`
-          message += `\n• Amount Raised: ${summary.amount_raised_extracted ? '✅ From metadata' : '❌ Not found'}`
-          message += `\n• Round: ${summary.round_extracted ? '✅ From metadata' : '❌ Using default'}`
-          message += `\n• Option Pool: ${summary.pool_data_found ? '✅ Found' : '❌ Not found'}`
-          message += `\n• Active Investors: ${summary.investors_with_investments || 0}`
+        // Convert file to base64
+        const base64Data = await fileToBase64(file)
+        const cleanBase64 = base64Data.replace(/^data:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet;base64,/, '')
+        
+        const result = await processCapTableXlsx({
+          xlsx_data: cleanBase64,
+          filename: file.name
+        })
+        
+        if (result.error) {
+          alert(`Error processing cap table ${file.name}: ${result.error}`)
+          allSuccess = false
+        } else {
+          const data = result.data?.data
+          const summary = data?.processing_summary
+          let message = `Cap table ${file.name} processed successfully!\n\nCompany: ${data?.company_name || 'Unknown'}`
+          message += `\nInvestors: ${data?.investors_count || 0}`
+          
+          if (summary) {
+            message += `\n\nData Extracted:`
+            message += `\n• Valuation: ${summary.valuation_extracted ? '✅ From metadata' : '❌ Not found'}`
+            message += `\n• Amount Raised: ${summary.amount_raised_extracted ? '✅ From metadata' : '❌ Not found'}`
+            message += `\n• Round: ${summary.round_extracted ? '✅ From metadata' : '❌ Using default'}`
+            message += `\n• Option Pool: ${summary.pool_data_found ? '✅ Found' : '❌ Not found'}`
+            message += `\n• Active Investors: ${summary.investors_with_investments || 0}`
+          }
+          
+          alert(message)
         }
-        
-        alert(message)
-        onUpload(true)
+      } catch (error) {
+        console.error(`Error processing cap table ${file.name}:`, error)
+        alert(`Error processing cap table ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        allSuccess = false
       }
-    } catch (error) {
-      console.error('Error processing cap table:', error)
-      alert(`Error processing cap table: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      onUpload(false)
-    } finally {
-      setIsProcessing(false)
     }
+    
+    setIsProcessing(false)
+    onUpload(allSuccess)
   }, [onUpload])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -65,7 +67,7 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
     },
-    multiple: false,
+    multiple: true,
     disabled: isLoading || isProcessing
   })
 
@@ -103,17 +105,12 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
             <>
               <span className="text-lg">📊</span>
               <span className="text-sm font-medium text-gray-700">
-                {isDragActive ? 'Drop XLSX file here' : 'Upload Cap Table (.xlsx)'}
+                {isDragActive ? 'Drop XLSX files here' : 'Upload Cap Tables (.xlsx)'}
               </span>
             </>
           )}
         </div>
       </div>
-      {!isLoading && !isProcessing && (
-        <p className="text-xs text-gray-500 mt-1 text-center">
-          Upload your cap table Excel file for automatic processing
-        </p>
-      )}
     </div>
   )
 } 
