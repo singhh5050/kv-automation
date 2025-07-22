@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react'
 import FileUpload from '@/components/FileUpload'
 import CapTableUpload from '@/components/CapTableUpload'
 import CompanyCard from '@/components/CompanyCard'
-import CompanyModal from '@/components/CompanyModal'
 import { FinancialReport, Company, CompanyOverview, CapTableData } from '@/types'
 import { 
   uploadFile, 
@@ -15,6 +14,7 @@ import {
   testDatabaseConnection,
   createDatabaseSchema 
 } from '@/lib/api'
+import { companiesCache } from '@/lib/companiesCache'
 
 // Company name normalization for matching
 const normalizeCompanyName = (name: string): string => {
@@ -182,20 +182,70 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
 
 export default function Home() {
   const [companies, setCompanies] = useState<Company[]>([])
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
-  const [currentReportIndex, setCurrentReportIndex] = useState<number>(0)
+  const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'healthy' | 'unhealthy'>('unknown')
   const [showDebugPanel, setShowDebugPanel] = useState(false)
 
-  // Load companies from database on mount
+  // Filter states
+  const [filters, setFilters] = useState({
+    stage: '',
+    sector: '',
+    leadPartner: '',
+    mdSponsor: '',
+    needsHelp: ''
+  })
+
+  // Load companies from cache or database on mount
   useEffect(() => {
-    loadCompanies()
+    loadCompaniesWithCache()
     checkBackendHealth()
   }, [])
 
-  const loadCompanies = async () => {
+  // Apply filters whenever companies or filters change
+  useEffect(() => {
+    applyFilters()
+  }, [companies, filters])
+
+  const applyFilters = () => {
+    let filtered = companies
+
+    // Apply stage filter
+    if (filters.stage) {
+      // For now, we'll assume all companies are "Main" stage since we don't have this data yet
+      // In a real implementation, this would filter based on actual stage data
+    }
+
+    // Apply sector filter  
+    if (filters.sector) {
+      // Similar to stage, we'd filter based on actual sector data
+    }
+
+    // Apply other filters as needed...
+
+    setFilteredCompanies(filtered)
+  }
+
+  const loadCompaniesWithCache = async () => {
+    // First check if we have valid cached data
+    const cachedCompanies = companiesCache.get()
+    if (cachedCompanies && cachedCompanies.length > 0) {
+      console.log('📦 Using cached companies data:', cachedCompanies.length, 'companies')
+      setCompanies(cachedCompanies)
+      return
+    }
+
+    // If no cache, load from database
+    await loadCompanies()
+  }
+
+  const loadCompanies = async (forceReload = false) => {
+    // If forcing reload, clear cache first
+    if (forceReload) {
+      companiesCache.clear()
+    }
+
     setIsLoading(true)
     try {
       console.log('🔄 Loading companies from database...')
@@ -216,6 +266,9 @@ export default function Home() {
           console.log('✅ Converted companies:', frontendCompanies)
           console.log('📊 Number of frontend companies:', frontendCompanies.length)
           setCompanies(frontendCompanies)
+          
+          // Cache the loaded data
+          companiesCache.set(frontendCompanies)
         }
       } else {
         console.error('❌ Error loading companies:', result.error)
@@ -279,8 +332,8 @@ export default function Home() {
               setErrorMessage(`Error saving ${file.name}: ${saveResult.error}`)
             } else {
               console.log('Saved to database successfully')
-              // Reload companies to show the new data
-              await loadCompanies()
+              // Reload companies to show the new data (force reload to bypass cache)
+              await loadCompanies(true)
             }
           } catch (error) {
             console.error('Database save error:', error)
@@ -300,23 +353,18 @@ export default function Home() {
 
   const handleCapTableUpload = async (success: boolean) => {
     if (success) {
-      // Reload companies to show the new cap table data
-      await loadCompanies()
+      // Reload companies to show the new cap table data (force reload to bypass cache)
+      await loadCompanies(true)
     }
-  }
-
-  const handleCompanyClick = (company: Company) => {
-    setSelectedCompany(company)
-    setCurrentReportIndex(0) // Always start with latest report
   }
 
   const clearAllData = () => {
     if (confirm('Are you sure you want to clear all data? This will delete all companies and reports from the database and cannot be undone.')) {
       // TODO: Implement database clearing functionality
-      // For now, just clear the local state
+      // For now, just clear the local state and cache
       setCompanies([])
-      setSelectedCompany(null)
-      alert('Note: This only clears the local view. Database clearing functionality needs to be implemented.')
+      companiesCache.clear()
+      alert('Note: This only clears the local view and cache. Database clearing functionality needs to be implemented.')
     }
   }
 
@@ -372,7 +420,7 @@ export default function Home() {
       if (result.data && !result.error) {
         alert('✅ Database schema initialized successfully!')
         // Reload companies after schema creation
-        await loadCompanies()
+        await loadCompanies(true)
       } else {
         console.error('❌ Schema initialization failed:', result.error)
         alert(`❌ Database schema initialization failed: ${result.error}`)
@@ -395,47 +443,105 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-3xl font-bold text-gray-900">Portfolio Companies</h1>
-              <div className="flex items-center space-x-2 text-sm">
-                <span className="text-gray-500">Backend:</span>
-                <span className={getStatusColor(backendStatus)}>
-                  {backendStatus === 'unknown' ? '🔄' : backendStatus === 'healthy' ? '🟢' : '🔴'} 
-                  {backendStatus}
-                </span>
-              </div>
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div className="flex items-center space-x-6">
+              <h1 className="text-2xl font-bold text-gray-900">Portfolio Companies</h1>
             </div>
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => setShowDebugPanel(!showDebugPanel)}
-                className="text-gray-600 hover:text-gray-900 text-sm"
-              >
-                🛠️ Debug
-              </button>
-              <button
-                onClick={loadCompanies}
+                onClick={() => loadCompanies(true)}
                 disabled={isLoading}
-                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
               >
                 <span>🔄</span>
-                <span>Refresh</span>
+                <span>Reload Cache</span>
               </button>
               <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
               <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
-              <button 
-                onClick={clearAllData}
-                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-              >
-                <span>🗑️</span>
-                <span>Clear All</span>
+              <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                Logout
               </button>
             </div>
           </div>
         </div>
       </header>
+
+      {/* Filters */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Stage</label>
+              <select
+                value={filters.stage}
+                onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All</option>
+                <option value="Seed">Seed</option>
+                <option value="Series A">Series A</option>
+                <option value="Main">Main</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Sector</label>
+              <select
+                value={filters.sector}
+                onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All</option>
+                <option value="Healthcare">Healthcare</option>
+                <option value="Enterprise">Enterprise</option>
+                <option value="Consumer">Consumer</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Lead Partner</label>
+              <select
+                value={filters.leadPartner}
+                onChange={(e) => setFilters({ ...filters, leadPartner: e.target.value })}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All</option>
+                <option value="Sarah Johnson">Sarah Johnson</option>
+                <option value="Alex Morgan">Alex Morgan</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">MD Sponsor</label>
+              <select
+                value={filters.mdSponsor}
+                onChange={(e) => setFilters({ ...filters, mdSponsor: e.target.value })}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All</option>
+                <option value="Alex Morgan">Alex Morgan</option>
+                <option value="Sarah Johnson">Sarah Johnson</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Needs help with</label>
+              <select
+                value={filters.needsHelp}
+                onChange={(e) => setFilters({ ...filters, needsHelp: e.target.value })}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All</option>
+                <option value="recruiting">Recruiting</option>
+                <option value="GTM">GTM</option>
+                <option value="fundraising">Fundraising</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Debug Panel */}
       {showDebugPanel && (
@@ -470,18 +576,29 @@ export default function Home() {
                 Test DB Contents
               </button>
               <button
-                onClick={initializeDatabase}
-                disabled={isLoading}
-                className="px-3 py-1 bg-purple-500 text-white rounded text-sm hover:bg-purple-600 disabled:opacity-50"
-              >
-                Initialize Schema
-              </button>
-              <button
-                onClick={loadCompanies}
+                onClick={() => loadCompanies(true)}
                 disabled={isLoading}
                 className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 disabled:opacity-50"
               >
-                Reload Data
+                Force Reload Data
+              </button>
+              <button
+                onClick={() => {
+                  companiesCache.clear()
+                  alert('Cache cleared!')
+                }}
+                className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+              >
+                Clear Cache
+              </button>
+              <button
+                onClick={() => {
+                  const info = companiesCache.getInfo()
+                  alert(`Cache Info:\n${JSON.stringify(info, null, 2)}`)
+                }}
+                className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+              >
+                Cache Info
               </button>
             </div>
           </div>
@@ -519,8 +636,8 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {!isLoading && companies.length === 0 ? (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!isLoading && filteredCompanies.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">📄</div>
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">No companies found</h2>
@@ -528,27 +645,25 @@ export default function Home() {
             <p className="text-sm text-gray-500">Data is automatically synced across all your devices</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {companies.map((company) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredCompanies.map((company) => (
               <CompanyCard
                 key={company.id}
                 company={company}
-                onClick={() => handleCompanyClick(company)}
               />
             ))}
           </div>
         )}
       </main>
 
-      {/* Modal */}
-      {selectedCompany && (
-        <CompanyModal
-          company={selectedCompany}
-          currentReportIndex={currentReportIndex}
-          onReportChange={setCurrentReportIndex}
-          onClose={() => setSelectedCompany(null)}
-        />
-      )}
+      {/* Developer Tools Toggle */}
+      <button
+        onClick={() => setShowDebugPanel(!showDebugPanel)}
+        className="fixed bottom-4 right-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+        title="Developer Tools"
+      >
+        🛠️
+      </button>
     </div>
   )
 }

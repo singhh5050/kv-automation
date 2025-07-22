@@ -84,13 +84,19 @@ def lambda_handler(event, context):
 # ──────────────────────────────────────────────────────────────────────────
 
 def process_cap_table_xlsx(xlsx_b64: str, filename: str) -> Dict[str, Any]:
+    return process_cap_table_xlsx_with_override(xlsx_b64, filename, None)
+
+def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
 
         # ——— 1 Metadata (first 6 rows) ———
         try:
             df_meta = pd.read_excel(xlsx_io, nrows=6, header=None)
-            company_name = df_meta.iloc[0, 1] if df_meta.shape[1] > 1 else "Unknown Company"
+            extracted_company_name = df_meta.iloc[0, 1] if df_meta.shape[1] > 1 else "Unknown Company"
+            
+            # Use override if provided, otherwise use extracted name
+            company_name = company_name_override if company_name_override else extracted_company_name
 
             # Drop first row/col then tidy up
             df_meta = df_meta.iloc[1:, 1:].dropna(how="all", axis=0).dropna(how="all", axis=1)
