@@ -258,4 +258,88 @@ export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filenam
 export async function getCompetitiveLandscape(financialData: any) {
   // This would need to be implemented as a separate Lambda function if needed
   return { error: 'Competitive landscape analysis not yet implemented in Lambda backend' }
+}
+
+/**
+ * Update financial metrics for a specific report
+ */
+export async function updateFinancialMetrics(reportId: number, updates: Record<string, any>) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_financial_metrics',
+      report_id: reportId,
+      updates: updates,
+    }),
+  })
+}
+
+/**
+ * Update company information
+ */
+export async function updateCompany(companyId: number, updates: Record<string, any>) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_company',
+      company_id: companyId,
+      updates: updates,
+    }),
+  })
+}
+
+/**
+ * Update cap table round information
+ */
+export async function updateCapTableRound(roundId: number, updates: Record<string, any>) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_cap_table_round',
+      round_id: roundId,
+      updates: updates,
+    }),
+  })
+}
+
+/**
+ * Update cap table investor information
+ */
+export async function updateCapTableInvestor(investorId: number, updates: Record<string, any>) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_cap_table_investor',
+      investor_id: investorId,
+      updates: updates,
+    }),
+  })
+}
+
+/**
+ * Get all database data for a company (comprehensive editing view)
+ */
+export async function getAllCompanyData(companyId: string) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_all_company_data',
+      company_id: companyId,
+    }),
+  })
 } 

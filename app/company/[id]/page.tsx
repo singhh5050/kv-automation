@@ -1,9 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Company, CompanyOverview, calculateKVStake } from '@/types'
 import { getCompanyOverview } from '@/lib/api'
+import EditableMetric from '@/components/EditableMetric'
+import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
+import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
 
 // Company name normalization for display
 const normalizeCompanyName = (name: string): string => {
@@ -14,7 +16,7 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
-type TabType = 'metrics' | 'overview' | 'cap-table' | 'competitors' | 'documents'
+type TabType = 'metrics' | 'overview' | 'cap-table' | 'competitors' | 'documents' | 'reports' | 'captable' | 'database'
 
 // Simple chart component for cash history
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -175,6 +177,7 @@ export default function CompanyDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>('metrics')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [latestReportId, setLatestReportId] = useState<number | null>(null)
 
   useEffect(() => {
     loadCompanyData()
@@ -187,7 +190,13 @@ export default function CompanyDetailPage() {
     try {
       const result = await getCompanyOverview(companyId)
       if (result.data && !result.error) {
-        setCompany(result.data.data)
+        const companyData = result.data.data
+        setCompany(companyData)
+        
+        // Set the latest report ID for inline editing
+        if (companyData.financial_reports && companyData.financial_reports.length > 0) {
+          setLatestReportId(companyData.financial_reports[0].id)
+        }
       } else {
         setError(result.error || 'Failed to load company data')
       }
@@ -225,7 +234,11 @@ export default function CompanyDetailPage() {
 
   const displayName = normalizeCompanyName(company.company.name)
   const latestReport = company.financial_reports[0]
-  const kvStake = company.current_cap_table ? calculateKVStake(company.current_cap_table.investors) : 0
+  const kvStake = company.current_cap_table ? 
+    company.current_cap_table.investors
+      ?.filter(inv => inv.investor_name.startsWith('KV'))
+      ?.reduce((total, inv) => total + (inv.final_fds || 0), 0) || 0 
+    : 0
 
   // Sort investors to put KV funds at the top
   const sortedInvestors = company.current_cap_table?.investors ? [...company.current_cap_table.investors].sort((a, b) => {
@@ -360,28 +373,49 @@ export default function CompanyDetailPage() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tabs */}
         <div className="border-b border-gray-200 mb-8">
           <nav className="-mb-px flex space-x-8">
-            {[
-              { id: 'metrics', label: 'Key Metrics' },
-              { id: 'overview', label: 'Detailed Overview' },
-              { id: 'cap-table', label: 'Cap Table' },
-              { id: 'competitors', label: 'Competitors' },
-              { id: 'documents', label: 'Documents' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabType)}
-                className={`${
-                  activeTab === tab.id
-                    ? 'border-gray-900 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            <button
+              onClick={() => setActiveTab('metrics')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'metrics'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Key Metrics
+            </button>
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'reports'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Financial Reports ({company.financial_reports.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('captable')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'captable'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Cap Table
+            </button>
+            <button
+              onClick={() => setActiveTab('database')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'database'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Database
+            </button>
           </nav>
         </div>
 
@@ -394,26 +428,40 @@ export default function CompanyDetailPage() {
                 {/* Cash Position */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                   <h3 className="text-xl font-semibold text-gray-900 mb-1">Cash Position</h3>
-                  <p className="text-gray-600 text-sm mb-6">Burn rate and runway</p>
+                  <p className="text-gray-600 text-sm mb-6">Burn rate and runway (click values to edit)</p>
                   
                   <div className="grid grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Cash on Hand</p>
-                      <p className="text-3xl font-bold text-gray-900">
-                        {(latestReport as any)?.cash_on_hand || 'N/A'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Monthly Burn</p>
-                      <p className="text-3xl font-bold text-gray-900">
-                        {(latestReport as any)?.monthly_burn_rate || 'N/A'}
-                      </p>
-                    </div>
+                    <EditableMetric
+                      label="Cash on Hand"
+                      value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                      reportId={latestReportId || undefined}
+                      field="cash_on_hand"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                    />
+                    <EditableMetric
+                      label="Monthly Burn"
+                      value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                      reportId={latestReportId || undefined}
+                      field="monthly_burn_rate"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                    />
                   </div>
 
                   <div className="mb-6">
                     <div className="flex justify-between items-center mb-2">
-                      <p className="text-sm font-medium text-gray-500">Runway</p>
+                      <EditableMetric
+                        label="Runway"
+                        value={latestReport?.runway || 'N/A'}
+                        reportId={latestReportId || undefined}
+                        field="runway"
+                        onUpdate={loadCompanyData}
+                        formatValue={(value) => `${value} months`}
+                        parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
+                        isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                        className="flex-1"
+                      />
                       <p className="text-sm text-gray-600">
                         Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
                       </p>
@@ -422,7 +470,6 @@ export default function CompanyDetailPage() {
                     <div className="w-full bg-gray-200 rounded-full h-3">
                       <div className="bg-gray-900 h-3 rounded-full" style={{ width: '65%' }}></div>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">{latestReport?.runway || 'N/A'}</p>
                   </div>
 
                   {/* Cash History Chart */}
@@ -634,6 +681,14 @@ export default function CompanyDetailPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Database Tab */}
+            {activeTab === 'database' && (
+              <UniversalDatabaseEditor 
+                companyId={companyId} 
+                onUpdate={loadCompanyData}
+              />
             )}
           </div>
 

@@ -80,8 +80,21 @@ def lambda_handler(event, context):
             pdf_bytes = base64.b64decode(pdf_base64)
             print(f"Decoded PDF, size: {len(pdf_bytes)} bytes")
         
-        # Extract text from PDF (optimized for speed)
-        extracted_text = extract_pdf_text_optimized(pdf_bytes, filename)
+        # Extract text and tables from PDF (all pages)
+        texts, tables = extract_text_and_tables(pdf_bytes, filename)
+
+        # flatten prose
+        prose = "\n\n".join(p["text"] for p in texts)
+
+        # flatten tables into a simple text block
+        table_str = ""
+        for t in tables:
+            table_str += f"Table on page {t['page']}:\n"
+            for row in t["rows"]:
+                table_str += "\t".join((cell or "") for cell in row) + "\n"
+            table_str += "\n"
+
+        extracted_text = prose + "\n\n" + table_str
         
         if not extracted_text:
             return {
@@ -112,146 +125,82 @@ def lambda_handler(event, context):
         }
 
 
-def extract_pdf_text_optimized(pdf_bytes, filename):
-    """Extract text from PDF with smart filtering for financial content - OPTIMIZED FOR SPEED"""
-    
-    try:
-        import pdfplumber
-        
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-            temp_file.write(pdf_bytes)
-            temp_path = temp_file.name
-        
-        try:
-            extracted_text = ""
-            financial_keywords = [
-                'cash', 'burn', 'runway', 'revenue', 'expenses', 'budget', 
-                'million', 'funding', 'financial', 'quarter', 'q1', 'q2', 'q3', 'q4',
-                'balance', 'sheet', 'statement', 'income', 'expenditure', 'cost',
-                'investment', 'financing', 'capital', 'valuation', 'ebitda'
-            ]
-            
-            with pdfplumber.open(temp_path) as pdf:
-                total_pages = len(pdf.pages)
-                print(f"PDF opened with pdfplumber. Pages: {total_pages}")
-                
-                # Process first 20 pages max for speed (most financial info is early in decks)
-                max_pages = min(20, total_pages)
-                pages_processed = 0
-                
-                for i in range(max_pages):
-                    try:
-                        page = pdf.pages[i]
-                        page_text = page.extract_text()
-                        
-                        if page_text:
-                            # Check if page contains financial keywords
-                            page_text_lower = page_text.lower()
-                            has_financial_content = any(keyword in page_text_lower for keyword in financial_keywords)
-                            
-                            if has_financial_content or i < 5:  # Always include first 5 pages
-                                extracted_text += page_text + "\n"
-                                print(f"Page {i+1}: Extracted {len(page_text)} characters (financial content)")
-                                pages_processed += 1
-                            else:
-                                print(f"Page {i+1}: Skipped (no financial keywords)")
-                        
-                        # Limit total text size to 12,000 characters for speed
-                        if len(extracted_text) > 12000:
-                            print(f"Text limit reached at {len(extracted_text)} characters, stopping extraction")
-                            break
-                            
-                    except Exception as e:
-                        print(f"Error extracting text from page {i+1}: {str(e)}")
-                
-                print(f"Processed {pages_processed} of {max_pages} pages")
-            
-            return extracted_text.strip()
-            
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-                
-    except Exception as e:
-        print(f"Optimized extraction failed: {str(e)}, falling back to full extraction")
-        return extract_pdf_text(pdf_bytes, filename)
+def extract_text_and_tables(pdf_bytes: bytes, filename: str):
+    """Return (texts, tables) where:
+       - texts: list of {'page':N, 'text':"..."} for non‑table prose
+       - tables: list of {'page':N, 'rows':[[...],[...],...]} for every detected table
+    """
+    import pdfplumber, tempfile, os
 
-def extract_pdf_text(pdf_bytes, filename):
-    """Extract text from PDF using available libraries"""
-    
-    # Try pdfplumber first (most reliable)
-    try:
-        import pdfplumber
-        
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-            temp_file.write(pdf_bytes)
-            temp_path = temp_file.name
-        
-        try:
-            extracted_text = ""
-            
-            with pdfplumber.open(temp_path) as pdf:
-                print(f"PDF opened with pdfplumber. Pages: {len(pdf.pages)}")
-                
-                for i, page in enumerate(pdf.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text:
-                            extracted_text += page_text + "\n"
-                            print(f"Page {i+1}: Extracted {len(page_text)} characters")
-                    except Exception as e:
-                        print(f"Error extracting text from page {i+1}: {str(e)}")
-            
-            return extracted_text.strip()
-            
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-                
-    except ImportError:
-        print("pdfplumber not available, trying PyPDF2...")
-    except Exception as e:
-        print(f"pdfplumber extraction failed: {str(e)}")
-    
-    # Fallback to PyPDF2
-    try:
-        import PyPDF2
-        
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-            temp_file.write(pdf_bytes)
-            temp_path = temp_file.name
-        
-        try:
-            extracted_text = ""
-            
-            with open(temp_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                print(f"PDF opened with PyPDF2. Pages: {len(pdf_reader.pages)}")
-                
-                for i, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text:
-                            extracted_text += page_text + "\n"
-                            print(f"Page {i+1}: Extracted {len(page_text)} characters")
-                    except Exception as e:
-                        print(f"PyPDF2 error on page {i+1}: {str(e)}")
-            
-            return extracted_text.strip()
-            
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-                
-    except ImportError:
-        print("PyPDF2 not available")
-    except Exception as e:
-        print(f"PyPDF2 extraction failed: {str(e)}")
-    
-    # If both libraries fail, return an error
-    print("All PDF extraction methods failed")
-    return None
+    # write PDF to disk
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        path = tmp.name
 
+    texts, tables = [], []
+    try:
+        with pdfplumber.open(path) as pdf:
+            for pg_no, page in enumerate(pdf.pages, start=1):
+                # 1) detect tables once
+                table_settings = {
+                    "vertical_strategy": "lines",
+                    "horizontal_strategy": "lines",
+                    "intersection_tolerance": 3
+                }
+                table_objs = list(page.find_tables(table_settings))
+                for tbl in table_objs:
+                    rows = tbl.extract()
+                    tables.append({"page": pg_no, "rows": rows})
+
+                # 2) mask out those table bboxes, then extract the rest
+                bboxes = [tbl.bbox for tbl in table_objs]
+
+                non_table_page = page.filter(
+                    lambda obj: obj["object_type"] != "char" or not any(
+                        x0 <= obj["x0"] <= x1 and top <= obj["top"] <= bottom
+                        for (x0, top, x1, bottom) in bboxes
+                    )
+                )
+                non_table_text = non_table_page.extract_text() or ""
+
+                texts.append({"page": pg_no, "text": non_table_text})
+
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+    return texts, tables
+
+
+def normalize_analysis_for_db(d: dict) -> dict:
+    """Normalize analysis result for database compatibility."""
+    # Ensure required fields exist
+    req = [
+        'companyName','reportDate','reportPeriod','filename',
+        'cashOnHand','monthlyBurnRate','cashOutDate','runway',
+        'budgetVsActual','financialSummary','clinicalProgress','researchDevelopment'
+    ]
+    for k in req:
+        d.setdefault(k, None)
+
+    # Force string-ish fields to strings
+    for k in ['companyName','reportDate','reportPeriod','cashOutDate',
+              'budgetVsActual','financialSummary','clinicalProgress','researchDevelopment','filename']:
+        if d[k] is not None and not isinstance(d[k], str):
+            d[k] = str(d[k])
+
+    # Force numeric fields to None or number
+    for k in ['cashOnHand','monthlyBurnRate','runway']:
+        v = d[k]
+        if isinstance(v, (int, float)) or v is None:
+            continue
+        # Try to coerce strings like "3.1e6" or "$3.1M"
+        try:
+            d[k] = float(str(v).replace(',', '').replace('$','').lower().replace('m','e6').replace('k','e3'))
+        except Exception:
+            d[k] = None
+
+    return d
 
 def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
     """
@@ -261,8 +210,21 @@ def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_overrid
         # Decode base64 PDF
         pdf_bytes = base64.b64decode(pdf_data)
         
-        # Extract text from PDF
-        extracted_text = extract_pdf_text_optimized(pdf_bytes, filename)
+        # Extract text and tables from PDF
+        texts, tables = extract_text_and_tables(pdf_bytes, filename)
+
+        # flatten prose
+        prose = "\n\n".join(p["text"] for p in texts)
+
+        # flatten tables into a simple text block
+        table_str = ""
+        for t in tables:
+            table_str += f"Table on page {t['page']}:\n"
+            for row in t["rows"]:
+                table_str += "\t".join((cell or "") for cell in row) + "\n"
+            table_str += "\n"
+
+        extracted_text = prose + "\n\n" + table_str
         
         if not extracted_text:
             return {
@@ -307,16 +269,20 @@ def analyze_with_openai(text, filename, company_name_override: str = None):
         
         print(f"Starting analysis of {filename} with {len(text)} characters...")
         
-        # Enhanced system prompt for better financial analysis accuracy
+        # Enhanced system prompt for database-compatible numeric extraction
         system_prompt = """You are an expert financial analyst specializing in biotech, healthcare, and technology companies. You have extensive experience analyzing financial statements, board presentations, and investor materials.
 
-Your task is to analyze the provided PDF document and extract information in two distinct styles:
+CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
-METRICS (Be extremely concise - output numbers only, no explanations):
-1. Cash Position: Current cash, cash equivalents, short-term investments
-2. Burn Rate: Monthly cash consumption
-3. Runway: Simple duration or end date
-4. Basic Performance: Revenue, margins, key ratios
+NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
+1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
+2. monthlyBurnRate: Return raw number in USD per month (e.g., 1200000 for $1.2M/month)  
+3. runway: Return integer months only (e.g., 18 for 18 months)
+
+TEXT FIELDS (Return formatted strings):
+1. cashOutDate: Readable date (e.g., "April 2025")
+2. budgetVsActual: Key variance summary
+3. Financial/Clinical/R&D: Detailed analysis paragraphs
 
 DETAILED ANALYSIS (Provide comprehensive 5-6 sentence analysis with specific details):
 1. Financial Summary: Analyze trends in revenue, profitability, operational efficiency, and capital allocation. Include quarter-over-quarter or year-over-year comparisons. Highlight significant changes in business metrics, cost structure, or financial strategy. Reference specific numbers and percentages.
@@ -328,22 +294,24 @@ DETAILED ANALYSIS (Provide comprehensive 5-6 sentence analysis with specific det
 Return your response as a JSON object with exactly these fields:
 {
   "companyName": "Company name only",
-  "reportDate": "YYYY-MM-DD format only",
+  "reportDate": "YYYY-MM-DD format only", 
   "reportPeriod": "Q1 2025 or 2024 Annual Report format only",
-  "cashOnHand": "Amount with currency only (e.g., '$3.1M')",
-  "monthlyBurnRate": "Amount per month only (e.g., '$1.2M')",
-  "cashOutDate": "Date only (e.g., 'April 2025')",
-  "runway": "Duration or date only (e.g., '18 months')",
-  "budgetVsActual": "Key variance metrics only",
+  "cashOnHand": 3100000,
+  "monthlyBurnRate": 1200000,
+  "cashOutDate": "April 2025",
+  "runway": 18,
+  "budgetVsActual": "Key variance metrics summary",
   "financialSummary": "Detailed 5-6 sentence analysis",
-  "clinicalProgress": "Detailed 5-6 sentence analysis",
+  "clinicalProgress": "Detailed 5-6 sentence analysis", 
   "researchDevelopment": "Detailed 5-6 sentence analysis"
 }
 
-Do your analysis and reasoning internally, but in the output:
-- For metric fields: Return ONLY the values, no explanations
-- For detailed fields: Provide comprehensive multi-sentence analysis with specific details
-- Use 'N/A' for unavailable information"""
+EXAMPLES:
+- If document shows "$3.1M cash" → cashOnHand: 3100000
+- If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
+- If document shows "18 month runway" → runway: 18
+
+CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields."""
 
         # User prompt with the full document
         user_prompt = f"Analyze this financial document:\n\nFilename: {filename}\n\nContent:\n{text}"
@@ -387,23 +355,14 @@ Do your analysis and reasoning internally, but in the output:
             # Parse JSON
             analysis_result = json.loads(clean_content)
             
-            # Ensure all required fields exist
-            required_fields = [
-                'companyName', 'reportDate', 'reportPeriod', 'filename',
-                'cashOnHand', 'monthlyBurnRate', 'cashOutDate', 'runway', 
-                'budgetVsActual', 'financialSummary', 'clinicalProgress', 'researchDevelopment'
-            ]
-            
-            # Add filename and fill missing fields
+            # Add filename and override company name if provided
             analysis_result['filename'] = filename
-            for field in required_fields:
-                if field not in analysis_result:
-                    analysis_result[field] = 'N/A'
-            
-            # Override company name if provided
             if company_name_override:
                 analysis_result['companyName'] = company_name_override
                 print(f"Overrode company name to: {company_name_override}")
+
+            # Normalize for database compatibility
+            analysis_result = normalize_analysis_for_db(analysis_result)
             
             print(f"Successfully parsed JSON response for {analysis_result.get('companyName', filename)}")
             return analysis_result
@@ -414,20 +373,21 @@ Do your analysis and reasoning internally, but in the output:
             
             # Return fallback response with the raw content
             fallback_company_name = company_name_override if company_name_override else filename.replace('.pdf', '')
-            return {
+            fallback_result = {
                 'companyName': fallback_company_name,
                 'reportDate': datetime.now().strftime('%Y-%m-%d'),
                 'reportPeriod': 'Analysis Period',
                 'filename': filename,
-                'cashOnHand': 'Analysis failed',
-                'monthlyBurnRate': 'Analysis failed',
+                'cashOnHand': None,
+                'monthlyBurnRate': None,
                 'cashOutDate': 'N/A',
-                'runway': 'N/A',
+                'runway': None,
                 'budgetVsActual': 'N/A',
                 'financialSummary': f'JSON parsing failed. Raw response: {content[:1000]}',
                 'clinicalProgress': 'Analysis not available',
                 'researchDevelopment': 'Analysis not available'
             }
+            return normalize_analysis_for_db(fallback_result)
         
     except Exception as e:
         error_msg = f"OpenAI analysis failed: {str(e)}"
@@ -451,17 +411,18 @@ def create_fallback_response(filename, text, error_msg):
                 company_name = line.strip()
                 break
     
-    return {
+    fallback_result = {
         'companyName': company_name,
         'reportDate': datetime.now().strftime('%Y-%m-%d'),
         'reportPeriod': 'Analysis Period',
         'filename': filename,
-        'cashOnHand': 'Analysis unavailable',
-        'monthlyBurnRate': 'Analysis unavailable',
+        'cashOnHand': None,
+        'monthlyBurnRate': None,
         'cashOutDate': 'N/A',
-        'runway': 'N/A',
+        'runway': None,
         'budgetVsActual': 'N/A',
         'financialSummary': f'Text extraction successful ({len(text)} characters), but AI analysis failed: {error_msg}',
         'clinicalProgress': 'Analysis not available due to API issues',
         'researchDevelopment': 'Analysis not available due to API issues'
-    } 
+    }
+    return normalize_analysis_for_db(fallback_result) 
