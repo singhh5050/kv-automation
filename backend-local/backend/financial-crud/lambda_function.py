@@ -68,6 +68,16 @@ def lambda_handler(event, context):
         result = save_cap_table_round(db_config, body)
     elif operation == "get_company_overview":
         result = get_company_overview(db_config, body.get("company_id"))
+    elif operation == "update_financial_metrics":
+        result = update_financial_metrics(db_config, body)
+    elif operation == "update_company":
+        result = update_company(db_config, body)
+    elif operation == "update_cap_table_round":
+        result = update_cap_table_round(db_config, body)
+    elif operation == "update_cap_table_investor":
+        result = update_cap_table_investor(db_config, body)
+    elif operation == "get_all_company_data":
+        result = get_all_company_data(db_config, body.get("company_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -153,6 +163,145 @@ def test_database_connection(db_config: Dict) -> Dict[str, Any]:
             'error': f'Connection test failed: {str(e)}'
         }
 
+def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update specific financial metrics for a report.
+    Expected data format:
+    {
+        "report_id": 123,
+        "updates": {
+            "cash_on_hand": 2500000,
+            "monthly_burn_rate": 180000,
+            "runway": 14
+        }
+    }
+    """
+    
+    if not data.get("report_id"):
+        return {
+            'success': False,
+            'error': 'report_id is required'
+        }
+    
+    updates = data.get("updates", {})
+    if not updates:
+        return {
+            'success': False,
+            'error': 'updates are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Verify report exists
+        cursor.execute("SELECT id, company_id FROM financial_reports WHERE id = %s", [data['report_id']])
+        report_row = cursor.fetchone()
+        
+        if not report_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Report not found'
+            }
+        
+        report_id, company_id = report_row
+        
+        # Build dynamic update query
+        set_clauses = []
+        params = []
+        
+        for field, value in updates.items():
+            if field in ['cash_on_hand', 'monthly_burn_rate']:
+                set_clauses.append(f"{field} = %s")
+                params.append(float(value) if value is not None else None)
+            elif field == 'runway':
+                set_clauses.append("runway = %s")
+                params.append(int(value) if value is not None else None)
+            elif field in ['cash_out_date', 'budget_vs_actual', 'financial_summary', 'clinical_progress', 'research_development']:
+                set_clauses.append(f"{field} = %s")
+                params.append(str(value) if value is not None else None)
+        
+        if not set_clauses:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'No valid fields to update'
+            }
+        
+        # Add manually_edited flag and timestamp
+        set_clauses.append("manually_edited = %s")
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(True)
+        params.append(report_id)
+        
+        update_query = f"UPDATE financial_reports SET {', '.join(set_clauses)} WHERE id = %s"
+        cursor.execute(update_query, params)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'report_id': report_id,
+                'company_id': company_id,
+                'updated_fields': list(updates.keys()),
+                'manually_edited': True
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update financial metrics: {str(e)}'
+        }
+
+def parse_financial_value(value: str) -> float:
+    """
+    Parse financial values from text to numbers.
+    Handles formats like "$2.5M", "2500000", "N/A", etc.
+    """
+    if not value or value.upper() in ['N/A', 'UNKNOWN', '']:
+        return None
+    
+    # Remove common prefixes/suffixes and convert
+    clean_value = value.replace('$', '').replace(',', '').strip().upper()
+    
+    try:
+        # Handle million/thousand suffixes
+        if clean_value.endswith('M'):
+            return float(clean_value[:-1]) * 1000000
+        elif clean_value.endswith('K'):
+            return float(clean_value[:-1]) * 1000
+        else:
+            return float(clean_value)
+    except ValueError:
+        return None
+
+def parse_runway_value(value: str) -> int:
+    """
+    Parse runway values from text to months.
+    Handles formats like "14 months", "14", "N/A", etc.
+    """
+    if not value or value.upper() in ['N/A', 'UNKNOWN', '']:
+        return None
+    
+    # Extract numeric part
+    clean_value = value.replace('months', '').replace('month', '').strip()
+    
+    try:
+        return int(float(clean_value))
+    except ValueError:
+        return None
+
 def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
     """
     Save a financial report to the database
@@ -181,12 +330,12 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         # Insert company if it doesn't exist
         company_insert = """
-            INSERT INTO companies (name, normalized_name, created_at, updated_at)
-            VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (normalized_name) DO NOTHING
         """
         
-        cursor.execute(company_insert, [data['companyName'], normalized_name])
+        cursor.execute(company_insert, [data['companyName'], normalized_name, False, "system_import"])
         
         # Get company ID
         cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
@@ -219,9 +368,11 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
                 company_id, file_name, report_date, report_period,
                 cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
                 financial_summary, clinical_progress, research_development,
+                manually_edited, edited_by, edited_at,
                 upload_date, processed_at, processing_status
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'completed'
             )
         """
@@ -231,14 +382,16 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
             data['filename'],
             report_date,
             data['reportPeriod'],
-            data.get('cashOnHand', 'N/A'),
-            data.get('monthlyBurnRate', 'N/A'),
-            data.get('cashOutDate', 'N/A'),
-            data.get('runway', 'N/A'),
-            data.get('budgetVsActual', 'N/A'),
-            data.get('financialSummary', 'Financial summary not available'),
-            data.get('clinicalProgress', 'Clinical progress not available'),
-            data.get('researchDevelopment', 'R&D information not available')
+            parse_financial_value(data.get('cashOnHand')),
+            parse_financial_value(data.get('monthlyBurnRate')),
+            data.get('cashOutDate'),
+            parse_runway_value(data.get('runway')),
+            data.get('budgetVsActual'),
+            data.get('financialSummary'),
+            data.get('clinicalProgress'),
+            data.get('researchDevelopment'),
+            False,  # manually_edited
+            "system_import"  # edited_by (edited_at will be set to CURRENT_TIMESTAMP)
         ]
         
         cursor.execute(report_insert, report_data)
@@ -354,7 +507,7 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
                    fr.cash_on_hand, fr.monthly_burn_rate, fr.cash_out_date,
                    fr.runway, fr.budget_vs_actual, fr.financial_summary,
                    fr.clinical_progress, fr.research_development, fr.processed_at,
-                   c.name as company_name
+                   fr.manually_edited, c.name as company_name
             FROM financial_reports fr
             JOIN companies c ON fr.company_id = c.id
             WHERE fr.company_id = %s
@@ -373,22 +526,23 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         for row in reports:
             if not company_name:
-                company_name = row[13]  # Updated index for company_name
+                company_name = row[14]  # Updated index for company_name
                 
             report_list.append({
                 'id': row[0],
                 'file_name': row[1],
                 'report_date': row[2].isoformat() if row[2] else None,
                 'report_period': row[3],
-                'cash_on_hand': row[4],
-                'monthly_burn_rate': row[5],
+                'cash_on_hand': float(row[4]) if row[4] is not None else None,
+                'monthly_burn_rate': float(row[5]) if row[5] is not None else None,
                 'cash_out_date': row[6],
-                'runway': row[7],
+                'runway': int(row[7]) if row[7] is not None else None,
                 'budget_vs_actual': row[8],
                 'financial_summary': row[9],
                 'clinical_progress': row[10],
                 'research_development': row[11],
-                'processed_at': row[12].isoformat() if row[12] else None
+                'processed_at': row[12].isoformat() if row[12] else None,
+                'manually_edited': row[13] if row[13] is not None else False
             })
         
         return {
@@ -687,12 +841,12 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         # Insert company if it doesn't exist
         company_insert = """
-            INSERT INTO companies (name, normalized_name, created_at, updated_at)
-            VALUES (%s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (normalized_name) DO NOTHING
         """
         
-        cursor.execute(company_insert, [data['company_name'], normalized_name])
+        cursor.execute(company_insert, [data['company_name'], normalized_name, False, "system_import"])
         
         # Get company ID
         cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
@@ -721,14 +875,17 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
         round_insert = """
             INSERT INTO cap_table_rounds (
                 company_id, round_name, valuation, amount_raised, round_date,
-                total_pool_size, pool_available, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (company_id, round_name) DO UPDATE SET
                 valuation = EXCLUDED.valuation,
                 amount_raised = EXCLUDED.amount_raised,
                 round_date = EXCLUDED.round_date,
                 total_pool_size = EXCLUDED.total_pool_size,
                 pool_available = EXCLUDED.pool_available,
+                manually_edited = EXCLUDED.manually_edited,
+                edited_by = EXCLUDED.edited_by,
+                edited_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
         """
@@ -740,7 +897,9 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             round_data.get('amount_raised'),
             round_date,
             round_data.get('total_pool_size'),
-            round_data.get('pool_available')
+            round_data.get('pool_available'),
+            False,  # manually_edited
+            "system_import"  # edited_by
         ]
         
         cursor.execute(round_insert, round_params)
@@ -757,8 +916,8 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             investor_insert = """
                 INSERT INTO cap_table_investors (
                     cap_table_round_id, investor_name, total_invested, 
-                    final_fds, final_round_investment, created_at
-                ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    final_fds, final_round_investment, manually_edited, edited_by, edited_at, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
             
             for investor in investors:
@@ -767,7 +926,9 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
                     investor.get('investor_name'),
                     investor.get('total_invested'),
                     investor.get('final_fds'),
-                    investor.get('final_round_investment')
+                    investor.get('final_round_investment'),
+                    False,  # manually_edited
+                    "system_import"  # edited_by
                 ]
                 cursor.execute(investor_insert, investor_params)
         
@@ -916,7 +1077,7 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
             SELECT id, file_name, report_date, report_period, cash_on_hand,
                    monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
                    financial_summary, clinical_progress, research_development,
-                   processed_at
+                   processed_at, manually_edited
             FROM financial_reports
             WHERE company_id = %s
             ORDER BY report_date DESC, processed_at DESC
@@ -929,15 +1090,16 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'file_name': report_row[1],
                 'report_date': report_row[2].isoformat() if report_row[2] else None,
                 'report_period': report_row[3],
-                'cash_on_hand': report_row[4],
-                'monthly_burn_rate': report_row[5],
+                'cash_on_hand': float(report_row[4]) if report_row[4] is not None else None,
+                'monthly_burn_rate': float(report_row[5]) if report_row[5] is not None else None,
                 'cash_out_date': report_row[6],
-                'runway': report_row[7],
+                'runway': int(report_row[7]) if report_row[7] is not None else None,
                 'budget_vs_actual': report_row[8],
                 'financial_summary': report_row[9],
                 'clinical_progress': report_row[10],
                 'research_development': report_row[11],
-                'processed_at': report_row[12].isoformat() if report_row[12] else None
+                'processed_at': report_row[12].isoformat() if report_row[12] else None,
+                'manually_edited': bool(report_row[13]) if report_row[13] is not None else False
             })
         
         cursor.close()
@@ -961,6 +1123,493 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to get company overview: {str(e)}'
+        }
+
+def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update company information.
+    Expected data format:
+    {
+        "company_id": 123,
+        "updates": {
+            "name": "New Company Name",
+            "normalized_name": "newcompanyname"
+        }
+    }
+    """
+    
+    if not data.get("company_id"):
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    updates = data.get("updates", {})
+    if not updates:
+        return {
+            'success': False,
+            'error': 'updates are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Verify company exists
+        cursor.execute("SELECT id, name FROM companies WHERE id = %s", [data['company_id']])
+        company_row = cursor.fetchone()
+        
+        if not company_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Company not found'
+            }
+        
+        company_id, original_name = company_row
+        
+        # Build dynamic update query
+        set_clauses = []
+        params = []
+        
+        allowed_fields = ['name', 'normalized_name']
+        for field, value in updates.items():
+            if field in allowed_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(str(value) if value is not None else None)
+        
+        if not set_clauses:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'No valid fields to update'
+            }
+        
+        # Add audit fields
+        set_clauses.extend([
+            "manually_edited = %s",
+            "edited_by = %s", 
+            "edited_at = CURRENT_TIMESTAMP",
+            "updated_at = CURRENT_TIMESTAMP"
+        ])
+        params.extend([True, "system", company_id])
+        
+        update_query = f"UPDATE companies SET {', '.join(set_clauses)} WHERE id = %s"
+        cursor.execute(update_query, params)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'company_id': company_id,
+                'original_name': original_name,
+                'updated_fields': list(updates.keys()),
+                'manually_edited': True
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update company: {str(e)}'
+        }
+
+def update_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update cap table round information.
+    Expected data format:
+    {
+        "round_id": 123,
+        "updates": {
+            "valuation": 50000000,
+            "amount_raised": 10000000,
+            "round_date": "2025-01-15"
+        }
+    }
+    """
+    
+    if not data.get("round_id"):
+        return {
+            'success': False,
+            'error': 'round_id is required'
+        }
+    
+    updates = data.get("updates", {})
+    if not updates:
+        return {
+            'success': False,
+            'error': 'updates are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Verify round exists
+        cursor.execute("SELECT id, company_id, round_name FROM cap_table_rounds WHERE id = %s", [data['round_id']])
+        round_row = cursor.fetchone()
+        
+        if not round_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Cap table round not found'
+            }
+        
+        round_id, company_id, round_name = round_row
+        
+        # Build dynamic update query
+        set_clauses = []
+        params = []
+        
+        numeric_fields = ['valuation', 'amount_raised', 'total_pool_size', 'pool_available']
+        text_fields = ['round_name']
+        date_fields = ['round_date']
+        
+        for field, value in updates.items():
+            if field in numeric_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(float(value) if value is not None else None)
+            elif field in text_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(str(value) if value is not None else None)
+            elif field in date_fields:
+                set_clauses.append(f"{field} = %s")
+                if value:
+                    try:
+                        date_obj = datetime.strptime(str(value), '%Y-%m-%d').date()
+                        params.append(date_obj)
+                    except ValueError:
+                        params.append(None)
+                else:
+                    params.append(None)
+        
+        if not set_clauses:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'No valid fields to update'
+            }
+        
+        # Add audit fields
+        set_clauses.extend([
+            "manually_edited = %s",
+            "edited_by = %s",
+            "edited_at = CURRENT_TIMESTAMP", 
+            "updated_at = CURRENT_TIMESTAMP"
+        ])
+        params.extend([True, "system", round_id])
+        
+        update_query = f"UPDATE cap_table_rounds SET {', '.join(set_clauses)} WHERE id = %s"
+        cursor.execute(update_query, params)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'round_id': round_id,
+                'company_id': company_id,
+                'round_name': round_name,
+                'updated_fields': list(updates.keys()),
+                'manually_edited': True
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update cap table round: {str(e)}'
+        }
+
+def update_cap_table_investor(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update cap table investor information.
+    Expected data format:
+    {
+        "investor_id": 123,
+        "updates": {
+            "total_invested": 5000000,
+            "final_fds": 0.2,
+            "final_round_investment": 2000000
+        }
+    }
+    """
+    
+    if not data.get("investor_id"):
+        return {
+            'success': False,
+            'error': 'investor_id is required'
+        }
+    
+    updates = data.get("updates", {})
+    if not updates:
+        return {
+            'success': False,
+            'error': 'updates are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Verify investor exists
+        cursor.execute("SELECT id, cap_table_round_id, investor_name FROM cap_table_investors WHERE id = %s", [data['investor_id']])
+        investor_row = cursor.fetchone()
+        
+        if not investor_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Investor not found'
+            }
+        
+        investor_id, round_id, investor_name = investor_row
+        
+        # Build dynamic update query
+        set_clauses = []
+        params = []
+        
+        numeric_fields = ['total_invested', 'final_round_investment']
+        percentage_fields = ['final_fds']
+        text_fields = ['investor_name']
+        
+        for field, value in updates.items():
+            if field in numeric_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(float(value) if value is not None else None)
+            elif field in percentage_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(float(value) if value is not None else None)
+            elif field in text_fields:
+                set_clauses.append(f"{field} = %s")
+                params.append(str(value) if value is not None else None)
+        
+        if not set_clauses:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'No valid fields to update'
+            }
+        
+        # Add audit fields
+        set_clauses.extend([
+            "manually_edited = %s",
+            "edited_by = %s",
+            "edited_at = CURRENT_TIMESTAMP"
+        ])
+        params.extend([True, "system", investor_id])
+        
+        update_query = f"UPDATE cap_table_investors SET {', '.join(set_clauses)} WHERE id = %s"
+        cursor.execute(update_query, params)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'investor_id': investor_id,
+                'round_id': round_id,
+                'investor_name': investor_name,
+                'updated_fields': list(updates.keys()),
+                'manually_edited': True
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update investor: {str(e)}'
+        }
+
+def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
+    """
+    Get all database data for a company for comprehensive editing view.
+    Returns raw database records with full field information.
+    """
+    
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Get company data
+        cursor.execute("""
+            SELECT id, name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at
+            FROM companies 
+            WHERE id = %s
+        """, [company_id])
+        
+        company_row = cursor.fetchone()
+        if not company_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Company not found'
+            }
+        
+        company_data = {
+            'id': company_row[0],
+            'name': company_row[1], 
+            'normalized_name': company_row[2],
+            'manually_edited': company_row[3],
+            'edited_by': company_row[4],
+            'edited_at': company_row[5].isoformat() if company_row[5] else None,
+            'created_at': company_row[6].isoformat() if company_row[6] else None,
+            'updated_at': company_row[7].isoformat() if company_row[7] else None
+        }
+        
+        # Get all financial reports (not just latest)
+        cursor.execute("""
+            SELECT id, file_name, report_date, report_period, cash_on_hand,
+                   monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
+                   financial_summary, clinical_progress, research_development,
+                   manually_edited, edited_by, edited_at, upload_date, processed_at, processing_status
+            FROM financial_reports
+            WHERE company_id = %s
+            ORDER BY report_date DESC, processed_at DESC
+        """, [company_id])
+        
+        financial_reports = []
+        for report_row in cursor.fetchall():
+            financial_reports.append({
+                'id': report_row[0],
+                'file_name': report_row[1],
+                'report_date': report_row[2].isoformat() if report_row[2] else None,
+                'report_period': report_row[3],
+                'cash_on_hand': float(report_row[4]) if report_row[4] is not None else None,
+                'monthly_burn_rate': float(report_row[5]) if report_row[5] is not None else None,
+                'cash_out_date': report_row[6],
+                'runway': int(report_row[7]) if report_row[7] is not None else None,
+                'budget_vs_actual': report_row[8],
+                'financial_summary': report_row[9],
+                'clinical_progress': report_row[10],
+                'research_development': report_row[11],
+                'manually_edited': bool(report_row[12]) if report_row[12] is not None else False,
+                'edited_by': report_row[13],
+                'edited_at': report_row[14].isoformat() if report_row[14] else None,
+                'upload_date': report_row[15].isoformat() if report_row[15] else None,
+                'processed_at': report_row[16].isoformat() if report_row[16] else None,
+                'processing_status': report_row[17]
+            })
+        
+        # Get cap table rounds
+        cap_table_rounds = []
+        try:
+            cursor.execute("""
+                SELECT id, round_name, valuation, amount_raised, round_date,
+                       total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+                FROM cap_table_rounds
+                WHERE company_id = %s
+                ORDER BY round_date DESC, created_at DESC
+            """, [company_id])
+            
+            for round_row in cursor.fetchall():
+                cap_table_rounds.append({
+                    'id': round_row[0],
+                    'round_name': round_row[1],
+                    'valuation': float(round_row[2]) if round_row[2] is not None else None,
+                    'amount_raised': float(round_row[3]) if round_row[3] is not None else None,
+                    'round_date': round_row[4].isoformat() if round_row[4] else None,
+                    'total_pool_size': float(round_row[5]) if round_row[5] is not None else None,
+                    'pool_available': float(round_row[6]) if round_row[6] is not None else None,
+                    'manually_edited': bool(round_row[7]) if round_row[7] is not None else False,
+                    'edited_by': round_row[8],
+                    'edited_at': round_row[9].isoformat() if round_row[9] else None,
+                    'created_at': round_row[10].isoformat() if round_row[10] else None,
+                    'updated_at': round_row[11].isoformat() if round_row[11] else None
+                })
+        except Exception as e:
+            print(f"Warning: Could not fetch cap table rounds: {str(e)}")
+        
+        # Get cap table investors for all rounds
+        cap_table_investors = []
+        if cap_table_rounds:
+            round_ids = [r['id'] for r in cap_table_rounds]
+            placeholders = ','.join(['%s'] * len(round_ids))
+            
+            try:
+                cursor.execute(f"""
+                    SELECT id, cap_table_round_id, investor_name, total_invested, final_fds,
+                           final_round_investment, manually_edited, edited_by, edited_at, created_at
+                    FROM cap_table_investors
+                    WHERE cap_table_round_id IN ({placeholders})
+                    ORDER BY total_invested DESC
+                """, round_ids)
+                
+                for investor_row in cursor.fetchall():
+                    cap_table_investors.append({
+                        'id': investor_row[0],
+                        'cap_table_round_id': investor_row[1],
+                        'investor_name': investor_row[2],
+                        'total_invested': float(investor_row[3]) if investor_row[3] is not None else None,
+                        'final_fds': float(investor_row[4]) if investor_row[4] is not None else None,
+                        'final_round_investment': float(investor_row[5]) if investor_row[5] is not None else None,
+                        'manually_edited': bool(investor_row[6]) if investor_row[6] is not None else False,
+                        'edited_by': investor_row[7],
+                        'edited_at': investor_row[8].isoformat() if investor_row[8] else None,
+                        'created_at': investor_row[9].isoformat() if investor_row[9] else None
+                    })
+            except Exception as e:
+                print(f"Warning: Could not fetch cap table investors: {str(e)}")
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'company': company_data,
+                'financial_reports': financial_reports,
+                'cap_table_rounds': cap_table_rounds,
+                'cap_table_investors': cap_table_investors,
+                'summary': {
+                    'financial_reports_count': len(financial_reports),
+                    'cap_table_rounds_count': len(cap_table_rounds),
+                    'cap_table_investors_count': len(cap_table_investors)
+                }
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get all company data: {str(e)}'
         }
 
 def normalize_company_name(name: str) -> str:

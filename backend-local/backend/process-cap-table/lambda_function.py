@@ -249,32 +249,35 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         cur = conn.cursor()
 
         norm_name = normalize_company_name(data["company_name"])
-        cur.execute("""INSERT INTO companies (name, normalized_name, created_at, updated_at)
-                        VALUES (%s,%s,NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name])
+        cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, False, "system_import"])
         cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
         company_id = cur.fetchone()[0]
 
         cur.execute(
             """INSERT INTO cap_table_rounds (company_id, round_name, valuation, amount_raised, round_date,
-               total_pool_size, pool_available, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
+               total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW(),NOW())
                ON CONFLICT (company_id, round_name) DO UPDATE SET
                     valuation=EXCLUDED.valuation,
                     amount_raised=EXCLUDED.amount_raised,
                     round_date=EXCLUDED.round_date,
                     total_pool_size=EXCLUDED.total_pool_size,
                     pool_available=EXCLUDED.pool_available,
+                    manually_edited=EXCLUDED.manually_edited,
+                    edited_by=EXCLUDED.edited_by,
+                    edited_at=NOW(),
                     updated_at=NOW() RETURNING id""",
-            [company_id, round_data["round_name"], round_data.get("valuation"), round_data.get("amount_raised"), round_data.get("round_date"), round_data.get("total_pool_size"), round_data.get("pool_available")],
+            [company_id, round_data["round_name"], round_data.get("valuation"), round_data.get("amount_raised"), round_data.get("round_date"), round_data.get("total_pool_size"), round_data.get("pool_available"), False, "system_import"],
         )
         round_id = cur.fetchone()[0]
 
         # refresh investors
         cur.execute("DELETE FROM cap_table_investors WHERE cap_table_round_id=%s", [round_id])
-        inv_insert = """INSERT INTO cap_table_investors (cap_table_round_id, investor_name, total_invested, final_fds, final_round_investment, created_at)
-                        VALUES (%s,%s,%s,%s,%s,NOW())"""
+        inv_insert = """INSERT INTO cap_table_investors (cap_table_round_id, investor_name, total_invested, final_fds, final_round_investment, manually_edited, edited_by, edited_at, created_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"""
         for inv in data.get("investors", []):
-            cur.execute(inv_insert, [round_id, inv["investor_name"], inv["total_invested"], inv["final_fds"], inv["final_round_investment"]])
+            cur.execute(inv_insert, [round_id, inv["investor_name"], inv["total_invested"], inv["final_fds"], inv["final_round_investment"], False, "system_import"])
 
         cur.execute("""INSERT INTO cap_table_current (company_id, cap_table_round_id, updated_at)
                         VALUES (%s,%s,NOW()) ON CONFLICT (company_id) DO UPDATE SET cap_table_round_id=EXCLUDED.cap_table_round_id, updated_at=NOW()""", [company_id, round_id])
