@@ -258,7 +258,7 @@ export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filenam
 export async function getCompetitiveLandscape(financialData: any) {
   // This would need to be implemented as a separate Lambda function if needed
   return { error: 'Competitive landscape analysis not yet implemented in Lambda backend' }
-}
+} 
 
 /**
  * Update financial metrics for a specific report

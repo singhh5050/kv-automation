@@ -164,8 +164,8 @@ def extract_text_and_tables(pdf_bytes: bytes, filename: str):
                 non_table_text = non_table_page.extract_text() or ""
 
                 texts.append({"page": pg_no, "text": non_table_text})
-
-    finally:
+            
+        finally:
         if os.path.exists(path):
             os.unlink(path)
 
@@ -294,7 +294,7 @@ DETAILED ANALYSIS (Provide comprehensive 5-6 sentence analysis with specific det
 Return your response as a JSON object with exactly these fields:
 {
   "companyName": "Company name only",
-  "reportDate": "YYYY-MM-DD format only", 
+  "reportDate": "YYYY-MM-DD format only",
   "reportPeriod": "Q1 2025 or 2024 Annual Report format only",
   "cashOnHand": 3100000,
   "monthlyBurnRate": 1200000,
@@ -302,7 +302,7 @@ Return your response as a JSON object with exactly these fields:
   "runway": 18,
   "budgetVsActual": "Key variance metrics summary",
   "financialSummary": "Detailed 5-6 sentence analysis",
-  "clinicalProgress": "Detailed 5-6 sentence analysis", 
+  "clinicalProgress": "Detailed 5-6 sentence analysis",
   "researchDevelopment": "Detailed 5-6 sentence analysis"
 }
 
@@ -424,5 +424,5 @@ def create_fallback_response(filename, text, error_msg):
         'financialSummary': f'Text extraction successful ({len(text)} characters), but AI analysis failed: {error_msg}',
         'clinicalProgress': 'Analysis not available due to API issues',
         'researchDevelopment': 'Analysis not available due to API issues'
-    }
+    } 
     return normalize_analysis_for_db(fallback_result) 

@@ -33,6 +33,7 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
   }
 
   console.log('Raw reports data:', reports)
+  console.log('Reports length:', reports?.length || 0)
 
   // Extract cash amounts and dates from reports with better error handling
   const chartData = reports
@@ -49,11 +50,11 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
       return cashValue && 
              cashValue !== 'N/A' && 
              cashValue !== '' && 
-             typeof cashValue === 'string' &&
-             cashValue.match(/\d/)
+             (typeof cashValue === 'string' || typeof cashValue === 'number') &&
+             String(cashValue).match(/\d/)
     })
     .map(report => {
-      const cashStr = (report as any).cash_on_hand || '0'
+      const cashStr = String((report as any).cash_on_hand || '0')
       const dateStr = (report as any).report_date || (report as any).reportDate
       
       // Parse cash amount more robustly
@@ -387,14 +388,14 @@ export default function CompanyDetailPage() {
               Key Metrics
             </button>
             <button
-              onClick={() => setActiveTab('reports')}
+              onClick={() => setActiveTab('overview')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'reports'
+                activeTab === 'overview'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Financial Reports ({company.financial_reports.length})
+              Financial Overview
             </button>
             <button
               onClick={() => setActiveTab('captable')}
@@ -405,6 +406,16 @@ export default function CompanyDetailPage() {
               }`}
             >
               Cap Table
+            </button>
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'reports'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Financial Reports ({company.financial_reports.length})
             </button>
             <button
               onClick={() => setActiveTab('database')}
@@ -509,18 +520,18 @@ export default function CompanyDetailPage() {
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <h4 className="font-medium text-gray-900 mb-2">Financial Overview</h4>
                         <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
-                          {(latestReport as any).financial_summary}
+                          {(latestReport as any).financial_summary || 'No financial summary available'}
                         </p>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-gray-50 p-4 rounded-lg">
                           <p className="text-sm font-medium text-gray-500">Budget vs Actual</p>
-                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).budget_vs_actual}</p>
+                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).budget_vs_actual || 'N/A'}</p>
                         </div>
                         <div className="bg-gray-50 p-4 rounded-lg">
                           <p className="text-sm font-medium text-gray-500">Report Period</p>
-                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).report_period}</p>
+                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).report_period || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
@@ -568,7 +579,7 @@ export default function CompanyDetailPage() {
               </div>
             )}
 
-            {activeTab === 'cap-table' && (
+            {activeTab === 'captable' && (
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6 border-b border-gray-200">
                   <h3 className="text-xl font-semibold text-gray-900 mb-1">Cap Table</h3>
@@ -631,7 +642,7 @@ export default function CompanyDetailPage() {
               </div>
             )}
 
-            {activeTab === 'documents' && (
+            {activeTab === 'reports' && (
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6 border-b border-gray-200">
                   <h3 className="text-xl font-semibold text-gray-900 mb-1">Financial Documents</h3>
