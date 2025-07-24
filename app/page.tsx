@@ -115,8 +115,12 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
           runway: report.runway || 'N/A',
           budgetVsActual: report.budget_vs_actual || 'N/A',
           financialSummary: report.financial_summary || 'Financial summary not available',
-          clinicalProgress: report.clinical_progress || 'Clinical progress information not available',
-          researchDevelopment: report.research_development || 'R&D information not available',
+          sectorHighlightA: report.sector_highlight_a || 'Sector analysis not available',
+          sectorHighlightB: report.sector_highlight_b || 'Sector analysis not available',
+          keyRisks: report.key_risks || 'N/A',
+          personnelUpdates: report.personnel_updates || 'N/A',
+          nextMilestones: report.next_milestones || 'N/A',
+          sector: report.sector || 'healthcare',
           uploadDate: report.processed_at ? new Date(report.processed_at).toLocaleDateString() : new Date().toLocaleDateString(),
         }))
 
@@ -323,8 +327,12 @@ export default function Home() {
               runway: data.runway || 'N/A',
               budgetVsActual: data.budgetVsActual || 'N/A',
               financialSummary: data.financialSummary || 'Financial summary not available',
-              clinicalProgress: data.clinicalProgress || 'Clinical progress information not available',
-              researchDevelopment: data.researchDevelopment || 'R&D information not available'
+              sectorHighlightA: data.sectorHighlightA || 'Sector analysis not available',
+              sectorHighlightB: data.sectorHighlightB || 'Sector analysis not available',
+              keyRisks: data.keyRisks || 'N/A',
+              personnelUpdates: data.personnelUpdates || 'N/A',
+              nextMilestones: data.nextMilestones || 'N/A',
+              sector: data.sector || 'healthcare'
             })
             
             if (saveResult.error) {

@@ -223,7 +223,7 @@ def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
             elif field == 'runway':
                 set_clauses.append("runway = %s")
                 params.append(int(value) if value is not None else None)
-            elif field in ['cash_out_date', 'budget_vs_actual', 'financial_summary', 'clinical_progress', 'research_development']:
+            elif field in ['cash_out_date', 'budget_vs_actual', 'financial_summary', 'sector_highlight_a', 'sector_highlight_b', 'key_risks', 'personnel_updates', 'next_milestones', 'sector']:
                 set_clauses.append(f"{field} = %s")
                 params.append(str(value) if value is not None else None)
         
@@ -365,14 +365,15 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
         # Insert financial report
         report_insert = """
             INSERT INTO financial_reports (
-                company_id, file_name, report_date, report_period,
+                company_id, file_name, report_date, report_period, sector,
                 cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
-                financial_summary, clinical_progress, research_development,
+                financial_summary, sector_highlight_a, sector_highlight_b,
+                key_risks, personnel_updates, next_milestones,
                 manually_edited, edited_by, edited_at,
                 upload_date, processed_at, processing_status
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, CURRENT_TIMESTAMP,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'completed'
             )
         """
@@ -382,14 +383,18 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
             data['filename'],
             report_date,
             data['reportPeriod'],
+            data.get('sector', 'healthcare'),  # Default to healthcare if not provided
             parse_financial_value(data.get('cashOnHand')),
             parse_financial_value(data.get('monthlyBurnRate')),
             data.get('cashOutDate'),
             parse_runway_value(data.get('runway')),
             data.get('budgetVsActual'),
             data.get('financialSummary'),
-            data.get('clinicalProgress'),
-            data.get('researchDevelopment'),
+            data.get('sectorHighlightA'),
+            data.get('sectorHighlightB'),
+            data.get('keyRisks'),
+            data.get('personnelUpdates'),
+            data.get('nextMilestones'),
             False,  # manually_edited
             "system_import"  # edited_by (edited_at will be set to CURRENT_TIMESTAMP)
         ]
