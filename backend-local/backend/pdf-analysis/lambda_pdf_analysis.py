@@ -164,8 +164,7 @@ def extract_text_and_tables(pdf_bytes: bytes, filename: str):
                 non_table_text = non_table_page.extract_text() or ""
 
                 texts.append({"page": pg_no, "text": non_table_text})
-            
-        finally:
+    finally:
         if os.path.exists(path):
             os.unlink(path)
 
@@ -176,16 +175,18 @@ def normalize_analysis_for_db(d: dict) -> dict:
     """Normalize analysis result for database compatibility."""
     # Ensure required fields exist
     req = [
-        'companyName','reportDate','reportPeriod','filename',
+        'companyName','reportDate','reportPeriod','filename','sector',
         'cashOnHand','monthlyBurnRate','cashOutDate','runway',
-        'budgetVsActual','financialSummary','clinicalProgress','researchDevelopment'
+        'budgetVsActual','financialSummary','sectorHighlightA','sectorHighlightB',
+        'keyRisks','personnelUpdates','nextMilestones'
     ]
     for k in req:
         d.setdefault(k, None)
 
     # Force string-ish fields to strings
-    for k in ['companyName','reportDate','reportPeriod','cashOutDate',
-              'budgetVsActual','financialSummary','clinicalProgress','researchDevelopment','filename']:
+    for k in ['companyName','reportDate','reportPeriod','cashOutDate','sector',
+              'budgetVsActual','financialSummary','sectorHighlightA','sectorHighlightB',
+              'keyRisks','personnelUpdates','nextMilestones','filename']:
         if d[k] is not None and not isinstance(d[k], str):
             d[k] = str(d[k])
 
@@ -269,41 +270,68 @@ def analyze_with_openai(text, filename, company_name_override: str = None):
         
         print(f"Starting analysis of {filename} with {len(text)} characters...")
         
-        # Enhanced system prompt for database-compatible numeric extraction
-        system_prompt = """You are an expert financial analyst specializing in biotech, healthcare, and technology companies. You have extensive experience analyzing financial statements, board presentations, and investor materials.
+        # Sector-specific system prompt for board deck analysis
+        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
 
 CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
-NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
+## SECTOR DETECTION
+First, determine the company's primary sector from these categories:
+- **healthcare**: Biotech, pharma, medical devices, digital health platforms
+- **consumer**: D2C, marketplaces, consumer services, insurance brokerages  
+- **enterprise**: B2B SaaS, platforms, workforce management, business tools
+- **manufacturing**: Hardware, industrial equipment, energy systems, robotics
+
+## SECTOR-SPECIFIC ANALYSIS
+Based on the detected sector, provide detailed analysis for these two areas:
+
+### Healthcare
+- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions
+- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape
+
+### Consumer  
+- **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates
+- **sectorHighlightB** ("Growth Efficiency Initiatives"): Market expansion, AI-driven productivity, channel optimization, operational improvements
+
+### Enterprise
+- **sectorHighlightA** ("Product Roadmap & Adoption"): Feature launches, usage metrics, customer engagement, platform development
+- **sectorHighlightB** ("Go-to-Market Performance"): Sales pipeline, bookings by region, partnership channels, customer success metrics
+
+### Manufacturing
+- **sectorHighlightA** ("Operational Performance"): Units produced/shipped, manufacturing efficiency, quality metrics, capacity utilization
+- **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals
+
+## WRITING STYLE
+Write analysis in the style of an executive summary for board members:
+- Use bullet-point structure with embedded metrics (e.g., "Q4 revenue $1.7M [$6.9M annualized, 4.7x YoY]")
+- Include specific percentages, dollar amounts, and timeline references
+- Focus on narrative developments, personnel changes, strategic decisions, and risk factors
+- Ask strategic questions when appropriate ("How sustainable is current pricing model?")
+- Keep sentences concise but information-dense
+- Note cash runway implications and funding needs
+
+## NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
 1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
 2. monthlyBurnRate: Return raw number in USD per month (e.g., 1200000 for $1.2M/month)  
 3. runway: Return integer months only (e.g., 18 for 18 months)
 
-TEXT FIELDS (Return formatted strings):
-1. cashOutDate: Readable date (e.g., "April 2025")
-2. budgetVsActual: Key variance summary
-3. Financial/Clinical/R&D: Detailed analysis paragraphs
-
-DETAILED ANALYSIS (Provide comprehensive 5-6 sentence analysis with specific details):
-1. Financial Summary: Analyze trends in revenue, profitability, operational efficiency, and capital allocation. Include quarter-over-quarter or year-over-year comparisons. Highlight significant changes in business metrics, cost structure, or financial strategy. Reference specific numbers and percentages.
-
-2. Clinical Progress: Detail ongoing trials with phase numbers, patient counts, and timelines. Describe recent clinical results including efficacy rates and p-values. Include regulatory interactions, upcoming milestones, and changes to trial protocols. Mention specific drug candidates and indications.
-
-3. Research & Development: Elaborate on active research programs, providing specific molecule names or therapeutic targets. Detail collaboration agreements with specific terms and partner names. Describe IP portfolio including patent counts and expiration timelines. Include technology platform developments and pipeline expansion plans.
-
-Return your response as a JSON object with exactly these fields:
+## REQUIRED JSON OUTPUT:
 {
   "companyName": "Company name only",
-  "reportDate": "YYYY-MM-DD format only",
+  "reportDate": "YYYY-MM-DD format only", 
   "reportPeriod": "Q1 2025 or 2024 Annual Report format only",
+  "sector": "healthcare|consumer|enterprise|manufacturing",
   "cashOnHand": 3100000,
   "monthlyBurnRate": 1200000,
   "cashOutDate": "April 2025",
   "runway": 18,
   "budgetVsActual": "Key variance metrics summary",
-  "financialSummary": "Detailed 5-6 sentence analysis",
-  "clinicalProgress": "Detailed 5-6 sentence analysis",
-  "researchDevelopment": "Detailed 5-6 sentence analysis"
+  "financialSummary": "Detailed 5-6 sentence executive summary with metrics",
+  "sectorHighlightA": "Detailed sector-specific analysis with metrics and narrative",
+  "sectorHighlightB": "Detailed sector-specific analysis with metrics and narrative",
+  "keyRisks": "Strategic risks and dependencies",
+  "personnelUpdates": "Team changes and hiring updates",
+  "nextMilestones": "Upcoming targets and goals"
 }
 
 EXAMPLES:
@@ -378,14 +406,18 @@ CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing
                 'reportDate': datetime.now().strftime('%Y-%m-%d'),
                 'reportPeriod': 'Analysis Period',
                 'filename': filename,
+                'sector': 'healthcare',  # Default fallback sector
                 'cashOnHand': None,
                 'monthlyBurnRate': None,
                 'cashOutDate': 'N/A',
                 'runway': None,
                 'budgetVsActual': 'N/A',
                 'financialSummary': f'JSON parsing failed. Raw response: {content[:1000]}',
-                'clinicalProgress': 'Analysis not available',
-                'researchDevelopment': 'Analysis not available'
+                'sectorHighlightA': 'Analysis not available',
+                'sectorHighlightB': 'Analysis not available',
+                'keyRisks': 'N/A',
+                'personnelUpdates': 'N/A',
+                'nextMilestones': 'N/A'
             }
             return normalize_analysis_for_db(fallback_result)
         
@@ -416,13 +448,17 @@ def create_fallback_response(filename, text, error_msg):
         'reportDate': datetime.now().strftime('%Y-%m-%d'),
         'reportPeriod': 'Analysis Period',
         'filename': filename,
+        'sector': 'healthcare',  # Default fallback sector
         'cashOnHand': None,
         'monthlyBurnRate': None,
         'cashOutDate': 'N/A',
         'runway': None,
         'budgetVsActual': 'N/A',
         'financialSummary': f'Text extraction successful ({len(text)} characters), but AI analysis failed: {error_msg}',
-        'clinicalProgress': 'Analysis not available due to API issues',
-        'researchDevelopment': 'Analysis not available due to API issues'
+        'sectorHighlightA': 'Analysis not available due to API issues',
+        'sectorHighlightB': 'Analysis not available due to API issues',
+        'keyRisks': 'N/A',
+        'personnelUpdates': 'N/A',
+        'nextMilestones': 'N/A'
     } 
     return normalize_analysis_for_db(fallback_result) 

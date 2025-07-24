@@ -3,14 +3,18 @@ export interface FinancialReport {
     fileName: string
     reportDate: string
     reportPeriod: string
+    sector: string
     cashOnHand: string
     monthlyBurnRate: string
     cashOutDate: string
     runway: string
     budgetVsActual: string
     financialSummary: string
-    clinicalProgress: string
-    researchDevelopment: string
+    sectorHighlightA: string
+    sectorHighlightB: string
+    keyRisks: string
+    personnelUpdates: string
+    nextMilestones: string
     uploadDate: string
   }
 

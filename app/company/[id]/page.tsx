@@ -516,9 +516,43 @@ export default function CompanyDetailPage() {
                       </p>
                     </div>
                     {/* Runway Progress Bar */}
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-gray-900 h-3 rounded-full" style={{ width: '65%' }}></div>
-                    </div>
+                    {(() => {
+                      const reportDate = (latestReport as any)?.report_date
+                      const cashOutDate = (latestReport as any)?.cash_out_date
+                      
+                      if (reportDate && cashOutDate) {
+                        const start = new Date(reportDate).getTime()
+                        const end = new Date(cashOutDate).getTime()
+                        const now = Date.now()
+                        const total = end - start
+                        const elapsed = Math.max(0, now - start)
+                        const pctElapsed = Math.min(elapsed / total * 100, 100)
+                        
+                        const monthsUsed = Math.round(elapsed / 1000 / 60 / 60 / 24 / 30)
+                        const monthsLeft = Math.round((total - elapsed) / 1000 / 60 / 60 / 24 / 30)
+                        
+                        return (
+                          <>
+                            <div className="w-full bg-gray-200 rounded-full h-3">
+                              <div 
+                                className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                                style={{ width: `${pctElapsed}%` }}
+                              />
+                            </div>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {monthsUsed} months used, {monthsLeft} months left
+                            </p>
+                          </>
+                        )
+                      }
+                      
+                      // Fallback if dates aren't available
+                      return (
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div className="bg-gray-400 h-3 rounded-full" style={{ width: '50%' }}></div>
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Cash History Chart */}
