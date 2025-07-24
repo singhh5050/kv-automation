@@ -6,6 +6,17 @@ import { getCompanyOverview } from '@/lib/api'
 import EditableMetric from '@/components/EditableMetric'
 import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
 import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend
+} from 'recharts'
 
 // Company name normalization for display
 const normalizeCompanyName = (name: string): string => {
@@ -18,7 +29,7 @@ const normalizeCompanyName = (name: string): string => {
 
 type TabType = 'metrics' | 'overview' | 'cap-table' | 'competitors' | 'documents' | 'reports' | 'captable' | 'database'
 
-// Simple chart component for cash history
+// Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
   if (!reports || reports.length === 0) {
     return (
@@ -32,19 +43,8 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
     )
   }
 
-  console.log('Raw reports data:', reports)
-  console.log('Reports length:', reports?.length || 0)
-
-  // Extract cash amounts and dates from reports with better error handling
+  // Process data for Recharts
   const chartData = reports
-    .map((report, index) => {
-      console.log(`Report ${index}:`, {
-        cash_on_hand: (report as any).cash_on_hand,
-        report_date: (report as any).report_date,
-        report_period: (report as any).report_period
-      })
-      return report
-    })
     .filter(report => {
       const cashValue = (report as any).cash_on_hand
       return cashValue && 
@@ -53,24 +53,15 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
              (typeof cashValue === 'string' || typeof cashValue === 'number') &&
              String(cashValue).match(/\d/)
     })
-    .map(report => {
+    .map((report) => {
       const cashStr = String((report as any).cash_on_hand || '0')
       const dateStr = (report as any).report_date || (report as any).reportDate
       
-      // Parse cash amount more robustly
+      // Parse cash amount - use raw values
       let cashValue = 0
       try {
-        // Remove currency symbols and convert to number
         const cleanCash = cashStr.replace(/[$,M\s]/gi, '').trim()
         cashValue = parseFloat(cleanCash)
-        
-        // If original had 'M' suffix, treat as millions, otherwise as raw number
-        if (cashStr.toLowerCase().includes('m')) {
-          // Already in millions
-        } else if (cashValue > 1000000) {
-          // Convert large numbers to millions
-          cashValue = cashValue / 1000000
-        }
       } catch (e) {
         console.warn('Failed to parse cash value:', cashStr, e)
         cashValue = 0
@@ -81,7 +72,6 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
         if (dateStr) {
           reportDate = new Date(dateStr)
           if (isNaN(reportDate.getTime())) {
-            console.warn('Invalid date:', dateStr)
             reportDate = new Date()
           }
         }
@@ -89,17 +79,28 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
         console.warn('Failed to parse date:', dateStr, e)
       }
 
+      // Parse monthly burn - use raw values
+      let burnValue = 0
+      const burnStr = String((report as any).monthly_burn_rate || '0')
+      try {
+        const cleanBurn = burnStr.replace(/[$,M\s]/gi, '').trim()
+        burnValue = parseFloat(cleanBurn)
+      } catch (e) {
+        console.warn('Failed to parse burn value:', burnStr, e)
+        burnValue = 0
+      }
+
       return {
-        date: reportDate,
+        date: reportDate.getTime(), // Recharts needs timestamps
         cash: cashValue,
+        burn: burnValue,
         period: (report as any).report_period || 'Unknown',
-        originalCash: cashStr
+        originalCash: cashStr,
+        originalBurn: burnStr
       }
     })
-    .filter(item => item.cash > 0) // Only show positive cash values
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
-
-  console.log('Processed chart data:', chartData)
+    .filter(item => item.cash > 0)
+    .sort((a, b) => a.date - b.date)
 
   if (chartData.length === 0) {
     return (
@@ -108,63 +109,100 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
           <div className="text-yellow-400 text-2xl mb-2">⚠️</div>
           <p className="text-gray-500">No parseable cash data found</p>
           <p className="text-gray-400 text-sm">Check that reports contain cash amounts</p>
-          <div className="mt-2 text-xs text-gray-400">
-            Found {reports.length} reports, none with valid cash data
-          </div>
         </div>
       </div>
     )
   }
 
-  const maxCash = Math.max(...chartData.map(d => d.cash))
-  const minCash = Math.min(...chartData.map(d => d.cash))
-  const range = maxCash - minCash || 1
-
   return (
-    <div className="bg-gray-50 rounded-lg p-6 h-48">
-      <div className="flex justify-between items-center mb-4">
+    <div className="bg-gray-50 rounded-lg p-6 h-[360px] overflow-hidden">
+      <div className="flex justify-between items-center mb-6">
         <h4 className="font-medium text-gray-900">Cash History</h4>
         <span className="text-sm text-gray-500">{chartData.length} data points</span>
       </div>
       
-      <div className="relative h-32">
-        {/* Y-axis labels */}
-        <div className="absolute left-0 top-0 text-xs text-gray-500">
-          ${Math.round(maxCash * 10) / 10}M
-        </div>
-        <div className="absolute left-0 bottom-0 text-xs text-gray-500">
-          ${Math.round(minCash * 10) / 10}M
-        </div>
-        
-        {/* Chart bars */}
-        <div className="flex items-end h-full space-x-1 ml-12">
-          {chartData.map((point, index) => {
-            const height = range > 0 ? ((point.cash - minCash) / range) * 100 : 50
-            return (
-              <div key={index} className="flex-1 relative group">
-                <div
-                  className="bg-blue-500 rounded-t transition-all duration-200 hover:bg-blue-600 min-h-[4px]"
-                  style={{ height: `${Math.max(height, 8)}%` }}
-                ></div>
-                
-                {/* Tooltip on hover */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
-                  <div className="bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
-                    <div>${Math.round(point.cash * 10) / 10}M</div>
-                    <div>{point.period}</div>
-                    <div className="text-gray-300">{point.originalCash}</div>
-                  </div>
-                </div>
-                
-                {/* X-axis label */}
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 text-xs text-gray-500 truncate w-16 text-center">
-                  {point.date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      <ResponsiveContainer width="100%" height="95%">
+        <ComposedChart data={chartData} margin={{ top: 10, right: 40, left: 30, bottom: 30 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis 
+            dataKey="date"
+            type="number"
+            domain={['dataMin', 'dataMax']}
+            padding={{ left: 20, right: 20 }}
+            tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+            scale="time"
+            stroke="#6b7280"
+            fontSize={12}
+          />
+          <YAxis 
+            yAxisId="left"
+            domain={[0, 'dataMax']}
+            tickFormatter={(value) => {
+              if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
+              if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
+              return `$${value.toFixed(0)}`
+            }}
+            stroke="#6b7280"
+            fontSize={12}
+          />
+          <YAxis 
+            yAxisId="right"
+            orientation="right"
+            domain={[0, 'dataMax']}
+            tickFormatter={(value) => {
+              if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
+              if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
+              return `$${value.toFixed(0)}`
+            }}
+            stroke="#ef4444"
+            fontSize={12}
+          />
+          <Tooltip
+            labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}
+            formatter={(value, name) => {
+              const formatValue = (val: any) => {
+                const numVal = typeof val === 'number' ? val : parseFloat(val) || 0
+                if (numVal >= 1000000) return `$${(numVal / 1000000).toFixed(1)}M`
+                if (numVal >= 1000) return `$${(numVal / 1000).toFixed(0)}K`
+                return `$${numVal.toFixed(0)}`
+              }
+              
+              if (name === 'cash') return [formatValue(value), 'Cash on Hand']
+              if (name === 'burn') return [formatValue(value), 'Monthly Burn']
+              return [formatValue(value), name]
+            }}
+            contentStyle={{
+              backgroundColor: '#1f2937',
+              border: 'none',
+              borderRadius: '8px',
+              color: 'white'
+            }}
+          />
+          <Legend />
+          <Bar 
+            yAxisId="left"
+            dataKey="cash" 
+            fill="#3b82f6" 
+            name="Cash on Hand"
+            radius={[4, 4, 0, 0]}
+            barSize={24}
+          />
+          <Line 
+            yAxisId="right"
+            type="monotone" 
+            dataKey="burn" 
+            stroke="#ef4444" 
+            strokeWidth={3}
+            name="Monthly Burn"
+            dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+            activeDot={{ r: 6, stroke: '#ef4444', strokeWidth: 2, fill: '#ffffff' }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   )
 }
