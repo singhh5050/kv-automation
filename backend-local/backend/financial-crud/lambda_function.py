@@ -264,41 +264,49 @@ def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update financial metrics: {str(e)}'
         }
 
-def parse_financial_value(value: str) -> float:
+def parse_financial_value(value):
     """
-    Parse financial values from text to numbers.
-    Handles formats like "$2.5M", "2500000", "N/A", etc.
+    Convert cash / burn values to float.
+    Accepts numbers, '$2.3M', '1 234 567', 'N/A', etc.
     """
-    if not value or value.upper() in ['N/A', 'UNKNOWN', '']:
+    # -------- 1. easy cases ----------
+    if value is None:
         return None
-    
-    # Remove common prefixes/suffixes and convert
-    clean_value = value.replace('$', '').replace(',', '').strip().upper()
-    
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    # -------- 2. string handling -----
+    value_str = str(value).strip()
+    if value_str.upper() in ('N/A', 'UNKNOWN', ''):
+        return None
+
+    value_str = value_str.replace('$', '').replace(',', '').upper()
+
     try:
-        # Handle million/thousand suffixes
-        if clean_value.endswith('M'):
-            return float(clean_value[:-1]) * 1000000
-        elif clean_value.endswith('K'):
-            return float(clean_value[:-1]) * 1000
-        else:
-            return float(clean_value)
+        if value_str.endswith('M'):
+            return float(value_str[:-1]) * 1_000_000
+        if value_str.endswith('K'):
+            return float(value_str[:-1]) * 1_000
+        return float(value_str)
     except ValueError:
         return None
 
-def parse_runway_value(value: str) -> int:
+def parse_runway_value(value):
     """
-    Parse runway values from text to months.
-    Handles formats like "14 months", "14", "N/A", etc.
+    Convert runway to integer months.
+    Accepts numbers, '14 months', 'N/A', etc.
     """
-    if not value or value.upper() in ['N/A', 'UNKNOWN', '']:
+    if value is None:
         return None
-    
-    # Extract numeric part
-    clean_value = value.replace('months', '').replace('month', '').strip()
-    
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    value_str = str(value).lower().replace('months', '').replace('month', '').strip()
+    if value_str.upper() in ('N/A', 'UNKNOWN', ''):
+        return None
+
     try:
-        return int(float(clean_value))
+        return int(float(value_str))
     except ValueError:
         return None
 
@@ -508,10 +516,11 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         # Get company info and reports
         query = """
-            SELECT fr.id, fr.file_name, fr.report_date, fr.report_period,
+            SELECT fr.id, fr.file_name, fr.report_date, fr.report_period, fr.sector,
                    fr.cash_on_hand, fr.monthly_burn_rate, fr.cash_out_date,
                    fr.runway, fr.budget_vs_actual, fr.financial_summary,
-                   fr.clinical_progress, fr.research_development, fr.processed_at,
+                   fr.sector_highlight_a, fr.sector_highlight_b, fr.key_risks,
+                   fr.personnel_updates, fr.next_milestones, fr.processed_at,
                    fr.manually_edited, c.name as company_name
             FROM financial_reports fr
             JOIN companies c ON fr.company_id = c.id
@@ -531,23 +540,27 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         for row in reports:
             if not company_name:
-                company_name = row[14]  # Updated index for company_name
+                company_name = row[18]  # Updated index for company_name
                 
             report_list.append({
                 'id': row[0],
                 'file_name': row[1],
                 'report_date': row[2].isoformat() if row[2] else None,
                 'report_period': row[3],
-                'cash_on_hand': float(row[4]) if row[4] is not None else None,
-                'monthly_burn_rate': float(row[5]) if row[5] is not None else None,
-                'cash_out_date': row[6],
-                'runway': int(row[7]) if row[7] is not None else None,
-                'budget_vs_actual': row[8],
-                'financial_summary': row[9],
-                'clinical_progress': row[10],
-                'research_development': row[11],
-                'processed_at': row[12].isoformat() if row[12] else None,
-                'manually_edited': row[13] if row[13] is not None else False
+                'sector': row[4],
+                'cash_on_hand': float(row[5]) if row[5] is not None else None,
+                'monthly_burn_rate': float(row[6]) if row[6] is not None else None,
+                'cash_out_date': row[7],
+                'runway': int(row[8]) if row[8] is not None else None,
+                'budget_vs_actual': row[9],
+                'financial_summary': row[10],
+                'sector_highlight_a': row[11],
+                'sector_highlight_b': row[12],
+                'key_risks': row[13],
+                'personnel_updates': row[14],
+                'next_milestones': row[15],
+                'processed_at': row[16].isoformat() if row[16] else None,
+                'manually_edited': row[17] if row[17] is not None else False
             })
         
         return {
@@ -991,7 +1004,7 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         # Get company details
         cursor.execute("""
-            SELECT id, name, normalized_name, created_at, updated_at
+            SELECT id, name, normalized_name, sector, created_at, updated_at
             FROM companies 
             WHERE id = %s
         """, [company_id])
@@ -1009,8 +1022,9 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
             'id': company_row[0],
             'name': company_row[1],
             'normalized_name': company_row[2],
-            'created_at': company_row[3].isoformat() if company_row[3] else None,
-            'updated_at': company_row[4].isoformat() if company_row[4] else None
+            'sector': company_row[3],
+            'created_at': company_row[4].isoformat() if company_row[4] else None,
+            'updated_at': company_row[5].isoformat() if company_row[5] else None
         }
         
         # Get current cap table data
@@ -1079,9 +1093,10 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         # Get financial reports
         cursor.execute("""
-            SELECT id, file_name, report_date, report_period, cash_on_hand,
+            SELECT id, file_name, report_date, report_period, sector, cash_on_hand,
                    monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
-                   financial_summary, clinical_progress, research_development,
+                   financial_summary, sector_highlight_a, sector_highlight_b,
+                   key_risks, personnel_updates, next_milestones,
                    processed_at, manually_edited
             FROM financial_reports
             WHERE company_id = %s
@@ -1095,16 +1110,20 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'file_name': report_row[1],
                 'report_date': report_row[2].isoformat() if report_row[2] else None,
                 'report_period': report_row[3],
-                'cash_on_hand': float(report_row[4]) if report_row[4] is not None else None,
-                'monthly_burn_rate': float(report_row[5]) if report_row[5] is not None else None,
-                'cash_out_date': report_row[6],
-                'runway': int(report_row[7]) if report_row[7] is not None else None,
-                'budget_vs_actual': report_row[8],
-                'financial_summary': report_row[9],
-                'clinical_progress': report_row[10],
-                'research_development': report_row[11],
-                'processed_at': report_row[12].isoformat() if report_row[12] else None,
-                'manually_edited': bool(report_row[13]) if report_row[13] is not None else False
+                'sector': report_row[4],
+                'cash_on_hand': float(report_row[5]) if report_row[5] is not None else None,
+                'monthly_burn_rate': float(report_row[6]) if report_row[6] is not None else None,
+                'cash_out_date': report_row[7],
+                'runway': int(report_row[8]) if report_row[8] is not None else None,
+                'budget_vs_actual': report_row[9],
+                'financial_summary': report_row[10],
+                'sector_highlight_a': report_row[11],
+                'sector_highlight_b': report_row[12],
+                'key_risks': report_row[13],
+                'personnel_updates': report_row[14],
+                'next_milestones': report_row[15],
+                'processed_at': report_row[16].isoformat() if report_row[16] else None,
+                'manually_edited': bool(report_row[17]) if report_row[17] is not None else False
             })
         
         cursor.close()
@@ -1501,9 +1520,10 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         # Get all financial reports (not just latest)
         cursor.execute("""
-            SELECT id, file_name, report_date, report_period, cash_on_hand,
+            SELECT id, file_name, report_date, report_period, sector, cash_on_hand,
                    monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
-                   financial_summary, clinical_progress, research_development,
+                   financial_summary, sector_highlight_a, sector_highlight_b,
+                   key_risks, personnel_updates, next_milestones,
                    manually_edited, edited_by, edited_at, upload_date, processed_at, processing_status
             FROM financial_reports
             WHERE company_id = %s
@@ -1517,20 +1537,24 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'file_name': report_row[1],
                 'report_date': report_row[2].isoformat() if report_row[2] else None,
                 'report_period': report_row[3],
-                'cash_on_hand': float(report_row[4]) if report_row[4] is not None else None,
-                'monthly_burn_rate': float(report_row[5]) if report_row[5] is not None else None,
-                'cash_out_date': report_row[6],
-                'runway': int(report_row[7]) if report_row[7] is not None else None,
-                'budget_vs_actual': report_row[8],
-                'financial_summary': report_row[9],
-                'clinical_progress': report_row[10],
-                'research_development': report_row[11],
-                'manually_edited': bool(report_row[12]) if report_row[12] is not None else False,
-                'edited_by': report_row[13],
-                'edited_at': report_row[14].isoformat() if report_row[14] else None,
-                'upload_date': report_row[15].isoformat() if report_row[15] else None,
-                'processed_at': report_row[16].isoformat() if report_row[16] else None,
-                'processing_status': report_row[17]
+                'sector': report_row[4],
+                'cash_on_hand': float(report_row[5]) if report_row[5] is not None else None,
+                'monthly_burn_rate': float(report_row[6]) if report_row[6] is not None else None,
+                'cash_out_date': report_row[7],
+                'runway': int(report_row[8]) if report_row[8] is not None else None,
+                'budget_vs_actual': report_row[9],
+                'financial_summary': report_row[10],
+                'sector_highlight_a': report_row[11],
+                'sector_highlight_b': report_row[12],
+                'key_risks': report_row[13],
+                'personnel_updates': report_row[14],
+                'next_milestones': report_row[15],
+                'manually_edited': bool(report_row[16]) if report_row[16] is not None else False,
+                'edited_by': report_row[17],
+                'edited_at': report_row[18].isoformat() if report_row[18] else None,
+                'upload_date': report_row[19].isoformat() if report_row[19] else None,
+                'processed_at': report_row[20].isoformat() if report_row[20] else None,
+                'processing_status': report_row[21]
             })
         
         # Get cap table rounds

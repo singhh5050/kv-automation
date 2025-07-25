@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { getCompanyOverview } from '@/lib/api'
 import EditableMetric from '@/components/EditableMetric'
 import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
+import MarkdownContent from '@/components/MarkdownContent'
 import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
 import {
   ResponsiveContainer,
@@ -27,7 +28,44 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
-type TabType = 'metrics' | 'overview' | 'cap-table' | 'competitors' | 'documents' | 'reports' | 'captable' | 'database'
+// Sector-specific field labels mapping
+const getSectorLabels = (sector: string = 'healthcare') => {
+  const sectorLower = sector.toLowerCase()
+  switch (sectorLower) {
+    case 'healthcare':
+      return {
+        highlightA: 'Clinical Progress',
+        highlightB: 'R&D Updates',
+        icon: '🏥'
+      }
+    case 'consumer':
+      return {
+        highlightA: 'Customer & Unit Economics',
+        highlightB: 'Growth Efficiency Initiatives',
+        icon: '🛍️'
+      }
+    case 'enterprise':
+      return {
+        highlightA: 'Product Roadmap & Adoption',
+        highlightB: 'Go-to-Market Performance',
+        icon: '🏢'
+      }
+    case 'manufacturing':
+      return {
+        highlightA: 'Operational Performance',
+        highlightB: 'Supply Chain & Commercial Pipeline',
+        icon: '🏭'
+      }
+    default:
+      return {
+        highlightA: 'Sector Highlight A',
+        highlightB: 'Sector Highlight B',
+        icon: '🏥'
+      }
+  }
+}
+
+type TabType = 'metrics' | 'overview' | 'sector' | 'captable' | 'reports' | 'database'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -273,11 +311,16 @@ export default function CompanyDetailPage() {
 
   const displayName = normalizeCompanyName(company.company.name)
   const latestReport = company.financial_reports[0]
+  
+  // Get sector from company data or latest report
+  const companySector = company.company.sector || latestReport?.sector || 'healthcare'
+  const sectorLabels = getSectorLabels(companySector)
+  
   const kvStake = company.current_cap_table ? 
     company.current_cap_table.investors
       ?.filter(inv => inv.investor_name.startsWith('KV'))
       ?.reduce((total, inv) => total + (inv.final_fds || 0), 0) || 0 
-    : 0
+    : 0;
 
   // Sort investors to put KV funds at the top
   const sortedInvestors = company.current_cap_table?.investors ? [...company.current_cap_table.investors].sort((a, b) => {
@@ -291,7 +334,7 @@ export default function CompanyDetailPage() {
     const aInvested = a.total_invested || 0
     const bInvested = b.total_invested || 0
     return bInvested - aInvested
-  }) : []
+  }) : [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -350,9 +393,9 @@ export default function CompanyDetailPage() {
                 
                 <div>
                   <div className="flex items-center space-x-2 mb-1">
-                    <span className="text-sm font-medium text-gray-500">🏥 Sector</span>
+                    <span className="text-sm font-medium text-gray-500">{sectorLabels.icon} Sector</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">Healthcare</p>
+                  <p className="text-lg font-semibold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
                 </div>
                 
                 <div>
@@ -434,6 +477,16 @@ export default function CompanyDetailPage() {
               }`}
             >
               Financial Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('sector')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'sector'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Sector-Specific Updates
             </button>
             <button
               onClick={() => setActiveTab('captable')}
@@ -559,23 +612,22 @@ export default function CompanyDetailPage() {
                   <SimpleCashChart reports={company.financial_reports} />
                 </div>
 
-                {/* Key Milestones */}
+                {/* Upcoming Milestones */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Key Milestones</h3>
-                  <p className="text-gray-600 text-sm mb-6">Upcoming targets and goals</p>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Upcoming Milestones</h3>
+                  <p className="text-gray-600 text-sm mb-6">Key targets and deadlines from latest board deck</p>
                   
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="font-medium text-gray-900">Interim Data Readout</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-600">Target: Q2 2024</span>
-                        <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">On Track</span>
-                      </div>
+                  {(latestReport as any)?.next_milestones ? (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm" />
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-gray-500 text-sm italic">
+                        No milestones data available. Upload a recent board deck to see upcoming targets.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -591,20 +643,17 @@ export default function CompanyDetailPage() {
                     <div className="space-y-4">
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <h4 className="font-medium text-gray-900 mb-2">Financial Overview</h4>
-                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
-                          {(latestReport as any).financial_summary || 'No financial summary available'}
-                        </p>
+                        <MarkdownContent content={(latestReport as any).financial_summary || 'No financial summary available'} className="text-sm" />
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <p className="text-sm font-medium text-gray-500">Budget vs Actual</p>
-                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).budget_vs_actual || 'N/A'}</p>
-                        </div>
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <p className="text-sm font-medium text-gray-500">Report Period</p>
-                          <p className="text-xl font-bold text-gray-900">{(latestReport as any).report_period || 'N/A'}</p>
-                        </div>
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="font-medium text-gray-900 mb-2">Budget vs Actual</h4>
+                        <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm" />
+                      </div>
+                      
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="font-medium text-gray-900 mb-2">Report Period</h4>
+                        <p className="text-xl font-bold text-gray-900">{(latestReport as any).report_period || 'N/A'}</p>
                       </div>
                     </div>
                   ) : (
@@ -612,42 +661,43 @@ export default function CompanyDetailPage() {
                   )}
                 </div>
 
-                {/* Business Development Update */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Business Development Update</h3>
-                  <p className="text-gray-600 text-sm mb-6">Go-to-market strategy and key deals</p>
-                  
-                  <div className="grid grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Pipeline</p>
-                      <p className="text-2xl font-bold text-gray-900">$4.5M</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Coverage Ratio</p>
-                      <p className="text-2xl font-bold text-gray-900">3.2x</p>
+                {/* Personnel Updates */}
+                {(latestReport as any)?.personnel_updates && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Personnel Updates</h3>
+                    <p className="text-gray-600 text-sm mb-6">Team changes and key hires from latest board deck</p>
+                    
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).personnel_updates} className="text-sm" />
                     </div>
                   </div>
+                )}
 
-                  <div className="space-y-3">
-                    <h4 className="font-medium text-gray-900">Key Deals</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900">Enterprise Corp</p>
-                          <p className="text-sm text-gray-600">$450K</p>
-                        </div>
-                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">Signed</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900">Tech Solutions</p>
-                          <p className="text-sm text-gray-600">$320K</p>
-                        </div>
-                        <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded-full">In negotiation</span>
-                      </div>
+                {/* Key Risks */}
+                {(latestReport as any)?.key_risks && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Key Risks</h3>
+                    <p className="text-gray-600 text-sm mb-6">Risk factors and mitigation strategies</p>
+                    
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).key_risks} className="text-sm" />
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* Next Milestones */}
+                {(latestReport as any)?.next_milestones && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Upcoming Milestones</h3>
+                    <p className="text-gray-600 text-sm mb-6">Key targets and deadlines from latest board deck</p>
+                    
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm" />
+                    </div>
+                  </div>
+                )}
+
+
               </div>
             )}
 
@@ -763,6 +813,47 @@ export default function CompanyDetailPage() {
                     <p className="text-gray-500">No documents available</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Sector-Specific Updates Tab */}
+            {activeTab === 'sector' && (
+              <div className="space-y-6">
+                {/* Sector Highlight A */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{sectorLabels.highlightA}</h3>
+                  <p className="text-gray-600 text-sm mb-6">Sector-specific analysis and updates</p>
+                  
+                  {(latestReport as any)?.sector_highlight_a ? (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm" />
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-gray-500 text-sm italic">
+                        No {sectorLabels.highlightA.toLowerCase()} data available. Upload a recent board deck to see sector-specific analysis.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sector Highlight B */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{sectorLabels.highlightB}</h3>
+                  <p className="text-gray-600 text-sm mb-6">Sector-specific analysis and updates</p>
+                  
+                  {(latestReport as any)?.sector_highlight_b ? (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm" />
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-gray-500 text-sm italic">
+                        No {sectorLabels.highlightB.toLowerCase()} data available. Upload a recent board deck to see sector-specific analysis.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
