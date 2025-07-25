@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Company, calculateKVStake } from '../types'
+import MarkdownContent, { LegacyBulletList } from './MarkdownContent'
 
 // Company name normalization for display (removes legal suffixes but preserves case)
 const normalizeCompanyName = (name: string): string => {
@@ -417,7 +418,9 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                   </div>
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <p className="text-sm font-medium text-gray-500">Budget vs Actual</p>
-                    <p className="text-2xl font-bold text-gray-900">{currentReport.budgetVsActual}</p>
+                    <div className="mt-2">
+                      <MarkdownContent content={currentReport.budgetVsActual} />
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">Signals fiscal discipline or drift</p>
                   </div>
                   <div className="bg-gray-50 p-4 rounded-lg">
@@ -469,7 +472,10 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                         } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                       >
-                        Clinical Progress
+                        {currentReport.sector === 'healthcare' ? 'Clinical Progress' : 
+                         currentReport.sector === 'consumer' ? 'Customer & Unit Economics' :
+                         currentReport.sector === 'enterprise' ? 'Product & Adoption' :
+                         'Operational Performance'}
                       </button>
                       <button
                         onClick={() => setActiveTab('research')}
@@ -479,7 +485,10 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                             : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                         } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                       >
-                        R&D Status
+                        {currentReport.sector === 'healthcare' ? 'R&D Status' : 
+                         currentReport.sector === 'consumer' ? 'Growth Efficiency' :
+                         currentReport.sector === 'enterprise' ? 'Go-to-Market' :
+                         'Supply Chain'}
                       </button>
                     </>
                   )}
@@ -500,9 +509,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                 {activeTab === 'financial' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Financial Overview</h3>
-                    <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-                      {currentReport.financialSummary}
-                    </p>
+                    <MarkdownContent content={currentReport.financialSummary} />
                   </div>
                 )}
 
@@ -609,19 +616,25 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
 
                 {activeTab === 'clinical' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Clinical Progress</h3>
-                    <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-                      {currentReport.clinicalProgress}
-                    </p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      {currentReport.sector === 'healthcare' ? 'Clinical Progress' : 
+                       currentReport.sector === 'consumer' ? 'Customer & Unit Economics' :
+                       currentReport.sector === 'enterprise' ? 'Product Roadmap & Adoption' :
+                       'Operational Performance'}
+                    </h3>
+                    <MarkdownContent content={currentReport.sectorHighlightA} />
                   </div>
                 )}
 
                 {activeTab === 'research' && hasReports && (
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Research & Development Status</h3>
-                    <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-                      {currentReport.researchDevelopment}
-                    </p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      {currentReport.sector === 'healthcare' ? 'R&D Updates' : 
+                       currentReport.sector === 'consumer' ? 'Growth Efficiency Initiatives' :
+                       currentReport.sector === 'enterprise' ? 'Go-to-Market Performance' :
+                       'Supply Chain & Commercial Pipeline'}
+                    </h3>
+                    <MarkdownContent content={currentReport.sectorHighlightB} />
                   </div>
                 )}
 

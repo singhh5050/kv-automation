@@ -56,6 +56,7 @@ export interface FinancialReport {
       id: number
       name: string
       normalized_name: string
+      sector?: string
       created_at: string | null
       updated_at: string | null
     }

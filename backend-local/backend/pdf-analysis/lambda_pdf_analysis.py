@@ -286,29 +286,85 @@ First, determine the company's primary sector from these categories:
 Based on the detected sector, provide detailed analysis for these two areas:
 
 ### Healthcare
-- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions
-- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape
+- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions, enrollment rates, adverse events, primary/secondary endpoints, regulatory submissions, trial site performance
+- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape, manufacturing optimization, formulation improvements, patent applications, IND/NDA preparation, pipeline expansion
 
 ### Consumer  
-- **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates
-- **sectorHighlightB** ("Growth Efficiency Initiatives"): Market expansion, AI-driven productivity, channel optimization, operational improvements
+- **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates, churn analysis, customer lifetime value, acquisition channels, pricing optimization, cohort analysis
+- **sectorHighlightB** ("Growth Efficiency Initiatives"): Market expansion, AI-driven productivity, channel optimization, operational improvements, automation initiatives, cost reduction programs, geographic expansion, product development velocity, team scaling
 
 ### Enterprise
-- **sectorHighlightA** ("Product Roadmap & Adoption"): Feature launches, usage metrics, customer engagement, platform development
-- **sectorHighlightB** ("Go-to-Market Performance"): Sales pipeline, bookings by region, partnership channels, customer success metrics
+- **sectorHighlightA** ("Product Roadmap & Adoption"): Feature launches, usage metrics, customer engagement, platform development, product velocity, feature adoption rates, customer feedback integration, technical debt management, scalability improvements
+- **sectorHighlightB** ("Go-to-Market Performance"): Sales pipeline, bookings by region, partnership channels, customer success metrics, sales efficiency, market penetration, competitive wins/losses, channel performance, customer expansion rates
 
 ### Manufacturing
-- **sectorHighlightA** ("Operational Performance"): Units produced/shipped, manufacturing efficiency, quality metrics, capacity utilization
-- **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals
+- **sectorHighlightA** ("Operational Performance"): Units produced/shipped, manufacturing efficiency, quality metrics, capacity utilization, yield improvements, cost per unit, production bottlenecks, quality control results, equipment performance
+- **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals, supply chain optimization, vendor performance, logistics improvements, customer delivery metrics, regulatory compliance
+
+## FORMATTING REQUIREMENTS
+ALL text fields must use **Markdown formatting** for better readability:
+
+### For budgetVsActual - Use a markdown table:
+```
+| Metric | Budget | Actual | Variance |
+|--------|--------|--------|----------|
+| Revenue | $X.XM | $X.XM | +X% |
+| Burn Rate | $X.XM | $X.XM | +X% |
+| CPA | $XXX | $XXX | -X% |
+```
+
+### For lists (nextMilestones, keyRisks, personnelUpdates) - Use markdown bullets with context:
+```
+- ✅ **Q3-24**: Close Keen Insurance acquisition and integrate 50-state footprint *↺ strategic expansion to capture national market*
+- 🚀 **Jul 31**: Launch ML Bidder v2 and AI Sales Rep; target CPA 550 entering AEP *critical for AEP performance optimization*
+- ⚠️ **Q4-24**: Deploy automated commission management system before AEP *timeline pressure due to agent scaling needs*
+```
+
+**Emoji Guide**: ✅ committed/on-track, 🚀 growth initiatives, ⚠️ at-risk, 🎯 strategic milestones
+
+### For sector highlights - Use structured format with narrative + metrics:
+```
+**Overview**: Policies in force crossed 15k in Q2, up 2.3x YoY with management guiding to 25k by year-end. *The growth acceleration reflects successful ACA launch execution and expanded agent network.*
+
+**Key Metrics**:
+- CPA **$705** vs $775 LY (-9%) and $805 budget (-12%) *↺ building on Q1 optimization efforts*
+- Retention by cohort: **89.6%** (2023), **88.4%** (2022), **89.2%** (2021) *consistent with historical 90% target*
+- Lead-to-sale rate **4.6%** on media-partner channels vs **3.7%** Q2-23 *improved conversion efficiency*
+
+**Strategic Implications**: *The CPA improvement and retention stability provide confidence for scaling to 25k policies while maintaining unit economics. The enhanced lead-to-sale rate suggests our media partner optimization is working.*
+```
+
+### For financialSummary - Narrative-driven summary:
+Begin with a 2-3 sentence "Executive Narrative" that tells the quarter's story (context → implications → forward-looking). Follow with **bold metrics** embedded inline throughout the narrative. Connect the dots between different metrics to create a cohesive board-ready story.
 
 ## WRITING STYLE
 Write analysis in the style of an executive summary for board members:
-- Use bullet-point structure with embedded metrics (e.g., "Q4 revenue $1.7M [$6.9M annualized, 4.7x YoY]")
+- Use markdown formatting: **bold** for metrics, *italics* for emphasis
 - Include specific percentages, dollar amounts, and timeline references
 - Focus on narrative developments, personnel changes, strategic decisions, and risk factors
 - Ask strategic questions when appropriate ("How sustainable is current pricing model?")
 - Keep sentences concise but information-dense
 - Note cash runway implications and funding needs
+- Provide substantial detail with specific metrics, dates, and context
+- Include both quantitative data and qualitative insights
+- Reference specific milestones, partnerships, or competitive developments
+
+## STORYTELLING GUIDELINES
+For every section that contains numbers, weave a compelling narrative that answers **"So what?"**:
+
+### Narrative Structure
+- **Context** – Explain why this metric moved (cause / event / decision / market condition)
+- **Implication** – Connect to impact on runway, strategy, or next quarter's plan
+- **Forward-looking** – What does this mean for upcoming decisions or milestones?
+
+### Storytelling Techniques
+- If a figure ties back to previous board discussions, briefly reference it (e.g., "*↺ revisits the Q1 push to lower CAC*")
+- Use *italics* for context and narrative elements, keep metrics **bold**
+- Connect dots between different metrics to tell a cohesive story
+- Explain the "why" behind the "what" - don't just report numbers
+
+### Example Narrative Flow
+- **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts cash runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge financing.*
 
 ## NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
 1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
@@ -325,13 +381,13 @@ Write analysis in the style of an executive summary for board members:
   "monthlyBurnRate": 1200000,
   "cashOutDate": "April 2025",
   "runway": 18,
-  "budgetVsActual": "Key variance metrics summary",
-  "financialSummary": "Detailed 5-6 sentence executive summary with metrics",
-  "sectorHighlightA": "Detailed sector-specific analysis with metrics and narrative",
-  "sectorHighlightB": "Detailed sector-specific analysis with metrics and narrative",
-  "keyRisks": "Strategic risks and dependencies",
-  "personnelUpdates": "Team changes and hiring updates",
-  "nextMilestones": "Upcoming targets and goals"
+  "budgetVsActual": "Markdown table with Budget vs Actual metrics and narrative context",
+  "financialSummary": "Narrative-driven executive summary with **bold metrics** and strategic implications",
+  "sectorHighlightA": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**",
+  "sectorHighlightB": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**", 
+  "keyRisks": "Markdown bullet list with emoji status (⚠️) and strategic risk context",
+  "personnelUpdates": "Markdown bullet list with team changes and strategic impact",
+  "nextMilestones": "Markdown bullet list with emoji status (✅🚀⚠️) and milestone context"
 }
 
 EXAMPLES:
@@ -339,14 +395,20 @@ EXAMPLES:
 - If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
 - If document shows "18 month runway" → runway: 18
 
-CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields."""
+CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. NEVER include code blocks (```) in the JSON strings - just the raw markdown."""
 
-        # User prompt with the full document
-        user_prompt = f"Analyze this financial document:\n\nFilename: {filename}\n\nContent:\n{text}"
+        # User prompt with the full document  
+        user_prompt = f"""Analyze this financial document and return valid JSON WITH STORY CONTEXT:
+
+Filename: {filename}
+
+IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use emojis for milestone status, and connect dots between different data points. No code blocks, only raw markdown.
+
+Content:
+{text}"""
         
-        # Make the API call using gpt-4o-mini for better speed
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="o3",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
