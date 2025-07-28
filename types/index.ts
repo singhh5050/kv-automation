@@ -46,6 +46,8 @@ export interface FinancialReport {
   export interface Company {
     id: string
     name: string
+    sector?: string
+    stage?: string
     reports: FinancialReport[]
     latestReport: FinancialReport | null
     capTable?: CapTableData | null
