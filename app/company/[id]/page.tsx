@@ -85,7 +85,7 @@ const getSectorLabels = (sector: string = 'healthcare') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'sector' | 'captable' | 'reports' | 'database'
+type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -519,17 +519,7 @@ export default function CompanyDetailPage() {
               <span className="text-lg">📈</span>
               <span>Latest Updates</span>
             </button>
-            <button
-              onClick={() => setActiveTab('sector')}
-              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
-                activeTab === 'sector'
-                  ? 'bg-orange-50 text-orange-700 border border-orange-200 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span className="text-lg">🎯</span>
-              <span>Sector Progress</span>
-            </button>
+
             <button
               onClick={() => setActiveTab('captable')}
               className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
@@ -750,7 +740,7 @@ export default function CompanyDetailPage() {
                     </div>
                   </div>
                   
-                                      {latestReport ? (
+                  {latestReport ? (
                     <div className="space-y-6">
                       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
                         <div className="flex items-center space-x-2 mb-3">
@@ -822,6 +812,59 @@ export default function CompanyDetailPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Sector-Specific Updates */}
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">{sectorLabels.icon}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Sector-Specific Updates</h3>
+                      <p className="text-gray-600 text-sm">🎯 Industry-specific analysis and progress</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Sector Highlight A */}
+                    <div>
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className="text-lg">{sectorLabels.icon}</span>
+                        <h4 className="font-semibold text-orange-900">{sectorLabels.highlightA}</h4>
+                      </div>
+                      {(latestReport as any)?.sector_highlight_a ? (
+                        <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-4 rounded-xl border border-orange-100">
+                          <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm" />
+                        </div>
+                      ) : (
+                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                          <div className="text-2xl mb-2">{sectorLabels.icon}</div>
+                          <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data</p>
+                          <p className="text-gray-400 text-xs">Upload a recent board deck</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sector Highlight B */}
+                    <div>
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className="text-lg">🔬</span>
+                        <h4 className="font-semibold text-indigo-900">{sectorLabels.highlightB}</h4>
+                      </div>
+                      {(latestReport as any)?.sector_highlight_b ? (
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100">
+                          <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm" />
+                        </div>
+                      ) : (
+                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                          <div className="text-2xl mb-2">🔬</div>
+                          <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data</p>
+                          <p className="text-gray-400 text-xs">Upload a recent board deck</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
               </div>
             )}
@@ -953,60 +996,7 @@ export default function CompanyDetailPage() {
               </div>
             )}
 
-            {/* Sector-Specific Updates Tab */}
-            {activeTab === 'sector' && (
-              <div className="space-y-8">
-                {/* Sector Highlight A */}
-                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center">
-                      <span className="text-xl">{sectorLabels.icon}</span>
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold text-gray-900">{sectorLabels.highlightA}</h3>
-                      <p className="text-gray-600 text-sm">📊 Sector-specific analysis and updates</p>
-                    </div>
-                  </div>
-                  
-                  {(latestReport as any)?.sector_highlight_a ? (
-                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-6 rounded-xl border border-orange-100">
-                      <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm" />
-                    </div>
-                  ) : (
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-dashed border-gray-200 text-center">
-                      <div className="text-4xl mb-3">{sectorLabels.icon}</div>
-                      <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data available</p>
-                      <p className="text-gray-400 text-xs">Upload a recent board deck to see sector-specific analysis</p>
-                    </div>
-                  )}
-                </div>
 
-                {/* Sector Highlight B */}
-                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center">
-                      <span className="text-xl">🔬</span>
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold text-gray-900">{sectorLabels.highlightB}</h3>
-                      <p className="text-gray-600 text-sm">🚀 Advanced sector insights and performance</p>
-                    </div>
-                  </div>
-                  
-                  {(latestReport as any)?.sector_highlight_b ? (
-                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-100">
-                      <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm" />
-                    </div>
-                  ) : (
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-dashed border-gray-200 text-center">
-                      <div className="text-4xl mb-3">🔬</div>
-                      <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data available</p>
-                      <p className="text-gray-400 text-xs">Upload a recent board deck to see sector-specific analysis</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Database Tab */}
             {activeTab === 'database' && (
