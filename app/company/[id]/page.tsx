@@ -28,6 +28,26 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
+// Currency formatting utility
+const formatCurrency = (value: string | number | null | undefined): string => {
+  if (!value || value === 'N/A' || value === '') return 'N/A'
+  
+  const numValue = typeof value === 'string' ? 
+    parseFloat(value.replace(/[$,M\s]/gi, '')) : value
+  
+  if (isNaN(numValue) || numValue === 0) return 'N/A'
+  
+  if (numValue >= 1000000000) {
+    return `$${(numValue / 1000000000).toFixed(1)}B`
+  } else if (numValue >= 1000000) {
+    return `$${(numValue / 1000000).toFixed(1)}M`
+  } else if (numValue >= 1000) {
+    return `$${(numValue / 1000).toFixed(0)}K`
+  } else {
+    return `$${numValue.toLocaleString()}`
+  }
+}
+
 // Sector-specific field labels mapping
 const getSectorLabels = (sector: string = 'healthcare') => {
   const sectorLower = sector.toLowerCase()
@@ -65,7 +85,7 @@ const getSectorLabels = (sector: string = 'healthcare') => {
   }
 }
 
-type TabType = 'metrics' | 'overview' | 'sector' | 'captable' | 'reports' | 'database'
+type TabType = 'metrics' | 'financials' | 'overview' | 'sector' | 'captable' | 'reports' | 'database'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -287,7 +307,10 @@ export default function CompanyDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading company data...</p>
+        </div>
       </div>
     )
   }
@@ -295,15 +318,26 @@ export default function CompanyDetailPage() {
   if (error || !company) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md">
+          <div className="text-gray-400 text-6xl mb-4">🏢</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Company Not Found</h1>
-          <p className="text-gray-600 mb-4">{error || 'The requested company could not be found.'}</p>
-          <button
-            onClick={() => router.push('/')}
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
-            ← Back to Portfolio
-          </button>
+          <p className="text-gray-600 mb-6">
+            {error ? `Error: ${error}` : 'The requested company could not be found in the portfolio.'}
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => router.push('/')}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              ← Back to Portfolio
+            </button>
+            <button
+              onClick={loadCompanyData}
+              className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -398,27 +432,21 @@ export default function CompanyDetailPage() {
                   <p className="text-lg font-semibold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
                 </div>
                 
-                <div>
+                <div className="hover:bg-gray-50 p-2 rounded transition-colors">
                   <div className="flex items-center space-x-2 mb-1">
                     <span className="text-sm font-medium text-gray-500">💰 Valuation</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">
-                    {company.current_cap_table?.valuation 
-                      ? `$${(company.current_cap_table.valuation / 1000000).toFixed(1)}M`
-                      : 'N/A'
-                    }
+                    {formatCurrency(company.current_cap_table?.valuation)}
                   </p>
                 </div>
                 
-                <div>
+                <div className="hover:bg-gray-50 p-2 rounded transition-colors">
                   <div className="flex items-center space-x-2 mb-1">
                     <span className="text-sm font-medium text-gray-500">💵 Last Round</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">
-                    {company.current_cap_table?.amount_raised 
-                      ? `$${(company.current_cap_table.amount_raised / 1000000).toFixed(1)}M`
-                      : 'N/A'
-                    }
+                    {formatCurrency(company.current_cap_table?.amount_raised)}
                   </p>
                 </div>
                 
@@ -456,67 +484,87 @@ export default function CompanyDetailPage() {
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200 mb-8">
-          <nav className="-mb-px flex space-x-8">
+        <div className="bg-white rounded-xl border border-gray-200 mb-8 p-2 shadow-sm">
+          <nav className="flex flex-wrap gap-2">
             <button
               onClick={() => setActiveTab('metrics')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'metrics'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Key Metrics
+              <span className="text-lg">💰</span>
+              <span>Cash Position</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('financials')}
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
+                activeTab === 'financials'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span className="text-lg">📊</span>
+              <span>Financials</span>
             </button>
             <button
               onClick={() => setActiveTab('overview')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-purple-50 text-purple-700 border border-purple-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Financial Overview
+              <span className="text-lg">📈</span>
+              <span>Latest Updates</span>
             </button>
             <button
               onClick={() => setActiveTab('sector')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'sector'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-orange-50 text-orange-700 border border-orange-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Sector-Specific Updates
+              <span className="text-lg">🎯</span>
+              <span>Sector Progress</span>
             </button>
             <button
               onClick={() => setActiveTab('captable')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'captable'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Cap Table
+              <span className="text-lg">🏦</span>
+              <span>Cap Table</span>
             </button>
             <button
               onClick={() => setActiveTab('reports')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'reports'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Financial Reports ({company.financial_reports.length})
+              <span className="text-lg">📄</span>
+              <span>Financial Reports</span>
+              <span className="ml-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full text-xs font-semibold">
+                {company.financial_reports.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('database')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeTab === 'database'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'bg-gray-100 text-gray-700 border border-gray-300 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Database
+              <span className="text-lg">🗄️</span>
+              <span>Database</span>
             </button>
           </nav>
         </div>
@@ -528,9 +576,16 @@ export default function CompanyDetailPage() {
             {activeTab === 'metrics' && (
               <div className="space-y-8">
                 {/* Cash Position */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Cash Position</h3>
-                  <p className="text-gray-600 text-sm mb-6">Burn rate and runway (click values to edit)</p>
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">💰</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Cash Position</h3>
+                      <p className="text-gray-600 text-sm">💡 Burn rate and runway (click values to edit)</p>
+                    </div>
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-6 mb-6">
                     <EditableMetric
@@ -613,21 +668,70 @@ export default function CompanyDetailPage() {
                 </div>
 
                 {/* Upcoming Milestones */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Upcoming Milestones</h3>
-                  <p className="text-gray-600 text-sm mb-6">Key targets and deadlines from latest board deck</p>
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">🎯</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Upcoming Milestones</h3>
+                      <p className="text-gray-600 text-sm">📅 Key targets and deadlines from latest board deck</p>
+                    </div>
+                  </div>
                   
                   {(latestReport as any)?.next_milestones ? (
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
                       <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm" />
                     </div>
                   ) : (
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <p className="text-gray-500 text-sm italic">
-                        No milestones data available. Upload a recent board deck to see upcoming targets.
-                      </p>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                      <div className="text-4xl mb-3">📋</div>
+                      <p className="text-gray-500 text-sm font-medium mb-1">No milestones data available</p>
+                      <p className="text-gray-400 text-xs">Upload a recent board deck to see upcoming targets</p>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'financials' && (
+              <div className="space-y-8">
+                {/* Work in Progress */}
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-green-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">📊</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Financials</h3>
+                      <p className="text-gray-600 text-sm">📈 Comprehensive financial analysis and reporting</p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200 p-8 rounded-xl text-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-amber-100 to-yellow-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">🚧</span>
+                    </div>
+                    <h4 className="text-xl font-bold text-amber-800 mb-3">Work in Progress</h4>
+                    <p className="text-amber-700 max-w-md mx-auto leading-relaxed">
+                      This comprehensive financials section is currently under development. 
+                      It will include detailed financial statements, cash flow analysis, and advanced metrics.
+                    </p>
+                    <div className="mt-6 flex justify-center space-x-6 text-sm text-amber-600">
+                      <div className="flex items-center space-x-2">
+                        <span>📊</span>
+                        <span>P&L Statements</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span>💧</span>
+                        <span>Cash Flow</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span>📈</span>
+                        <span>Advanced Metrics</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -635,39 +739,66 @@ export default function CompanyDetailPage() {
             {activeTab === 'overview' && (
               <div className="space-y-8">
                 {/* Key Financials */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Key Financials</h3>
-                  <p className="text-gray-600 text-sm mb-6">Financial performance and projections</p>
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">💼</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Key Financials</h3>
+                      <p className="text-gray-600 text-sm">📊 Financial performance and projections</p>
+                    </div>
+                  </div>
                   
-                  {latestReport ? (
-                    <div className="space-y-4">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-gray-900 mb-2">Financial Overview</h4>
-                        <MarkdownContent content={(latestReport as any).financial_summary || 'No financial summary available'} className="text-sm" />
+                                      {latestReport ? (
+                    <div className="space-y-6">
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <span className="text-lg">📊</span>
+                          <h4 className="font-semibold text-blue-900">Financial Overview</h4>
+                        </div>
+                        <MarkdownContent content={(latestReport as any).financial_summary || 'No financial summary available'} className="text-sm text-blue-800" />
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-gray-900 mb-2">Budget vs Actual</h4>
-                        <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm" />
+                      <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <span className="text-lg">⚖️</span>
+                          <h4 className="font-semibold text-purple-900">Budget vs Actual</h4>
+                        </div>
+                        <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm text-purple-800" />
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-gray-900 mb-2">Report Period</h4>
-                        <p className="text-xl font-bold text-gray-900">{(latestReport as any).report_period || 'N/A'}</p>
+                      <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-6 rounded-xl border border-emerald-100">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <span className="text-lg">📅</span>
+                          <h4 className="font-semibold text-emerald-900">Report Period</h4>
+                        </div>
+                        <p className="text-2xl font-bold text-emerald-900">{(latestReport as any).report_period || 'N/A'}</p>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-gray-500">No financial reports available</p>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-8 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                      <div className="text-4xl mb-3">📊</div>
+                      <p className="text-gray-500 font-medium mb-1">No financial reports available</p>
+                      <p className="text-gray-400 text-sm">Upload board decks to see financial insights</p>
+                    </div>
                   )}
                 </div>
 
                 {/* Personnel Updates */}
                 {(latestReport as any)?.personnel_updates && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Personnel Updates</h3>
-                    <p className="text-gray-600 text-sm mb-6">Team changes and key hires from latest board deck</p>
+                  <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                    <div className="flex items-center space-x-3 mb-6">
+                      <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center">
+                        <span className="text-xl">👥</span>
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold text-gray-900">Personnel Updates</h3>
+                        <p className="text-gray-600 text-sm">🚀 Team changes and key hires from latest board deck</p>
+                      </div>
+                    </div>
                     
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
                       <MarkdownContent content={(latestReport as any).personnel_updates} className="text-sm" />
                     </div>
                   </div>
@@ -675,37 +806,38 @@ export default function CompanyDetailPage() {
 
                 {/* Key Risks */}
                 {(latestReport as any)?.key_risks && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Key Risks</h3>
-                    <p className="text-gray-600 text-sm mb-6">Risk factors and mitigation strategies</p>
+                  <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                    <div className="flex items-center space-x-3 mb-6">
+                      <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-pink-100 rounded-xl flex items-center justify-center">
+                        <span className="text-xl">⚠️</span>
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold text-gray-900">Key Risks</h3>
+                        <p className="text-gray-600 text-sm">🛡️ Risk factors and mitigation strategies</p>
+                      </div>
+                    </div>
                     
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gradient-to-br from-red-50 to-pink-50 p-6 rounded-xl border border-red-100">
                       <MarkdownContent content={(latestReport as any).key_risks} className="text-sm" />
                     </div>
                   </div>
                 )}
 
-                {/* Next Milestones */}
-                {(latestReport as any)?.next_milestones && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-1">Upcoming Milestones</h3>
-                    <p className="text-gray-600 text-sm mb-6">Key targets and deadlines from latest board deck</p>
-                    
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm" />
-                    </div>
-                  </div>
-                )}
-
-
               </div>
             )}
 
             {activeTab === 'captable' && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Cap Table</h3>
-                  <p className="text-gray-600 text-sm">Ownership structure and investment details</p>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="p-8 border-b border-gray-200">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-blue-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">🏦</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Cap Table</h3>
+                      <p className="text-gray-600 text-sm">💼 Ownership structure and investment details</p>
+                    </div>
+                  </div>
                 </div>
                 
                 {company.current_cap_table && sortedInvestors.length > 0 ? (
@@ -733,16 +865,10 @@ export default function CompanyDetailPage() {
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {investor.total_invested 
-                                  ? `$${(investor.total_invested / 1000000).toFixed(1)}M`
-                                  : 'N/A'
-                                }
+                                {formatCurrency(investor.total_invested)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {investor.final_round_investment 
-                                  ? `$${(investor.final_round_investment / 1000000).toFixed(1)}M`
-                                  : '$0'
-                                }
+                                {formatCurrency(investor.final_round_investment)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {investor.final_fds 
@@ -757,18 +883,27 @@ export default function CompanyDetailPage() {
                     </table>
                   </div>
                 ) : (
-                  <div className="p-6 text-center">
-                    <p className="text-gray-500">No cap table data available</p>
+                  <div className="p-8 text-center">
+                    <div className="text-gray-400 text-4xl mb-3">📊</div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No Cap Table Data</h4>
+                    <p className="text-gray-500">Upload a cap table document to see ownership structure and investor details.</p>
                   </div>
                 )}
               </div>
             )}
 
             {activeTab === 'reports' && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">Financial Documents</h3>
-                  <p className="text-gray-600 text-sm">Key financial reports and statements</p>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="p-8 border-b border-gray-200">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">📄</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Financial Documents</h3>
+                      <p className="text-gray-600 text-sm">📋 Key financial reports and statements</p>
+                    </div>
+                  </div>
                 </div>
                 
                 {company.financial_reports.length > 0 ? (
@@ -809,8 +944,10 @@ export default function CompanyDetailPage() {
                     </table>
                   </div>
                 ) : (
-                  <div className="p-6 text-center">
-                    <p className="text-gray-500">No documents available</p>
+                  <div className="p-8 text-center">
+                    <div className="text-gray-400 text-4xl mb-3">📄</div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No Financial Reports</h4>
+                    <p className="text-gray-500">Upload board decks or financial statements to track company performance and metrics.</p>
                   </div>
                 )}
               </div>
@@ -818,39 +955,53 @@ export default function CompanyDetailPage() {
 
             {/* Sector-Specific Updates Tab */}
             {activeTab === 'sector' && (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {/* Sector Highlight A */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{sectorLabels.highlightA}</h3>
-                  <p className="text-gray-600 text-sm mb-6">Sector-specific analysis and updates</p>
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">{sectorLabels.icon}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">{sectorLabels.highlightA}</h3>
+                      <p className="text-gray-600 text-sm">📊 Sector-specific analysis and updates</p>
+                    </div>
+                  </div>
                   
                   {(latestReport as any)?.sector_highlight_a ? (
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-6 rounded-xl border border-orange-100">
                       <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm" />
                     </div>
                   ) : (
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <p className="text-gray-500 text-sm italic">
-                        No {sectorLabels.highlightA.toLowerCase()} data available. Upload a recent board deck to see sector-specific analysis.
-                      </p>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                      <div className="text-4xl mb-3">{sectorLabels.icon}</div>
+                      <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data available</p>
+                      <p className="text-gray-400 text-xs">Upload a recent board deck to see sector-specific analysis</p>
                     </div>
                   )}
                 </div>
 
                 {/* Sector Highlight B */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{sectorLabels.highlightB}</h3>
-                  <p className="text-gray-600 text-sm mb-6">Sector-specific analysis and updates</p>
+                <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">🔬</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">{sectorLabels.highlightB}</h3>
+                      <p className="text-gray-600 text-sm">🚀 Advanced sector insights and performance</p>
+                    </div>
+                  </div>
                   
                   {(latestReport as any)?.sector_highlight_b ? (
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-100">
                       <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm" />
                     </div>
                   ) : (
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <p className="text-gray-500 text-sm italic">
-                        No {sectorLabels.highlightB.toLowerCase()} data available. Upload a recent board deck to see sector-specific analysis.
-                      </p>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                      <div className="text-4xl mb-3">🔬</div>
+                      <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data available</p>
+                      <p className="text-gray-400 text-xs">Upload a recent board deck to see sector-specific analysis</p>
                     </div>
                   )}
                 </div>
@@ -859,18 +1010,32 @@ export default function CompanyDetailPage() {
 
             {/* Database Tab */}
             {activeTab === 'database' && (
-              <UniversalDatabaseEditor 
-                companyId={companyId} 
-                onUpdate={loadCompanyData}
-              />
+              <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-gray-100 to-slate-100 rounded-xl flex items-center justify-center">
+                    <span className="text-xl">🗄️</span>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">Database Editor</h3>
+                    <p className="text-gray-600 text-sm">⚡ Direct database access and editing tools</p>
+                  </div>
+                </div>
+                <UniversalDatabaseEditor 
+                  companyId={companyId} 
+                  onUpdate={loadCompanyData}
+                />
+              </div>
             )}
           </div>
 
           {/* Sidebar */}
           <div className="lg:col-span-1 space-y-8">
             {/* Team */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Team</h3>
+            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+              <div className="flex items-center space-x-2 mb-4">
+                <span className="text-lg">👥</span>
+                <h3 className="text-lg font-semibold text-gray-900">Team</h3>
+              </div>
               
               <div className="mb-4">
                 <p className="text-sm font-medium text-gray-500 mb-1">Total Employees</p>
@@ -906,8 +1071,11 @@ export default function CompanyDetailPage() {
 
             {/* Quick Stats */}
             {company.current_cap_table && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Round Details</h3>
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="flex items-center space-x-2 mb-4">
+                  <span className="text-lg">💰</span>
+                  <h3 className="text-lg font-semibold text-gray-900">Round Details</h3>
+                </div>
                 
                 <div className="space-y-4">
                   <div>

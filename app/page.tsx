@@ -26,6 +26,45 @@ const normalizeCompanyName = (name: string): string => {
     .trim()
 }
 
+// Stage detection based on KV fund names - choose the latest stage
+const detectCompanyStage = (investors: any[]): string => {
+  const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
+  
+  let hasLateStage = false
+  let hasGrowthStage = false
+  let hasEarlyStage = false
+  
+  for (const investor of kvInvestors) {
+    const name = investor.investor_name?.toLowerCase() || ''
+    
+    // Check for KV Opp (Late Stage) - highest priority
+    if (name.includes('opp')) {
+      hasLateStage = true
+    }
+    // Check for KV [Roman Numeral] (Growth Stage) - but not if it contains "opp" or "seed"
+    else if (!name.includes('opp') && !name.includes('seed')) {
+      const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
+      if (romanNumeralPattern.test(name)) {
+        hasGrowthStage = true
+      }
+    }
+    // Check for KV Seed [A-Z] (Early Stage) - lowest priority
+    else if (name.includes('seed')) {
+      const seedPattern = /kv\s+seed\s+[a-z]/i
+      if (seedPattern.test(name)) {
+        hasEarlyStage = true
+      }
+    }
+  }
+  
+  // Return the latest stage found (Late > Growth > Early)
+  if (hasLateStage) return 'Late Stage'
+  if (hasGrowthStage) return 'Growth Stage'
+  if (hasEarlyStage) return 'Early Stage'
+  
+  return 'Unknown'
+}
+
 // Coalesce companies with the same normalized name
 const coalesceCompanies = (companies: Company[]): Company[] => {
   const companyMap = new Map<string, Company>()
@@ -148,9 +187,14 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
           }
         }
 
+        // Detect company stage from cap table
+        const companyStage = capTable ? detectCompanyStage(capTable.investors) : 'Unknown'
+        
         companies.push({
           id: dbCompany.id.toString(),
           name: dbCompany.name,
+          sector: overview.company.sector || (reports[0]?.sector) || 'healthcare',
+          stage: companyStage,
           reports: reports,
           latestReport: reports[0] || null,
           capTable: capTable
@@ -170,6 +214,8 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
         companies.push({
           id: dbCompany.id.toString(),
           name: dbCompany.name,
+          sector: dbCompany.sector || 'healthcare',
+          stage: 'Unknown',
           reports: [],
           latestReport: null,
           capTable: null
@@ -215,15 +261,18 @@ export default function Home() {
   const applyFilters = () => {
     let filtered = companies
 
-    // Apply stage filter
-    if (filters.stage) {
-      // For now, we'll assume all companies are "Main" stage since we don't have this data yet
-      // In a real implementation, this would filter based on actual stage data
-    }
-
     // Apply sector filter  
     if (filters.sector) {
-      // Similar to stage, we'd filter based on actual sector data
+      filtered = filtered.filter(company => 
+        company.sector?.toLowerCase() === filters.sector.toLowerCase()
+      )
+    }
+
+    // Apply stage filter
+    if (filters.stage) {
+      filtered = filtered.filter(company => 
+        company.stage === filters.stage
+      )
     }
 
     // Apply other filters as needed...
@@ -451,24 +500,27 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center space-x-6">
-              <h1 className="text-2xl font-bold text-gray-900">Portfolio Companies</h1>
+          <div className="flex justify-between items-center py-8">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+                Portfolio Companies
+              </h1>
+              <p className="text-gray-600 mt-2">Track and manage your investment portfolio</p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               <button
                 onClick={() => loadCompanies(true)}
                 disabled={isLoading}
-                className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-all duration-200"
               >
                 <span>🔄</span>
                 <span>Reload Cache</span>
               </button>
               <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
               <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
-              <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+              <button className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all duration-200 font-medium shadow-sm">
                 Logout
               </button>
             </div>
@@ -477,43 +529,53 @@ export default function Home() {
       </header>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-wrap items-center gap-6">
+      <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4 xl:gap-5">
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Stage</label>
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Stage</label>
               <select
                 value={filters.stage}
                 onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[110px]"
               >
-                <option value="">All</option>
-                <option value="Seed">Seed</option>
-                <option value="Series A">Series A</option>
-                <option value="Main">Main</option>
+                <option value="">All Stages</option>
+                {Array.from(new Set(companies.map(c => c.stage).filter(Boolean)))
+                  .sort()
+                  .map(stage => (
+                    <option key={stage} value={stage}>
+                      {stage}
+                    </option>
+                  ))
+                }
               </select>
             </div>
 
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Sector</label>
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Sector</label>
               <select
                 value={filters.sector}
                 onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[110px]"
               >
-                <option value="">All</option>
-                <option value="Healthcare">Healthcare</option>
-                <option value="Enterprise">Enterprise</option>
-                <option value="Consumer">Consumer</option>
+                <option value="">All Sectors</option>
+                {Array.from(new Set(companies.map(c => c.sector).filter(Boolean)))
+                  .sort()
+                  .map(sector => (
+                    <option key={sector} value={sector}>
+                      {sector!.charAt(0).toUpperCase() + sector!.slice(1)}
+                    </option>
+                  ))
+                }
               </select>
             </div>
 
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Lead Partner</label>
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Lead Partner</label>
               <select
                 value={filters.leadPartner}
                 onChange={(e) => setFilters({ ...filters, leadPartner: e.target.value })}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[90px]"
               >
                 <option value="">All</option>
                 <option value="Sarah Johnson">Sarah Johnson</option>
@@ -522,11 +584,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">MD Sponsor</label>
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">MD Sponsor</label>
               <select
                 value={filters.mdSponsor}
                 onChange={(e) => setFilters({ ...filters, mdSponsor: e.target.value })}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[90px]"
               >
                 <option value="">All</option>
                 <option value="Alex Morgan">Alex Morgan</option>
@@ -535,11 +597,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Needs help with</label>
+              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Needs help with</label>
               <select
                 value={filters.needsHelp}
                 onChange={(e) => setFilters({ ...filters, needsHelp: e.target.value })}
-                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[100px]"
               >
                 <option value="">All</option>
                 <option value="recruiting">Recruiting</option>
@@ -547,6 +609,15 @@ export default function Home() {
                 <option value="fundraising">Fundraising</option>
               </select>
             </div>
+            
+            {(filters.sector || filters.stage || filters.leadPartner || filters.mdSponsor || filters.needsHelp) && (
+              <button
+                onClick={() => setFilters({ stage: '', sector: '', leadPartner: '', mdSponsor: '', needsHelp: '' })}
+                className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all duration-200 font-medium shadow-sm border border-slate-200 whitespace-nowrap"
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -645,15 +716,34 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!isLoading && companies.length > 0 && (
+          <div className="mb-6">
+            <p className="text-sm text-gray-600">
+              Showing {filteredCompanies.length} of {companies.length} companies
+              {filters.sector && ` in ${filters.sector} sector`}
+              {filters.stage && ` at ${filters.stage}`}
+            </p>
+          </div>
+        )}
+        
         {!isLoading && filteredCompanies.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">📄</div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">No companies found</h2>
-            <p className="text-gray-600 mb-4">Upload your financial PDF documents to get started</p>
-            <p className="text-sm text-gray-500">Data is automatically synced across all your devices</p>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+              {companies.length === 0 ? 'No companies found' : 'No companies match your filters'}
+            </h2>
+            <p className="text-gray-600 mb-4">
+              {companies.length === 0 
+                ? 'Upload your financial PDF documents to get started'
+                : 'Try adjusting your filters or clearing them to see more companies'
+              }
+            </p>
+            {companies.length === 0 && (
+              <p className="text-sm text-gray-500">Data is automatically synced across all your devices</p>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredCompanies.map((company) => (
               <CompanyCard
                 key={company.id}
