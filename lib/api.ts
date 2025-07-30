@@ -51,7 +51,66 @@ async function apiRequest<T = any>(
 }
 
 /**
- * Extract and analyze PDF content using OpenAI
+ * Get presigned URL for S3 upload
+ */
+export async function getPresignedUrl(filename: string) {
+  try {
+    const response = await fetch(`/api/presign?filename=${encodeURIComponent(filename)}`)
+    const data = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get presigned URL')
+    }
+    
+    return data
+  } catch (error) {
+    console.error('Error getting presigned URL:', error)
+    throw error
+  }
+}
+
+/**
+ * Upload file to S3 using presigned URL
+ */
+export async function uploadToS3(file: File, presignedUrl: string) {
+  try {
+    const response = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': 'application/pdf',
+      },
+    })
+    
+    if (!response.ok) {
+      throw new Error(`S3 upload failed: ${response.status}`)
+    }
+    
+    return response
+  } catch (error) {
+    console.error('Error uploading to S3:', error)
+    throw error
+  }
+}
+
+/**
+ * Extract and analyze PDF content using OpenAI (S3 version)
+ */
+export async function extractPdfFromS3(s3Key: string, filename: string) {
+  return apiRequest('/analyze-pdf', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      s3_key: s3Key,
+      filename,
+    }),
+  })
+}
+
+/**
+ * Extract and analyze PDF content using OpenAI (legacy base64 version)
  */
 export async function extractPdf(pdfData: string, filename: string) {
   return apiRequest('/analyze-pdf', {
@@ -67,18 +126,26 @@ export async function extractPdf(pdfData: string, filename: string) {
 }
 
 /**
- * Upload file for processing - converts to base64 and calls PDF analysis
+ * Upload file for processing - uploads to S3 and calls PDF analysis
  */
 export async function uploadFile(file: File) {
   try {
-    // Convert file to base64
-    const base64Data = await fileToBase64(file)
+    console.log(`🔄 Starting S3 upload for ${file.name} (${file.size} bytes)`)
     
-    // Remove the data:application/pdf;base64, prefix if present
-    const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/, '')
+    // Get presigned URL for S3 upload
+    const { url: presignedUrl, key: s3Key } = await getPresignedUrl(file.name)
+    console.log(`✅ Got presigned URL for S3 key: ${s3Key}`)
     
-    // Call the PDF analysis Lambda function
-    return await extractPdf(cleanBase64, file.name)
+    // Upload file to S3
+    await uploadToS3(file, presignedUrl)
+    console.log(`✅ Successfully uploaded ${file.name} to S3`)
+    
+    // Call the PDF analysis Lambda function with S3 key
+    console.log(`🔄 Starting PDF analysis for S3 key: ${s3Key}`)
+    const result = await extractPdfFromS3(s3Key, file.name)
+    console.log(`✅ PDF analysis completed for ${file.name}`)
+    
+    return result
   } catch (error) {
     console.error('File upload error:', error)
     return { error: error instanceof Error ? error.message : 'File upload failed' }

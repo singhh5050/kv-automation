@@ -310,124 +310,7 @@ def parse_runway_value(value):
     except ValueError:
         return None
 
-def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
-    """
-    Save a financial report to the database
-    Expected data format matches the AI extraction output
-    """
-    
-    required_fields = ['companyName', 'reportDate', 'reportPeriod', 'filename']
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    
-    if missing_fields:
-        return {
-            'success': False,
-            'error': f'Missing required fields: {", ".join(missing_fields)}'
-        }
-    
-    try:
-        conn_result = get_database_connection(db_config)
-        if not conn_result['success']:
-            return conn_result
-        
-        conn = conn_result['connection']
-        cursor = conn.cursor()
-        
-        # Normalize company name for matching
-        normalized_name = normalize_company_name(data['companyName'])
-        
-        # Insert company if it doesn't exist
-        company_insert = """
-            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (normalized_name) DO NOTHING
-        """
-        
-        cursor.execute(company_insert, [data['companyName'], normalized_name, False, "system_import"])
-        
-        # Get company ID
-        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
-        company_row = cursor.fetchone()
-        
-        if not company_row:
-            cursor.close()
-            conn.close()
-            return {
-                'success': False,
-                'error': 'Failed to get company ID after insert'
-            }
-        
-        company_id = company_row[0]
-        
-        # Parse report date
-        report_date = data['reportDate']
-        if isinstance(report_date, str):
-            try:
-                # Try to parse date string
-                report_date_obj = datetime.strptime(report_date, '%Y-%m-%d').date()
-                report_date = report_date_obj
-            except ValueError:
-                # Use current date if parsing fails
-                report_date = datetime.now().date()
-        
-        # Insert financial report
-        report_insert = """
-            INSERT INTO financial_reports (
-                company_id, file_name, report_date, report_period, sector,
-                cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
-                financial_summary, sector_highlight_a, sector_highlight_b,
-                key_risks, personnel_updates, next_milestones,
-                manually_edited, edited_by, edited_at,
-                upload_date, processed_at, processing_status
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'completed'
-            )
-        """
-        
-        report_data = [
-            company_id,
-            data['filename'],
-            report_date,
-            data['reportPeriod'],
-            data.get('sector', 'healthcare'),  # Default to healthcare if not provided
-            parse_financial_value(data.get('cashOnHand')),
-            parse_financial_value(data.get('monthlyBurnRate')),
-            data.get('cashOutDate'),
-            parse_runway_value(data.get('runway')),
-            data.get('budgetVsActual'),
-            data.get('financialSummary'),
-            data.get('sectorHighlightA'),
-            data.get('sectorHighlightB'),
-            data.get('keyRisks'),
-            data.get('personnelUpdates'),
-            data.get('nextMilestones'),
-            False,  # manually_edited
-            "system_import"  # edited_by (edited_at will be set to CURRENT_TIMESTAMP)
-        ]
-        
-        cursor.execute(report_insert, report_data)
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
-        return {
-            'success': True,
-            'data': {
-                'company_name': data['companyName'],
-                'company_id': company_id,
-                'report_period': data['reportPeriod'],
-                'status': 'saved'
-            }
-        }
-            
-    except Exception as e:
-        return {
-            'success': False,
-            'error': f'Failed to save financial report: {str(e)}'
-        }
+
 
 def _cursor_to_dict(cursor) -> List[Dict[str, Any]]:
     """
@@ -681,6 +564,23 @@ def debug_database_contents(db_config: Dict) -> Dict[str, Any]:
             cursor.execute("SELECT COUNT(*) FROM financial_reports")
             report_count = cursor.fetchone()[0]
             debug_info['report_count'] = report_count
+            
+            # Get column information for financial_reports table
+            cursor.execute("""
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = 'financial_reports'
+                ORDER BY ordinal_position
+            """)
+            financial_reports_columns = []
+            for col_row in cursor.fetchall():
+                financial_reports_columns.append({
+                    'column_name': col_row[0],
+                    'data_type': col_row[1],
+                    'is_nullable': col_row[2],
+                    'column_default': col_row[3]
+                })
+            debug_info['financial_reports_columns'] = financial_reports_columns
             
             if report_count > 0:
                 cursor.execute("SELECT id, company_id, file_name, report_date FROM financial_reports LIMIT 5")
@@ -1639,6 +1539,113 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to get all company data: {str(e)}'
+        }
+
+def save_financial_report(db_config: Dict, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Save financial report data to the database, including S3 key
+    """
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Extract and normalize company name
+        company_name = data.get('companyName', '').strip()
+        if not company_name:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Company name is required'
+            }
+        
+        normalized_name = normalize_company_name(company_name)
+        
+        # Create company if it doesn't exist
+        cursor.execute("""
+            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, NOW(), NOW())
+            ON CONFLICT (normalized_name) DO NOTHING
+        """, [company_name, normalized_name, False, 'system_import'])
+        
+        # Get company ID
+        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
+        company_row = cursor.fetchone()
+        if not company_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Failed to create/find company'
+            }
+        
+        company_id = company_row[0]
+        
+        # Parse financial values
+        cash_on_hand = parse_financial_value(data.get('cashOnHand'))
+        monthly_burn_rate = parse_financial_value(data.get('monthlyBurnRate'))
+        runway = parse_runway_value(data.get('runway'))
+        
+        # Insert financial report
+        cursor.execute("""
+            INSERT INTO financial_reports (
+                company_id, file_name, s3_key, report_date, report_period, sector,
+                cash_on_hand, monthly_burn_rate, cash_out_date, runway,
+                budget_vs_actual, financial_summary, sector_highlight_a, sector_highlight_b,
+                key_risks, personnel_updates, next_milestones,
+                upload_date, processed_at, processing_status, manually_edited, edited_by,
+                created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                NOW(), NOW(), %s, %s, %s, NOW(), NOW()
+            ) RETURNING id
+        """, [
+            company_id,
+            data.get('filename', 'unknown.pdf'),
+            data.get('s3Key'),  # Include S3 key
+            data.get('reportDate'),
+            data.get('reportPeriod'),
+            data.get('sector', 'healthcare'),
+            cash_on_hand,
+            monthly_burn_rate,
+            data.get('cashOutDate'),
+            runway,
+            data.get('budgetVsActual'),
+            data.get('financialSummary'),
+            data.get('sectorHighlightA'),
+            data.get('sectorHighlightB'),
+            data.get('keyRisks'),
+            data.get('personnelUpdates'),
+            data.get('nextMilestones'),
+            'completed',
+            False,
+            'system_import'
+        ])
+        
+        report_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'report_id': report_id,
+                'company_id': company_id,
+                'company_name': company_name,
+                's3_key': data.get('s3Key')
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to save financial report: {str(e)}'
         }
 
 def normalize_company_name(name: str) -> str:

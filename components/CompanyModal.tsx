@@ -28,6 +28,23 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
   const [competitiveData, setCompetitiveData] = useState<any>(null)
   const [loadingCompetitive, setLoadingCompetitive] = useState(false)
   
+  // Smart currency formatting function
+  const formatCurrency = (value: any): string => {
+    const numValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[$,M\s]/gi, ''))
+    
+    if (isNaN(numValue) || numValue === 0) return 'N/A'
+    
+    if (numValue >= 1000000000) {
+      return `$${(numValue / 1000000000).toFixed(1)}B`
+    } else if (numValue >= 1000000) {
+      return `$${(numValue / 1000000).toFixed(1)}M`
+    } else if (numValue >= 1000) {
+      return `$${(numValue / 1000).toFixed(0)}K`
+    } else {
+      return `$${numValue.toLocaleString()}`
+    }
+  }
+  
   // Calculate KV stake dynamically from investors that start with "KV"
   const kvStake = company.capTable?.investors 
     ? calculateKVStake(company.capTable.investors) 
@@ -524,7 +541,7 @@ export default function CompanyModal({ company, currentReportIndex, onReportChan
                             <div>
                               <p className="text-sm font-medium text-gray-500">Valuation</p>
                               <p className="text-xl font-bold text-gray-900">
-                                {company.capTable.valuation ? `$${(company.capTable.valuation / 1000000).toFixed(1)}M` : 'N/A'}
+                                {formatCurrency(company.capTable.valuation)}
                               </p>
                             </div>
                             <div>

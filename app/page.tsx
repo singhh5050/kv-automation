@@ -368,6 +368,7 @@ export default function Home() {
             const saveResult = await saveFinancialReport({
               companyName: data.companyName || file.name.replace('.pdf', ''),
               filename: file.name,
+              s3Key: data.s3_key || null, // Include S3 key if available
               reportDate: data.reportDate || new Date().toISOString().split('T')[0],
               reportPeriod: data.reportPeriod || 'Unknown Period',
               cashOnHand: data.cashOnHand || 'N/A',
