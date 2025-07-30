@@ -46,7 +46,6 @@ def lambda_handler(event, context):
             user=db_config["user"],
             password=db_config["password"],
             timeout=3,               # connection handshake
-            socket_timeout=30,       # queries / drops
             ssl_context=True         # correct SSL flag
         )
 
@@ -124,6 +123,7 @@ def create_database_schema(conn):
         id SERIAL PRIMARY KEY,
         company_id          INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
         file_name           VARCHAR(500) NOT NULL,
+        s3_key              VARCHAR(1024),
         report_date         DATE,
         report_period       VARCHAR(50),
         sector              VARCHAR(20) CHECK (sector IN ('healthcare','consumer','enterprise','manufacturing')),
