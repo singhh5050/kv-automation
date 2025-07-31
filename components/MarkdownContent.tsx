@@ -123,7 +123,7 @@ export function LegacyBulletList({ content }: { content: string }) {
   // Multiple bullets, render as list
   return (
     <ul className="list-disc list-outside pl-5 space-y-2">
-      {bullets.map((bullet, index) => (
+              {bullets.map((bullet, index: number) => (
         <li key={index} className="text-gray-700 leading-relaxed">
           {bullet}
         </li>

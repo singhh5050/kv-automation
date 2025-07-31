@@ -316,7 +316,7 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
               </tr>
             </thead>
             <tbody>
-              {records.map((record, recordIndex) => (
+                              {records.map((record, recordIndex: number) => (
                 <tr key={record.id || recordIndex} className="border-b">
                   {fieldNames.map(field => {
                     const value = record[field]
