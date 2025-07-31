@@ -33,10 +33,6 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
   const [editValue, setEditValue] = useState<string>('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    loadAllData()
-  }, [companyId, loadAllData])
-
   const loadAllData = useCallback(async () => {
     setLoading(true)
     try {
@@ -52,6 +48,10 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
       setLoading(false)
     }
   }, [companyId])
+
+  useEffect(() => {
+    loadAllData()
+  }, [companyId, loadAllData])
 
   const handleEdit = (table: string, recordId: number, field: string, currentValue: any) => {
     setEditingCell({ table, recordId, field })
