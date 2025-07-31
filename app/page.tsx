@@ -10,6 +10,7 @@ import {
   saveFinancialReport, 
   getCompanies, 
   getCompanyOverview,
+  getCompanyEnrichment,
   healthCheck,
   testDatabaseConnection,
   createDatabaseSchema 
@@ -233,6 +234,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
 export default function Home() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
+  const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'healthy' | 'unhealthy'>('unknown')
@@ -322,6 +324,9 @@ export default function Home() {
           
           // Cache the loaded data
           companiesCache.set(frontendCompanies)
+          
+          // Load enrichment data for companies
+          loadEnrichmentData(frontendCompanies)
         }
       } else {
         console.error('❌ Error loading companies:', result.error)
@@ -332,6 +337,40 @@ export default function Home() {
       setErrorMessage(`Failed to load companies: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadEnrichmentData = async (companies: Company[]) => {
+    try {
+      console.log('🔍 Loading enrichment data for', companies.length, 'companies...')
+      const enrichmentPromises = companies.map(async (company) => {
+        try {
+          const enrichmentResult = await getCompanyEnrichment(company.id)
+          if (enrichmentResult.data && !enrichmentResult.error && enrichmentResult.data.data) {
+            return {
+              companyId: company.id,
+              data: enrichmentResult.data.data.extracted_data
+            }
+          }
+        } catch (error) {
+          console.log(`No enrichment data for ${company.name}:`, error)
+        }
+        return { companyId: company.id, data: null }
+      })
+      
+      const enrichmentResults = await Promise.all(enrichmentPromises)
+      const enrichmentMap: Record<string, any> = {}
+      
+      enrichmentResults.forEach(result => {
+        if (result.data) {
+          enrichmentMap[result.companyId] = result.data
+        }
+      })
+      
+      console.log('✅ Loaded enrichment data for', Object.keys(enrichmentMap).length, 'companies')
+      setEnrichmentData(enrichmentMap)
+    } catch (error) {
+      console.error('❌ Error loading enrichment data:', error)
     }
   }
 
@@ -748,6 +787,7 @@ export default function Home() {
               <CompanyCard
                 key={company.id}
                 company={company}
+                enrichmentData={enrichmentData[company.id]}
               />
             ))}
           </div>

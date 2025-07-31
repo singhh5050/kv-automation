@@ -106,35 +106,57 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 df_meta.columns = df_meta.iloc[0]
                 df_meta = df_meta.iloc[1:].reset_index(drop=True)
 
-            # Latest round row containing the word "Series"
-            if not df_meta.empty and "Round" in df_meta.columns:
-                series_rows = df_meta["Round"].dropna().astype(str)
-                round_raw = series_rows[series_rows.str.contains("Series", case=False)].iloc[-1] if not series_rows.empty else "Current"
-            else:
-                round_raw = "Current"
-            round_name = sanitize_round_name(round_raw)
+            # Helper function to safely convert to float, removing currency symbols
+            def safe_float(x):
+                try:
+                    # remove commas, €, $ etc. before casting
+                    return float(re.sub(r"[^\d.\-]", "", str(x))) if pd.notna(x) else None
+                except ValueError:
+                    return None
 
-            # Pull valuation, amount raised, and round date (take most recent / last row)
+            # Find the latest round row containing the word "Series"
             effective_cols = [c for c in df_meta.columns if "Effective Post-Money" in str(c)]
             raised_cols = [c for c in df_meta.columns if "Total Amt Raised" in str(c)]
             date_cols = [c for c in df_meta.columns if "date" in str(c).lower()]
-
-            valuation = float(df_meta[effective_cols[0]].dropna().iloc[-1]) if effective_cols else None
-            amount_raised = float(df_meta[raised_cols[0]].dropna().iloc[-1]) if raised_cols else None
-
-            # Match the same row we chose for round_name to fetch its date
-            round_date = None
-            if date_cols:
-                date_col = date_cols[0]
-                if "Round" in df_meta.columns:
-                    series_rows = df_meta["Round"].dropna().astype(str)
-                    mask = series_rows.str.contains("Series", case=False, na=False)
-                    idx = mask[mask].index[-1] if mask.any() else df_meta.index[-1]
-                    raw_date = df_meta.at[idx, date_col]
-                    try:
-                        round_date = pd.to_datetime(raw_date, errors="coerce").date().isoformat() if pd.notna(raw_date) else None
-                    except Exception:
-                        round_date = None
+            
+            if not df_meta.empty and "Round" in df_meta.columns:
+                series_mask = df_meta["Round"].astype(str).str.contains(
+                    r"Series",  # Could extend with r"(Series|Seed|SAFE)" if needed
+                    case=False,
+                    na=False,
+                )
+                if series_mask.any():
+                    # Use the same row for round name, valuation, amount raised, and date
+                    idx = series_mask[series_mask].index[-1]
+                    round_raw = df_meta.at[idx, "Round"]
+                    round_name = sanitize_round_name(round_raw)
+                    
+                    # Extract valuation and amount raised from the same Series row
+                    valuation = safe_float(df_meta.at[idx, effective_cols[0]]) if effective_cols else None
+                    amount_raised = safe_float(df_meta.at[idx, raised_cols[0]]) if raised_cols else None
+                    
+                    # Extract round date from the same row
+                    round_date = None
+                    if date_cols:
+                        raw_date = df_meta.at[idx, date_cols[0]]
+                        try:
+                            round_date = pd.to_datetime(raw_date, errors="coerce").date().isoformat() if pd.notna(raw_date) else None
+                        except Exception:
+                            round_date = None
+                else:
+                    # No Series rows found, fall back to graceful defaults
+                    round_raw = "Current"
+                    round_name = sanitize_round_name(round_raw)
+                    valuation = safe_float(df_meta[effective_cols[0]].dropna().iloc[-1]) if effective_cols else None
+                    amount_raised = safe_float(df_meta[raised_cols[0]].dropna().iloc[-1]) if raised_cols else None
+                    round_date = None
+            else:
+                # No Round column found, fall back to old behavior
+                round_raw = "Current"
+                round_name = sanitize_round_name(round_raw)
+                valuation = safe_float(df_meta[effective_cols[0]].dropna().iloc[-1]) if effective_cols else None
+                amount_raised = safe_float(df_meta[raised_cols[0]].dropna().iloc[-1]) if raised_cols else None
+                round_date = None
         except Exception as e:
             print(f"⚠️  Metadata parse error: {e}")
             company_name, round_name, valuation, amount_raised, round_date = "Unknown Company", "Current", None, None, None

@@ -74,9 +74,10 @@ const detectCompanyStage = (investors: any[]): string => {
 interface CompanyCardProps {
   company: Company
   onClick?: () => void
+  enrichmentData?: any
 }
 
-export default function CompanyCard({ company, onClick }: CompanyCardProps) {
+export default function CompanyCard({ company, onClick, enrichmentData }: CompanyCardProps) {
   const router = useRouter()
   const latestReport = company.latestReport;
   const reportCount = company.reports.length;
@@ -85,9 +86,10 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
   // Get clean display name
   const displayName = normalizeCompanyName(company.name);
 
-  // Dynamically find KV funds and calculate total stake
+  // Dynamically find KV funds and calculate total stake and investment
   const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
   const kvStake = kvInvestors.reduce((total, investor) => total + (investor.final_fds || 0), 0);
+  const kvTotalInvestment = kvInvestors.reduce((total, investor) => total + (investor.total_invested || 0), 0);
   const kvFundNames = kvInvestors.map(investor => investor.investor_name).join(', ');
   
   // Detect company stage based on KV fund names
@@ -114,10 +116,28 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
       {/* Header */}
       <div className="mb-4">
         <div className="flex items-start space-x-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
-            <span className="text-white font-bold text-lg">
-              {displayName.charAt(0).toUpperCase()}
-            </span>
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+            {enrichmentData?.logo_url ? (
+              <img 
+                src={enrichmentData.logo_url} 
+                alt={`${displayName} logo`}
+                className="w-12 h-12 rounded-xl object-contain bg-white border border-gray-200 p-1"
+                onError={(e) => {
+                  // Fallback to letter avatar if logo fails to load
+                  e.currentTarget.style.display = 'none'
+                  e.currentTarget.nextElementSibling.style.display = 'flex'
+                }}
+              />
+            ) : null}
+            <div 
+              className={`w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center ${
+                enrichmentData?.logo_url ? 'hidden' : 'flex'
+              }`}
+            >
+              <span className="text-white font-bold text-lg">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
+            </div>
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-blue-700 transition-colors">{displayName}</h3>
@@ -178,11 +198,13 @@ export default function CompanyCard({ company, onClick }: CompanyCardProps) {
             </div>
           </div>
 
-          {/* Second Row - ARR and KV Ownership */}
+          {/* Second Row - Total KV Investment and KV Ownership */}
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">ARR</p>
-              <p className="text-xl font-bold text-gray-900">$1.8M</p>
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">KV Investment</p>
+              <p className="text-xl font-bold text-gray-900">
+                {formatCurrency(kvTotalInvestment)}
+              </p>
             </div>
             <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
               <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">KV Ownership</p>
