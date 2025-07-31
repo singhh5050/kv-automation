@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getAllCompanyData, updateCompany, updateCapTableRound, updateCapTableInvestor, updateFinancialMetrics } from '@/lib/api'
 
 interface DatabaseField {
@@ -35,9 +35,9 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
 
   useEffect(() => {
     loadAllData()
-  }, [companyId])
+  }, [companyId, loadAllData])
 
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async () => {
     setLoading(true)
     try {
       const result = await getAllCompanyData(companyId)
@@ -51,7 +51,7 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
     } finally {
       setLoading(false)
     }
-  }
+  }, [companyId])
 
   const handleEdit = (table: string, recordId: number, field: string, currentValue: any) => {
     setEditingCell({ table, recordId, field })

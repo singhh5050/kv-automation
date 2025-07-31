@@ -472,13 +472,13 @@ export default function CompanyDetailPage() {
       if (urn.startsWith('urn:harmonic:company:')) {
         // Try to look up in existing data or return a formatted version
         const id = urn.split(':').pop()
-        return `Company ${id}`
+        return `Company ${id || 'Unknown'}`
       } else if (urn.includes('urn:')) {
         // Other URN types
         const parts = urn.split(':')
         const id = parts.pop()
         const type = parts[parts.length - 1] || 'entity'
-        return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}`
+        return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id || 'Unknown'}`
       }
       return urn
     } else if (urn && typeof urn === 'object') {
