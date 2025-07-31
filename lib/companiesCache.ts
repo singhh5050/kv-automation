@@ -1,7 +1,7 @@
 import { Company } from '@/types'
 
 const CACHE_KEY = 'portfolio_companies_cache'
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes in milliseconds
+const CACHE_DURATION = 15 * 60 * 1000 // 15 minutes in milliseconds
 
 interface CachedData {
   companies: Company[]

@@ -129,7 +129,7 @@ export default function EditableMetric({
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={handleKeyPress}
-            className="text-3xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none focus:border-blue-600 min-w-0 flex-1"
+            className="text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none focus:border-blue-600 min-w-0 flex-1"
             placeholder="Enter value"
             disabled={isLoading}
             autoFocus
@@ -174,7 +174,7 @@ export default function EditableMetric({
         onClick={handleStartEdit}
         title="Click to edit"
       >
-        <p className="text-3xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+        <p className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
           {displayValue}
         </p>
         <div className="opacity-0 group-hover:opacity-100 transition-opacity">

@@ -554,27 +554,24 @@ export default function Home() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-8">
+          <div className="flex justify-between items-center py-4">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
                 Portfolio Companies
               </h1>
-              <p className="text-gray-600 mt-2">Track and manage your investment portfolio</p>
+              <p className="text-gray-600">Track and manage your investment portfolio</p>
             </div>
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => loadCompanies(true)}
                 disabled={isLoading}
-                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-all duration-200"
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
               >
                 <span>🔄</span>
                 <span>Reload Cache</span>
               </button>
               <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
               <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
-              <button className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all duration-200 font-medium shadow-sm">
-                Logout
-              </button>
             </div>
           </div>
         </div>
@@ -582,14 +579,14 @@ export default function Home() {
 
       {/* Filters */}
       <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4 xl:gap-5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Stage</label>
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stage</label>
               <select
                 value={filters.stage}
                 onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
-                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[110px]"
+                className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[110px]"
               >
                 <option value="">All Stages</option>
                 {Array.from(new Set(companies.map(c => c.stage).filter(Boolean)))
@@ -604,11 +601,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Sector</label>
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Sector</label>
               <select
                 value={filters.sector}
                 onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
-                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[110px]"
+                className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[110px]"
               >
                 <option value="">All Sectors</option>
                 {Array.from(new Set(companies.map(c => c.sector).filter(Boolean)))
@@ -622,12 +619,10 @@ export default function Home() {
               </select>
             </div>
 
-
-            
             {(filters.sector || filters.stage) && (
               <button
                 onClick={() => setFilters({ stage: '', sector: '' })}
-                className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all duration-200 font-medium shadow-sm border border-slate-200 whitespace-nowrap"
+                className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200 whitespace-nowrap"
               >
                 Clear Filters
               </button>
@@ -729,9 +724,9 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {!isLoading && companies.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-4">
             <p className="text-sm text-gray-600">
               Showing {filteredCompanies.length} of {companies.length} companies
               {filters.sector && ` in ${filters.sector} sector`}
@@ -757,7 +752,7 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {filteredCompanies.map((company) => (
               <CompanyCard
                 key={company.id}
