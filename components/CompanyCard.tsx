@@ -79,6 +79,10 @@ interface CompanyCardProps {
 
 export default function CompanyCard({ company, onClick, enrichmentData }: CompanyCardProps) {
   const router = useRouter()
+  
+  // Debug enrichment data
+  console.log(`CompanyCard for ${company.name} - enrichmentData:`, enrichmentData)
+  
   const latestReport = company.latestReport;
   const reportCount = company.reports.length;
   const hasCapTable = !!company.capTable;
@@ -117,9 +121,9 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
       <div className="mb-4">
         <div className="flex items-start space-x-4">
           <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
-            {enrichmentData?.logo_url ? (
+            {enrichmentData?.enrichment?.extracted?.logo_url ? (
               <img 
-                src={enrichmentData.logo_url} 
+                src={enrichmentData.enrichment.extracted.logo_url} 
                 alt={`${displayName} logo`}
                 className="w-12 h-12 rounded-xl object-contain bg-white border border-gray-200 p-1"
                 onError={(e) => {
@@ -131,7 +135,7 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
             ) : null}
             <div 
               className={`w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center ${
-                enrichmentData?.logo_url ? 'hidden' : 'flex'
+                enrichmentData?.enrichment?.extracted?.logo_url ? 'hidden' : 'flex'
               }`}
             >
               <span className="text-white font-bold text-lg">
@@ -148,6 +152,7 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
                   company.sector.toLowerCase() === 'enterprise' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                   company.sector.toLowerCase() === 'consumer' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                   company.sector.toLowerCase() === 'manufacturing' ? 'bg-orange-50 text-orange-700 border border-orange-200' :
+                  company.sector.toLowerCase() === 'unknown' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
                   'bg-gray-50 text-gray-700 border border-gray-200'
                 }`}>
                   <span>{
@@ -155,6 +160,7 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
                     company.sector.toLowerCase() === 'enterprise' ? '🏢' :
                     company.sector.toLowerCase() === 'consumer' ? '🛒' :
                     company.sector.toLowerCase() === 'manufacturing' ? '🏭' :
+                    company.sector.toLowerCase() === 'unknown' ? '❓' :
                     '🏢'
                   }</span>
                   <span>{company.sector.charAt(0).toUpperCase() + company.sector.slice(1)}</span>
@@ -222,18 +228,7 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
             </p>
           </div>
 
-          {/* Needs Help With */}
-          <div>
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Needs help with:</p>
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg">
-                recruiting
-              </span>
-              <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg">
-                GTM
-              </span>
-            </div>
-          </div>
+
         </div>
       ) : (
         <div className="text-center py-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-dashed border-gray-200">
