@@ -49,7 +49,7 @@ const formatCurrency = (value: string | number | null | undefined): string => {
 }
 
 // Sector-specific field labels mapping
-const getSectorLabels = (sector: string = 'healthcare') => {
+const getSectorLabels = (sector: string = 'unknown') => {
   const sectorLower = sector.toLowerCase()
   switch (sectorLower) {
     case 'healthcare':
@@ -548,7 +548,7 @@ export default function CompanyDetailPage() {
   const latestReport = company.financial_reports[0]
   
   // Get sector from company data or latest report
-  const companySector = company.company.sector || latestReport?.sector || 'healthcare'
+  const companySector = company.company.sector || latestReport?.sector || 'unknown'
   const sectorLabels = getSectorLabels(companySector)
   
   const kvStake = company.current_cap_table ? 

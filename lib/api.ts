@@ -364,7 +364,7 @@ export async function enrichCompany(companyId: string, identifier: { key: string
  * Get existing enrichment data for a company
  */
 export async function getCompanyEnrichment(companyId: string) {
-  return apiRequest('/financial', {
+  return apiRequest('/harmonic-enrichment', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

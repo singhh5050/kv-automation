@@ -160,7 +160,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
           keyRisks: report.key_risks || 'N/A',
           personnelUpdates: report.personnel_updates || 'N/A',
           nextMilestones: report.next_milestones || 'N/A',
-          sector: report.sector || 'healthcare',
+          sector: report.sector || 'unknown',
           uploadDate: report.processed_at ? new Date(report.processed_at).toLocaleDateString() : new Date().toLocaleDateString(),
         }))
 
@@ -194,7 +194,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
         companies.push({
           id: dbCompany.id.toString(),
           name: dbCompany.name,
-          sector: overview.company.sector || (reports[0]?.sector) || 'healthcare',
+          sector: overview.company.sector || (reports[0]?.sector) || 'unknown',
           stage: companyStage,
           reports: reports,
           latestReport: reports[0] || null,
@@ -215,7 +215,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
         companies.push({
           id: dbCompany.id.toString(),
           name: dbCompany.name,
-          sector: dbCompany.sector || 'healthcare',
+          sector: dbCompany.sector || 'unknown',
           stage: 'Unknown',
           reports: [],
           latestReport: null,
@@ -243,10 +243,7 @@ export default function Home() {
   // Filter states
   const [filters, setFilters] = useState({
     stage: '',
-    sector: '',
-    leadPartner: '',
-    mdSponsor: '',
-    needsHelp: ''
+    sector: ''
   })
 
   // Load companies from cache or database on mount
@@ -288,6 +285,8 @@ export default function Home() {
     if (cachedCompanies && cachedCompanies.length > 0) {
       console.log('📦 Using cached companies data:', cachedCompanies.length, 'companies')
       setCompanies(cachedCompanies)
+      // Load enrichment data for cached companies
+      loadEnrichmentData(cachedCompanies)
       return
     }
 
@@ -343,29 +342,29 @@ export default function Home() {
   const loadEnrichmentData = async (companies: Company[]) => {
     try {
       console.log('🔍 Loading enrichment data for', companies.length, 'companies...')
-      const enrichmentPromises = companies.map(async (company) => {
-        try {
-          const enrichmentResult = await getCompanyEnrichment(company.id)
-          if (enrichmentResult.data && !enrichmentResult.error && enrichmentResult.data.data) {
-            return {
-              companyId: company.id,
-              data: enrichmentResult.data.data.extracted_data
-            }
-          }
-        } catch (error) {
-          console.log(`No enrichment data for ${company.name}:`, error)
-        }
-        return { companyId: company.id, data: null }
-      })
       
-      const enrichmentResults = await Promise.all(enrichmentPromises)
+      // Load enrichment data sequentially to avoid overwhelming the server
       const enrichmentMap: Record<string, any> = {}
       
-      enrichmentResults.forEach(result => {
-        if (result.data) {
-          enrichmentMap[result.companyId] = result.data
+              for (const company of companies) {
+          try {
+            const enrichmentResult = await getCompanyEnrichment(company.id)
+            console.log(`Enrichment result for ${company.name}:`, enrichmentResult)
+            if (enrichmentResult.data && !enrichmentResult.error && enrichmentResult.data.data) {
+              console.log(`Raw enrichment data for ${company.name}:`, enrichmentResult.data.data)
+              // Store the data in the structure expected by CompanyCard
+              enrichmentMap[company.id] = {
+                enrichment: {
+                  extracted: enrichmentResult.data.data.extracted_data
+                }
+              }
+              console.log(`Stored enrichment data for ${company.name}:`, enrichmentMap[company.id])
+            }
+          } catch (error) {
+            console.log(`No enrichment data for ${company.name}:`, error)
+            // Continue with next company instead of failing completely
+          }
         }
-      })
       
       console.log('✅ Loaded enrichment data for', Object.keys(enrichmentMap).length, 'companies')
       setEnrichmentData(enrichmentMap)
@@ -420,7 +419,7 @@ export default function Home() {
               keyRisks: data.keyRisks || 'N/A',
               personnelUpdates: data.personnelUpdates || 'N/A',
               nextMilestones: data.nextMilestones || 'N/A',
-              sector: data.sector || 'healthcare'
+              sector: data.sector || 'unknown'
             })
             
             if (saveResult.error) {
@@ -609,49 +608,11 @@ export default function Home() {
               </select>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Lead Partner</label>
-              <select
-                value={filters.leadPartner}
-                onChange={(e) => setFilters({ ...filters, leadPartner: e.target.value })}
-                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[90px]"
-              >
-                <option value="">All</option>
-                <option value="Sarah Johnson">Sarah Johnson</option>
-                <option value="Alex Morgan">Alex Morgan</option>
-              </select>
-            </div>
 
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">MD Sponsor</label>
-              <select
-                value={filters.mdSponsor}
-                onChange={(e) => setFilters({ ...filters, mdSponsor: e.target.value })}
-                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[90px]"
-              >
-                <option value="">All</option>
-                <option value="Alex Morgan">Alex Morgan</option>
-                <option value="Sarah Johnson">Sarah Johnson</option>
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Needs help with</label>
-              <select
-                value={filters.needsHelp}
-                onChange={(e) => setFilters({ ...filters, needsHelp: e.target.value })}
-                className="text-sm border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm min-w-[100px]"
-              >
-                <option value="">All</option>
-                <option value="recruiting">Recruiting</option>
-                <option value="GTM">GTM</option>
-                <option value="fundraising">Fundraising</option>
-              </select>
-            </div>
             
-            {(filters.sector || filters.stage || filters.leadPartner || filters.mdSponsor || filters.needsHelp) && (
+            {(filters.sector || filters.stage) && (
               <button
-                onClick={() => setFilters({ stage: '', sector: '', leadPartner: '', mdSponsor: '', needsHelp: '' })}
+                onClick={() => setFilters({ stage: '', sector: '' })}
                 className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all duration-200 font-medium shadow-sm border border-slate-200 whitespace-nowrap"
               >
                 Clear Filters
