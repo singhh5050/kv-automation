@@ -1,8 +1,10 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Company } from '../types'
+import { deleteCompany } from '../lib/api'
+import { X } from 'lucide-react'
 
 // Company name normalization for display (removes legal suffixes but preserves case)
 const normalizeCompanyName = (name: string): string => {
@@ -75,10 +77,12 @@ interface CompanyCardProps {
   company: Company
   onClick?: () => void
   enrichmentData?: any
+  onDelete?: (companyId: string) => void
 }
 
-export default function CompanyCard({ company, onClick, enrichmentData }: CompanyCardProps) {
+export default function CompanyCard({ company, onClick, enrichmentData, onDelete }: CompanyCardProps) {
   const router = useRouter()
+  const [deleting, setDeleting] = useState(false)
   
   // Debug enrichment data
   console.log(`CompanyCard for ${company.name} - enrichmentData:`, enrichmentData)
@@ -112,11 +116,48 @@ export default function CompanyCard({ company, onClick, enrichmentData }: Compan
     router.push(`/company/${company.id}`)
   }
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent card click
+    
+    const displayName = normalizeCompanyName(company.name)
+    if (!confirm(`Are you sure you want to delete "${displayName}" and all its data? This action cannot be undone.`)) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const result = await deleteCompany(company.id.toString())
+      if (result.error) {
+        alert(`Failed to delete company: ${result.error}`)
+      } else {
+        // Notify parent component to remove from list
+        onDelete?.(company.id.toString())
+        alert(`Company "${displayName}" and all associated data have been deleted successfully.`)
+      }
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div
       onClick={handleClick}
-      className="bg-white rounded-xl border border-gray-200 p-6 cursor-pointer hover:border-gray-300 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group"
+      className="relative bg-white rounded-xl border border-gray-200 p-6 cursor-pointer hover:border-gray-300 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group"
     >
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="absolute top-3 right-3 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors z-10"
+          title="Delete company"
+        >
+          <X size={16} />
+        </button>
+      )}
+      
       {/* Header */}
       <div className="mb-4">
         <div className="flex items-start space-x-4">

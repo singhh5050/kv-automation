@@ -464,6 +464,19 @@ export default function Home() {
     }
   }
 
+  const handleDeleteCompany = (companyId: string) => {
+    // Remove from companies state
+    setCompanies(prev => prev.filter(company => company.id.toString() !== companyId))
+    // Also remove from filtered companies
+    setFilteredCompanies(prev => prev.filter(company => company.id.toString() !== companyId))
+    // Clear from cache and refresh cache with updated data
+    companiesCache.clear()
+    setTimeout(() => {
+      // Update cache with remaining companies after state update
+      companiesCache.set(companies.filter(company => company.id.toString() !== companyId))
+    }, 100)
+  }
+
   const dismissError = () => {
     setErrorMessage(null)
   }
@@ -750,6 +763,7 @@ export default function Home() {
                 key={company.id}
                 company={company}
                 enrichmentData={enrichmentData[company.id]}
+                onDelete={handleDeleteCompany}
               />
             ))}
           </div>

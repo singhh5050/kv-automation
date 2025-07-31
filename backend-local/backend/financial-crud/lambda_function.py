@@ -88,6 +88,8 @@ def lambda_handler(event, context):
         result = get_company_people(db_config, body.get("company_id"))
     elif operation == "delete_person_enrichment":
         result = delete_person_enrichment(db_config, body.get("person_urn"))
+    elif operation == "delete_company":
+        result = delete_company(db_config, body.get("company_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -2031,4 +2033,86 @@ def delete_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]
         return {
             'success': False,
             'error': f'Failed to delete person enrichment data: {str(e)}'
-        } 
+        }
+
+def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Delete a company and all its associated data using CASCADE deletes.
+    Returns summary of what was deleted.
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    conn_result = get_database_connection(db_config)
+    if not conn_result['success']:
+        return conn_result
+    
+    conn = conn_result['connection']
+    
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+        
+        # First, get preview of what will be deleted (for logging/audit)
+        cur.execute("""
+            SELECT 
+                c.name as company_name,
+                (SELECT count(*) FROM financial_reports WHERE company_id = %s) as reports_count,
+                (SELECT count(*) FROM cap_table_rounds WHERE company_id = %s) as rounds_count,
+                (SELECT count(*) FROM cap_table_investors WHERE company_id = %s) as investors_count,
+                (SELECT count(*) FROM person_enrichments WHERE company_id = %s) as people_count,
+                (SELECT count(*) FROM company_enrichments WHERE company_id = %s) as enrichments_count
+            FROM companies c 
+            WHERE c.id = %s
+        """, (company_id, company_id, company_id, company_id, company_id, company_id))
+        
+        preview = cur.fetchone()
+        if not preview:
+            return {
+                'success': False,
+                'error': f'Company with id {company_id} not found'
+            }
+        
+        company_name = preview[0]
+        cascaded_counts = {
+            'financial_reports': preview[1],
+            'cap_table_rounds': preview[2], 
+            'cap_table_investors': preview[3],
+            'person_enrichments': preview[4],
+            'company_enrichments': preview[5]
+        }
+        
+        # Delete the company - CASCADE will handle all related data
+        cur.execute("DELETE FROM companies WHERE id = %s", (company_id,))
+        deleted_companies = cur.rowcount
+        
+        if deleted_companies == 0:
+            conn.rollback()
+            return {
+                'success': False,
+                'error': f'Failed to delete company {company_id}'
+            }
+        
+        conn.commit()
+        
+        return {
+            'success': True,
+            'data': {
+                'deleted_company_id': company_id,
+                'company_name': company_name,
+                'cascaded_deletions': cascaded_counts,
+                'total_records_deleted': sum(cascaded_counts.values()) + deleted_companies
+            }
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        return {
+            'success': False,
+            'error': f'Failed to delete company: {str(e)}'
+        }
+    finally:
+        conn.close() 

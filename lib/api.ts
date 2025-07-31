@@ -390,4 +390,20 @@ export async function enrichPerson(personUrn: string) {
       person_urn: personUrn,
     }),
   })
+}
+
+/**
+ * Delete a company and all its associated data
+ */
+export async function deleteCompany(companyId: string) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'delete_company',
+      company_id: companyId,
+    }),
+  })
 } 
