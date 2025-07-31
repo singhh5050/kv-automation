@@ -29,7 +29,7 @@ export default function FileUpload({ onUpload, isLoading }: FileUploadProps) {
       <div
         {...getRootProps()}
         className={`
-          px-6 py-3 border-2 border-dashed rounded-lg cursor-pointer transition-colors
+          px-4 py-2 border border-dashed rounded cursor-pointer transition-colors
           ${isDragActive 
             ? 'border-blue-400 bg-blue-50' 
             : 'border-gray-300 bg-white hover:border-gray-400'

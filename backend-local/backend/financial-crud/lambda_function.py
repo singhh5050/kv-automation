@@ -2062,7 +2062,9 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
                 c.name as company_name,
                 (SELECT count(*) FROM financial_reports WHERE company_id = %s) as reports_count,
                 (SELECT count(*) FROM cap_table_rounds WHERE company_id = %s) as rounds_count,
-                (SELECT count(*) FROM cap_table_investors WHERE company_id = %s) as investors_count,
+                (SELECT count(*) FROM cap_table_investors ci 
+                 JOIN cap_table_rounds ctr ON ci.cap_table_round_id = ctr.id 
+                 WHERE ctr.company_id = %s) as investors_count,
                 (SELECT count(*) FROM person_enrichments WHERE company_id = %s) as people_count,
                 (SELECT count(*) FROM company_enrichments WHERE company_id = %s) as enrichments_count
             FROM companies c 
