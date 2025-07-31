@@ -1,5 +1,6 @@
 'use client'
 
+// Trigger Vercel deployment - Database Editor fixes applied
 import React, { useState, useEffect } from 'react'
 import FileUpload from '@/components/FileUpload'
 import CapTableUpload from '@/components/CapTableUpload'
