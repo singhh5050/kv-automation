@@ -342,4 +342,52 @@ export async function getAllCompanyData(companyId: string) {
       company_id: companyId,
     }),
   })
+}
+
+/**
+ * Enrich company data using Harmonic AI
+ */
+export async function enrichCompany(companyId: string, identifier: { key: string; value: string }) {
+  return apiRequest('/harmonic-enrichment', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+      [identifier.key]: identifier.value,
+    }),
+  })
+}
+
+/**
+ * Get existing enrichment data for a company
+ */
+export async function getCompanyEnrichment(companyId: string) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_company_enrichment',
+      company_id: companyId,
+    }),
+  })
+}
+
+/**
+ * Enrich person data using Harmonic AI (secure backend call)
+ */
+export async function enrichPerson(personUrn: string) {
+  return apiRequest('/harmonic-enrichment', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'enrich_person',
+      person_urn: personUrn,
+    }),
+  })
 } 

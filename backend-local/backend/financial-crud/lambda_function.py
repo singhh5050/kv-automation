@@ -78,6 +78,16 @@ def lambda_handler(event, context):
         result = update_cap_table_investor(db_config, body)
     elif operation == "get_all_company_data":
         result = get_all_company_data(db_config, body.get("company_id"))
+    elif operation == "get_company_enrichment":
+        result = get_company_enrichment(db_config, body.get("company_id"))
+    elif operation == "delete_company_enrichment":
+        result = delete_company_enrichment(db_config, body.get("company_id"))
+    elif operation == "get_person_enrichment":
+        result = get_person_enrichment(db_config, body.get("person_urn"))
+    elif operation == "get_company_people":
+        result = get_company_people(db_config, body.get("company_id"))
+    elif operation == "delete_person_enrichment":
+        result = delete_person_enrichment(db_config, body.get("person_urn"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -715,6 +725,28 @@ def debug_database_contents(db_config: Dict) -> Dict[str, Any]:
             current_count = cursor.fetchone()[0]
             debug_info['current_cap_tables_count'] = current_count
         
+        # Check company_enrichments table
+        if 'company_enrichments' in tables:
+            cursor.execute("SELECT COUNT(*) FROM company_enrichments")
+            enrichments_count = cursor.fetchone()[0]
+            debug_info['company_enrichments_count'] = enrichments_count
+            
+            if enrichments_count > 0:
+                cursor.execute("SELECT id, company_id, enrichment_status FROM company_enrichments LIMIT 5")
+                enrichments = _cursor_to_dict(cursor)
+                debug_info['sample_enrichments'] = enrichments
+        
+        # Check person_enrichments table
+        if 'person_enrichments' in tables:
+            cursor.execute("SELECT COUNT(*) FROM person_enrichments")
+            person_enrichments_count = cursor.fetchone()[0]
+            debug_info['person_enrichments_count'] = person_enrichments_count
+            
+            if person_enrichments_count > 0:
+                cursor.execute("SELECT id, person_urn, full_name, title FROM person_enrichments LIMIT 5")
+                person_enrichments = _cursor_to_dict(cursor)
+                debug_info['sample_person_enrichments'] = person_enrichments
+        
         cursor.close()
         conn.close()
         
@@ -753,6 +785,8 @@ def clear_all_data(db_config: Dict) -> Dict[str, Any]:
         cap_investors_count = 0
         cap_rounds_count = 0 
         cap_current_count = 0
+        enrichments_count = 0
+        person_enrichments_count = 0
         
         try:
             cursor.execute("SELECT COUNT(*) FROM cap_table_investors")
@@ -763,6 +797,12 @@ def clear_all_data(db_config: Dict) -> Dict[str, Any]:
             
             cursor.execute("SELECT COUNT(*) FROM cap_table_current")
             cap_current_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM company_enrichments")
+            enrichments_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM person_enrichments")
+            person_enrichments_count = cursor.fetchone()[0]
         except Exception:
             # Tables might not exist yet
             pass
@@ -771,6 +811,8 @@ def clear_all_data(db_config: Dict) -> Dict[str, Any]:
         cursor.execute("DELETE FROM cap_table_investors")
         cursor.execute("DELETE FROM cap_table_current")
         cursor.execute("DELETE FROM cap_table_rounds")
+        cursor.execute("DELETE FROM person_enrichments")
+        cursor.execute("DELETE FROM company_enrichments")
         cursor.execute("DELETE FROM financial_reports")
         cursor.execute("DELETE FROM companies")
         
@@ -795,7 +837,9 @@ def clear_all_data(db_config: Dict) -> Dict[str, Any]:
                 'deleted_cap_rounds': cap_rounds_count,
                 'deleted_investors': cap_investors_count,
                 'deleted_current_cap_tables': cap_current_count,
-                'message': f'Successfully deleted {reports_count} reports, {companies_count} companies, {cap_rounds_count} cap table rounds, and {cap_investors_count} investors'
+                'deleted_company_enrichments': enrichments_count,
+                'deleted_person_enrichments': person_enrichments_count,
+                'message': f'Successfully deleted {reports_count} reports, {companies_count} companies, {cap_rounds_count} cap table rounds, {cap_investors_count} investors, {enrichments_count} company enrichments, and {person_enrichments_count} person enrichments'
             }
         }
         
@@ -1652,4 +1696,339 @@ def normalize_company_name(name: str) -> str:
             .replace('inc', '').replace('incorporated', '')
             .replace('ltd', '').replace('limited', '')
             .replace('llc', '').replace('co.', '').replace('co', '')
-            .strip()) 
+            .strip())
+
+def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Retrieve enrichment data for a company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'Company ID is required'
+        }
+    
+    try:
+        # Get database connection
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+            
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Query enrichment data
+        cursor.execute("""
+            SELECT id, company_id, harmonic_entity_urn, harmonic_data, 
+                   extracted_data, enrichment_status, enriched_at, 
+                   created_at, updated_at
+            FROM company_enrichments 
+            WHERE company_id = %s 
+            ORDER BY enriched_at DESC 
+            LIMIT 1
+        """, [company_id])
+        
+        result = cursor.fetchone()
+        
+        if result:
+            # Get the extracted data and enhance it with person enrichments
+            extracted_data = result[4]
+            if extracted_data:
+                # Enhance CEO data with person enrichment
+                if extracted_data.get('ceo') and extracted_data['ceo'].get('person_urn'):
+                    person_urn = extracted_data['ceo']['person_urn']
+                    cursor.execute("""
+                        SELECT full_name, first_name, last_name, title, extracted_data
+                        FROM person_enrichments 
+                        WHERE person_urn = %s 
+                        ORDER BY enriched_at DESC 
+                        LIMIT 1
+                    """, [person_urn])
+                    
+                    person_result = cursor.fetchone()
+                    if person_result:
+                        extracted_data['ceo']['enriched_person'] = {
+                            'full_name': person_result[0],
+                            'first_name': person_result[1],
+                            'last_name': person_result[2],
+                            'title': person_result[3],
+                            'extracted_data': person_result[4]
+                        }
+                
+                # Enhance leadership data with person enrichments
+                if extracted_data.get('leadership'):
+                    for leader in extracted_data['leadership']:
+                        if leader.get('person_urn'):
+                            person_urn = leader['person_urn']
+                            cursor.execute("""
+                                SELECT full_name, first_name, last_name, title, extracted_data
+                                FROM person_enrichments 
+                                WHERE person_urn = %s 
+                                ORDER BY enriched_at DESC 
+                                LIMIT 1
+                            """, [person_urn])
+                            
+                            person_result = cursor.fetchone()
+                            if person_result:
+                                leader['enriched_person'] = {
+                                    'full_name': person_result[0],
+                                    'first_name': person_result[1],
+                                    'last_name': person_result[2],
+                                    'title': person_result[3],
+                                    'extracted_data': person_result[4]
+                                }
+        
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return {
+                'success': True,
+                'data': {
+                    'id': result[0],
+                    'company_id': result[1], 
+                    'harmonic_entity_urn': result[2],
+                    'harmonic_data': result[3],
+                    'extracted_data': extracted_data,
+                    'enrichment_status': result[5],
+                    'enriched_at': result[6].isoformat() if result[6] else None,
+                    'created_at': result[7].isoformat() if result[7] else None,
+                    'updated_at': result[8].isoformat() if result[8] else None
+                }
+            }
+        else:
+            return {
+                'success': True,
+                'data': None
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to retrieve enrichment data: {str(e)}'
+        }
+
+def delete_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Delete enrichment data for a company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'Company ID is required'
+        }
+    
+    try:
+        # Get database connection
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+            
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Delete enrichment data
+        cursor.execute("""
+            DELETE FROM company_enrichments 
+            WHERE company_id = %s
+            RETURNING id
+        """, [company_id])
+        
+        deleted_id = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if deleted_id:
+            return {
+                'success': True,
+                'data': {
+                    'deleted_id': deleted_id[0],
+                    'company_id': company_id
+                }
+            }
+        else:
+            return {
+                'success': True,
+                'data': None,
+                'message': 'No enrichment data found to delete'
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete enrichment data: {str(e)}'
+        }
+
+def get_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]:
+    """
+    Retrieve person enrichment data by person URN
+    """
+    if not person_urn:
+        return {
+            'success': False,
+            'error': 'person_urn is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+            
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, person_urn, company_id, full_name, first_name, last_name,
+                   title, harmonic_data, extracted_data, enrichment_status, 
+                   enriched_at, created_at, updated_at
+            FROM person_enrichments 
+            WHERE person_urn = %s 
+            ORDER BY enriched_at DESC 
+            LIMIT 1
+        """, [person_urn])
+        
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return {
+                'success': True,
+                'data': {
+                    'id': result[0],
+                    'person_urn': result[1],
+                    'company_id': result[2],
+                    'full_name': result[3],
+                    'first_name': result[4],
+                    'last_name': result[5],
+                    'title': result[6],
+                    'harmonic_data': result[7],
+                    'extracted_data': result[8],
+                    'enrichment_status': result[9],
+                    'enriched_at': result[10].isoformat() if result[10] else None,
+                    'created_at': result[11].isoformat() if result[11] else None,
+                    'updated_at': result[12].isoformat() if result[12] else None
+                }
+            }
+        else:
+            return {
+                'success': True,
+                'data': None
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to retrieve person enrichment data: {str(e)}'
+        }
+
+def get_company_people(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Get all enriched people for a company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+            
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, person_urn, full_name, first_name, last_name,
+                   title, extracted_data, enrichment_status, enriched_at
+            FROM person_enrichments 
+            WHERE company_id = %s 
+            ORDER BY enriched_at DESC
+        """, [company_id])
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        people = []
+        for result in results:
+            people.append({
+                'id': result[0],
+                'person_urn': result[1],
+                'full_name': result[2],
+                'first_name': result[3],
+                'last_name': result[4],
+                'title': result[5],
+                'extracted_data': result[6],
+                'enrichment_status': result[7],
+                'enriched_at': result[8].isoformat() if result[8] else None
+            })
+        
+        return {
+            'success': True,
+            'data': {
+                'company_id': company_id,
+                'people': people,
+                'total_count': len(people)
+            }
+        }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to retrieve company people: {str(e)}'
+        }
+
+def delete_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]:
+    """
+    Delete person enrichment data by person URN
+    """
+    if not person_urn:
+        return {
+            'success': False,
+            'error': 'person_urn is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+            
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM person_enrichments 
+            WHERE person_urn = %s
+            RETURNING id, company_id
+        """, [person_urn])
+        
+        deleted_result = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if deleted_result:
+            return {
+                'success': True,
+                'data': {
+                    'deleted_id': deleted_result[0],
+                    'company_id': deleted_result[1],
+                    'person_urn': person_urn
+                }
+            }
+        else:
+            return {
+                'success': True,
+                'data': None,
+                'message': 'No person enrichment data found to delete'
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete person enrichment data: {str(e)}'
+        } 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson } from '@/lib/api'
 import EditableMetric from '@/components/EditableMetric'
 import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/MarkdownContent'
@@ -85,7 +85,7 @@ const getSectorLabels = (sector: string = 'healthcare') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database'
+type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -275,6 +275,41 @@ export default function CompanyDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [latestReportId, setLatestReportId] = useState<number | null>(null)
+  
+  // Enrichment state
+  const [enrichmentData, setEnrichmentData] = useState<any>(null)
+  const [loadingEnrichment, setLoadingEnrichment] = useState(false)
+  const [websiteUrl, setWebsiteUrl] = useState('')
+  const [identifierType, setIdentifierType] = useState('website_url')
+
+  // Utility functions for formatting
+  const formatLargeNumber = (num: number | null | undefined): string => {
+    if (!num || num === 0) return 'N/A'
+    
+    if (num >= 1000000000) {
+      return `$${(num / 1000000000).toFixed(1)}B`
+    } else if (num >= 1000000) {
+      return `$${(num / 1000000).toFixed(1)}M`
+    } else if (num >= 1000) {
+      return `$${(num / 1000).toFixed(0)}K`
+    } else {
+      return `$${num.toLocaleString()}`
+    }
+  }
+
+  const formatNumber = (num: number | null | undefined): string => {
+    if (!num || num === 0) return 'N/A'
+    
+    if (num >= 1000000000) {
+      return `${(num / 1000000000).toFixed(1)}B`
+    } else if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)}M`
+    } else if (num >= 1000) {
+      return `${(num / 1000).toFixed(0)}K`
+    } else {
+      return num.toLocaleString()
+    }
+  }
 
   useEffect(() => {
     loadCompanyData()
@@ -303,6 +338,172 @@ export default function CompanyDetailPage() {
       setIsLoading(false)
     }
   }
+
+
+
+  // Enrichment functions
+  const handleEnrichCompany = async () => {
+    if (!websiteUrl.trim()) {
+      alert('Please enter a website URL or other identifier')
+      return
+    }
+
+    setLoadingEnrichment(true)
+    try {
+      const result = await enrichCompany(companyId, {
+        key: identifierType,
+        value: websiteUrl.trim()
+      })
+
+      console.log('Raw enrichment response:', result)
+      
+      // Check if the response indicates success - success is nested in result.data.success
+      if (result.data && result.data.success === true) {
+        console.log('Enrichment successful! Data:', result.data.data)
+        
+        // Show success message briefly, then do a fast reload
+        alert('✅ Company data enriched successfully! Refreshing data...')
+        
+        // Small delay to let user see the success message, then fast reload
+        setTimeout(async () => {
+          // Fast reload - refresh all data without clearing state
+          await refreshAllData()
+        }, 1500)
+      } else {
+        // Something went wrong
+        console.error('Enrichment failed:', result)
+        const errorMsg = result.error || result.data?.error || 'Enrichment failed - please try again'
+        alert(`Error: ${errorMsg}`)
+      }
+    } catch (error) {
+      console.error('Error enriching company:', error)
+      alert(`Failed to enrich company: ${error}`)
+    } finally {
+      setLoadingEnrichment(false)
+    }
+  }
+
+  // Function to load enrichment data
+    const loadEnrichmentData = async () => {
+    if (!companyId) return
+    
+      console.log('Loading existing enrichment data for company:', companyId)
+    try {
+      const result = await getCompanyEnrichment(companyId)
+          if (result.data?.data) {
+            console.log('Found existing enrichment data:', result.data.data)
+            // Transform the financial-crud response to match expected structure
+            const dbData = result.data.data
+            const transformedData = {
+              enrichment: {
+                extracted: dbData.extracted_data,
+                raw_data: dbData.harmonic_data,
+                status: dbData.enrichment_status
+              },
+              enriched_at: dbData.enriched_at,
+              saved_to_db: true
+            }
+            
+            // Enrich person data for leadership
+            if (transformedData.enrichment.extracted.leadership) {
+              console.log('Leadership data found:', transformedData.enrichment.extracted.leadership)
+              for (let leader of transformedData.enrichment.extracted.leadership) {
+                console.log('Processing leader:', leader)
+                if (leader.person_urn) {
+                  console.log('Found person_urn for leader:', leader.person_urn)
+                  try {
+                    const personData = await enrichPersonData(leader.person_urn)
+                    console.log('Person data received:', personData)
+                    if (personData) {
+                      leader.enriched_person = personData
+                      console.log('Enriched person data attached:', leader.enriched_person)
+                    }
+                  } catch (error) {
+                    console.error('Error enriching person data:', error)
+                  }
+                } else {
+                  console.log('No person_urn found for leader:', leader.title)
+                }
+              }
+            }
+            
+            // Enrich CEO data
+            if (transformedData.enrichment.extracted.ceo?.person_urn) {
+              try {
+                const personData = await enrichPersonData(transformedData.enrichment.extracted.ceo.person_urn)
+                if (personData) {
+                  transformedData.enrichment.extracted.ceo.enriched_person = personData
+                }
+              } catch (error) {
+                console.error('Error enriching CEO data:', error)
+              }
+            }
+            
+            console.log('Final enrichment data being set:', transformedData)
+            setEnrichmentData(transformedData)
+          } else {
+            console.log('No existing enrichment data found')
+          }
+    } catch (error) {
+          console.error('Error loading enrichment data:', error)
+    }
+  }
+
+  // Function to enrich person data via secure backend API
+  const enrichPersonData = async (personUrn: string) => {
+    try {
+      const result = await enrichPerson(personUrn)
+      if (result.data && result.data.success) {
+        return result.data.data.extracted_data
+      } else {
+        console.error('Person enrichment failed:', result.error || result.data?.error)
+        return null
+      }
+    } catch (error) {
+      console.error('Error fetching person data:', error)
+      return null
+    }
+  }
+
+  // Function to translate company URN to readable name
+  const translateCompanyUrn = (urn: string | any): string => {
+    if (typeof urn === 'string') {
+      // Extract company name from URN pattern like "urn:harmonic:company:12345"
+      if (urn.startsWith('urn:harmonic:company:')) {
+        // Try to look up in existing data or return a formatted version
+        const id = urn.split(':').pop()
+        return `Company ${id}`
+      } else if (urn.includes('urn:')) {
+        // Other URN types
+        const parts = urn.split(':')
+        const id = parts.pop()
+        const type = parts[parts.length - 1] || 'entity'
+        return `${type.charAt(0).toUpperCase() + type.slice(1)} ${id}`
+      }
+      return urn
+    } else if (urn && typeof urn === 'object') {
+      // If it's an object, try to get name or company_urn
+      return urn.name || urn.company_name || translateCompanyUrn(urn.company_urn) || 'Unknown Company'
+    }
+    return 'Unknown Company'
+  }
+
+  // Function to refresh all data (company + enrichment)
+  const refreshAllData = async () => {
+    console.log('Refreshing all company and enrichment data...')
+    await Promise.all([
+      loadCompanyData(),
+      loadEnrichmentData()
+    ])
+    console.log('✅ All data refreshed successfully')
+  }
+
+  // Load existing enrichment data when component mounts (only once)
+  useEffect(() => {
+    if (companyId) {
+      loadEnrichmentData()
+    }
+  }, [companyId])  // Only depend on companyId, not enrichmentData
 
   if (isLoading) {
     return (
@@ -404,36 +605,56 @@ export default function CompanyDetailPage() {
         <div className="bg-white rounded-lg border border-gray-200 p-8 mb-8">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">{displayName} Overview</h1>
-              <p className="text-gray-600 text-lg mb-6">
-                Financial performance and key metrics tracking for portfolio company {displayName}.
-              </p>
+              <div className="flex items-center space-x-4 mb-6">
+                {enrichmentData?.enrichment?.extracted?.logo_url && (
+                  <div className="flex-shrink-0">
+                    <img 
+                      src={enrichmentData.enrichment.extracted.logo_url} 
+                      alt={`${displayName} logo`}
+                      className="w-16 h-16 rounded-lg object-contain bg-white border border-gray-200 p-2"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  </div>
+                )}
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">{displayName} Overview</h1>
+                  <p className="text-gray-600 text-lg">
+                    Financial performance and key metrics tracking for portfolio company {displayName}.
+                  </p>
+                </div>
+              </div>
               
               {/* Key Stats Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">👤 CEO</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">Alex Johnson</p>
+                  <p className="text-lg font-semibold text-gray-900 truncate">
+                    {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 
+                     enrichmentData?.enrichment?.extracted?.ceo?.title || 
+                     'Oded Eran'}
+                  </p>
                 </div>
                 
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">📈 Stage</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">Main</p>
                 </div>
                 
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">{sectorLabels.icon} Sector</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
                 </div>
                 
-                <div className="hover:bg-gray-50 p-2 rounded transition-colors">
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">💰 Valuation</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">
@@ -441,8 +662,8 @@ export default function CompanyDetailPage() {
                   </p>
                 </div>
                 
-                <div className="hover:bg-gray-50 p-2 rounded transition-colors">
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">💵 Last Round</span>
                   </div>
                   <p className="text-lg font-semibold text-gray-900">
@@ -450,8 +671,8 @@ export default function CompanyDetailPage() {
                   </p>
                 </div>
                 
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">🎯 KV Ownership</span>
                   </div>
                   <p className="text-lg font-semibold text-blue-600">
@@ -459,11 +680,11 @@ export default function CompanyDetailPage() {
                   </p>
                 </div>
                 
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">💎 KV Funds</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">
+                  <p className="text-lg font-semibold text-gray-900 truncate">
                     {company.current_cap_table?.investors
                       ?.filter(inv => inv.investor_name.startsWith('KV'))
                       ?.map(inv => inv.investor_name)
@@ -472,11 +693,16 @@ export default function CompanyDetailPage() {
                   </p>
                 </div>
                 
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
+                <div className="p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-2 mb-2">
                     <span className="text-sm font-medium text-gray-500">📍 Location</span>
                   </div>
-                  <p className="text-lg font-semibold text-gray-900">San Francisco, CA</p>
+                  <p className="text-lg font-semibold text-gray-900 truncate">
+                    {enrichmentData?.enrichment?.extracted?.location?.display || 
+                     enrichmentData?.enrichment?.extracted?.location?.city && enrichmentData?.enrichment?.extracted?.location?.state 
+                       ? `${enrichmentData.enrichment.extracted.location.city}, ${enrichmentData.enrichment.extracted.location.state}`
+                       : 'Boston, Massachusetts'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -530,6 +756,17 @@ export default function CompanyDetailPage() {
             >
               <span className="text-lg">🏦</span>
               <span>Cap Table</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('enrichment')}
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
+                activeTab === 'enrichment'
+                  ? 'bg-purple-50 text-purple-700 border border-purple-200 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span className="text-lg">🚀</span>
+              <span>Company Intel</span>
             </button>
             <button
               onClick={() => setActiveTab('reports')}
@@ -1016,46 +1253,763 @@ export default function CompanyDetailPage() {
                 />
               </div>
             )}
+
+            {/* Enrichment Tab */}
+            {activeTab === 'enrichment' && (
+              <div className="space-y-6">
+                {/* Enrichment Input Section */}
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-6 rounded-xl border border-purple-100">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-xl flex items-center justify-center">
+                      <span className="text-xl">🚀</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Company Intelligence</h3>
+                      <p className="text-gray-600 text-sm">🌟 Enrich with real data from Harmonic AI</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Identifier Type
+                        </label>
+                        <select
+                          value={identifierType}
+                          onChange={(e) => setIdentifierType(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        >
+                          <option value="website_url">Website URL</option>
+                          <option value="website_domain">Website Domain</option>
+                          <option value="linkedin_url">LinkedIn URL</option>
+                          <option value="crunchbase_url">Crunchbase URL</option>
+                          <option value="twitter_url">Twitter URL</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {identifierType === 'website_url' ? 'Website URL' :
+                           identifierType === 'website_domain' ? 'Domain (e.g., company.com)' :
+                           identifierType === 'linkedin_url' ? 'LinkedIn Company URL' :
+                           identifierType === 'crunchbase_url' ? 'Crunchbase URL' :
+                           'Twitter URL'}
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={websiteUrl}
+                            onChange={(e) => setWebsiteUrl(e.target.value)}
+                            placeholder={
+                              identifierType === 'website_url' ? 'https://company.com' :
+                              identifierType === 'website_domain' ? 'company.com' :
+                              identifierType === 'linkedin_url' ? 'https://linkedin.com/company/...' :
+                              identifierType === 'crunchbase_url' ? 'https://crunchbase.com/organization/...' :
+                              'https://twitter.com/company'
+                            }
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            onKeyPress={(e) => e.key === 'Enter' && handleEnrichCompany()}
+                          />
+                          <button
+                            onClick={handleEnrichCompany}
+                            disabled={loadingEnrichment || !websiteUrl.trim()}
+                            className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center"
+                          >
+                            {loadingEnrichment ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                Enriching...
+                              </>
+                            ) : (
+                              'Enrich Data'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+
+                  </div>
+                </div>
+
+                {/* Enrichment Results */}
+                {loadingEnrichment && !enrichmentData && (
+                  <div className="bg-white p-6 rounded-xl border border-gray-200">
+                    <div className="animate-pulse space-y-4">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                      <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                    </div>
+                  </div>
+                )}
+
+                {enrichmentData && (
+                  <div className="space-y-6">
+                    {enrichmentData.status === 'enrichment_in_progress' ? (
+                      <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl">
+                        <h4 className="text-lg font-medium text-yellow-800 mb-2">Enrichment In Progress</h4>
+                        <p className="text-yellow-700">{enrichmentData.message}</p>
+                        <p className="text-sm text-yellow-600 mt-2">
+                          Estimated completion: {enrichmentData.estimated_completion}
+                        </p>
+                      </div>
+                    ) : enrichmentData.enrichment?.extracted ? (
+                      <div className="space-y-8">
+                        {/* Hero Overview Section */}
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-8 rounded-2xl border border-blue-100">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Company Logo & Basic Info */}
+                            <div className="lg:col-span-1">
+                              {enrichmentData.enrichment.extracted.logo_url ? (
+                                <img
+                                  src={enrichmentData.enrichment.extracted.logo_url}
+                                  alt={`${enrichmentData.enrichment.extracted.name} logo`}
+                                  className="w-20 h-20 rounded-xl object-cover mb-4 shadow-lg"
+                                />
+                              ) : (
+                                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center mb-4">
+                                  <span className="text-white text-2xl font-bold">
+                                    {enrichmentData.enrichment.extracted.name?.charAt(0)?.toUpperCase() || 'C'}
+                                  </span>
+                          </div>
+                              )}
+                              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                                {enrichmentData.enrichment.extracted.name || 'Unknown Company'}
+                              </h2>
+                              <p className="text-gray-600 mb-4">
+                                {enrichmentData.enrichment.extracted.short_description || enrichmentData.enrichment.extracted.description}
+                              </p>
+                              
+                              {/* Quick Stats */}
+                              <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div className="bg-white/70 p-3 rounded-lg">
+                                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Founded</p>
+                                  <p className="text-lg font-bold text-gray-900">
+                                    {enrichmentData.enrichment.extracted.founding_date || 'N/A'}
+                                  </p>
+                                </div>
+                                <div className="bg-white/70 p-3 rounded-lg">
+                                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Stage</p>
+                                  <p className="text-lg font-bold text-gray-900">
+                                    {enrichmentData.enrichment.extracted.stage || 'N/A'}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              {/* Key Metrics Stack */}
+                              <div className="space-y-3 mb-6">
+                                <div className="bg-white p-3 rounded-xl border border-gray-200">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-xl">👥</span>
+                                    <div className="text-left">
+                                      <p className="text-lg font-bold text-gray-900">
+                                        {formatNumber(enrichmentData.enrichment.extracted.headcount) || '97'}
+                                      </p>
+                                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Employees</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="bg-white p-3 rounded-xl border border-gray-200">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-xl">💰</span>
+                                    <div className="text-left">
+                                      <p className="text-lg font-bold text-gray-900">
+                                        {formatLargeNumber(enrichmentData.enrichment.extracted.funding?.total) || '$61.0M'}
+                                      </p>
+                                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Funding</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="bg-white p-3 rounded-xl border border-gray-200">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-xl">🌐</span>
+                                    <div className="text-left">
+                                      <p className="text-lg font-bold text-gray-900">
+                                        {formatNumber(enrichmentData.enrichment.extracted.web_traffic) || '28K'}
+                                      </p>
+                                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Monthly Traffic</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="bg-white p-3 rounded-xl border border-gray-200">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-xl">🏢</span>
+                                    <div className="text-left">
+                                      <p className="text-lg font-bold text-gray-900">
+                                        {enrichmentData.enrichment.extracted.investors?.length || '15'}
+                                      </p>
+                                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Investors</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Contact */}
+                              {enrichmentData.enrichment.extracted.contact && (
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 mb-4">
+                                  <div className="flex items-center space-x-3 mb-3">
+                                    <span className="text-lg">📧</span>
+                                    <h4 className="font-semibold text-gray-900 text-sm">Contact</h4>
+                                  </div>
+                                  {enrichmentData.enrichment.extracted.contact.primary_email && (
+                                    <p className="text-gray-700 font-medium text-sm">
+                                      {enrichmentData.enrichment.extracted.contact.primary_email}
+                                    </p>
+                                  )}
+                                  {enrichmentData.enrichment.extracted.contact.phone && (
+                                    <p className="text-gray-700 font-medium text-sm">
+                                      {enrichmentData.enrichment.extracted.contact.phone}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Company Description */}
+                            <div className="lg:col-span-2">
+                              
+                              {/* Company Description */}
+                              {(enrichmentData.enrichment.extracted.description || enrichmentData.enrichment.extracted.external_description) && (
+                                <div className="mb-8">
+                                  <div className="bg-white p-6 rounded-xl border border-gray-200">
+                                    <div className="flex items-center space-x-3 mb-4">
+                                      <span className="text-xl">📝</span>
+                                      <h3 className="text-lg font-semibold text-gray-900">Company Overview</h3>
+                                    </div>
+                                    <div className="space-y-3">
+                                      {enrichmentData.enrichment.extracted.description && (
+                                        <div>
+                                          <p className="text-sm font-medium text-gray-700 mb-2">Description</p>
+                                          <p className="text-gray-600 leading-relaxed">
+                                            {enrichmentData.enrichment.extracted.description}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {enrichmentData.enrichment.extracted.external_description && enrichmentData.enrichment.extracted.external_description !== enrichmentData.enrichment.extracted.description && (
+                                        <div>
+                                          <p className="text-sm font-medium text-gray-700 mb-2">External Description</p>
+                                          <p className="text-gray-600 leading-relaxed">
+                                            {enrichmentData.enrichment.extracted.external_description}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Main Content Grid */}
+                        <div className="grid grid-cols-1 gap-8">
+                          {/* Funding & Investors */}
+                          <div>
+                            {enrichmentData.enrichment.extracted.funding && (
+                              <div className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm mb-8">
+                                <div className="flex items-center space-x-3 mb-8">
+                                  <span className="text-2xl">💎</span>
+                                  <h3 className="text-xl font-bold text-gray-900">Funding Intelligence</h3>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                                  <div className="text-center p-6 bg-green-50 rounded-xl border border-green-100 min-h-[100px] flex flex-col justify-center">
+                                    <p className="text-xl font-bold text-green-600 mb-2 truncate">
+                                      {formatLargeNumber(enrichmentData.enrichment.extracted.funding.total)}
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-600">Total Raised</p>
+                                  </div>
+                                  <div className="text-center p-6 bg-purple-50 rounded-xl border border-purple-100 min-h-[100px] flex flex-col justify-center">
+                                    <p className="text-xl font-bold text-purple-600 mb-2 truncate">
+                                      {enrichmentData.enrichment.extracted.funding.stage}
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-600">Current Stage</p>
+                                  </div>
+                                  <div className="text-center p-6 bg-blue-50 rounded-xl border border-blue-100 min-h-[100px] flex flex-col justify-center">
+                                    <p className="text-xl font-bold text-blue-600 mb-2 truncate">
+                                      {formatLargeNumber(enrichmentData.enrichment.extracted.funding.valuation) || 'N/A'}
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-600">Valuation</p>
+                                  </div>
+                                </div>
+                                
+                                {/* Investors */}
+                                {enrichmentData.enrichment.extracted.investors && enrichmentData.enrichment.extracted.investors.length > 0 && (
+                                <div className="pt-6 border-t border-gray-100">
+                                    <h4 className="font-semibold text-gray-900 mb-4">Key Investors</h4>
+                                    <div className="flex flex-wrap gap-3">
+                                      {enrichmentData.enrichment.extracted.investors.map((investor: any, index: number) => (
+                                        <span key={index} className="px-4 py-2 bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 text-sm font-medium rounded-full border border-gray-200 hover:shadow-sm transition-shadow">
+                                          {investor.name || investor}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Traction Metrics */}
+                            {enrichmentData.enrichment.extracted.traction_metrics && Object.keys(enrichmentData.enrichment.extracted.traction_metrics).length > 0 && (
+                              <div className="bg-white p-6 rounded-xl border border-gray-200">
+                                <div className="flex items-center space-x-2 mb-6">
+                                  <span className="text-2xl">📈</span>
+                                  <h3 className="text-xl font-bold text-gray-900">Traction & Growth</h3>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  {Object.entries(enrichmentData.enrichment.extracted.traction_metrics).slice(0, 6).map(([metric, data]: [string, any]) => (
+                                    <div key={metric} className="p-4 border border-gray-200 rounded-lg">
+                                      <p className="text-sm font-medium text-gray-500 capitalize mb-1">
+                                        {metric.replace(/_/g, ' ')}
+                                      </p>
+                                      <p className="text-xl font-bold text-gray-900 mb-2">
+                                        {formatNumber(data.latest_value)}
+                                      </p>
+                                      {data.growth_30d && (
+                                        <div className="flex items-center space-x-1">
+                                          <span className={`text-sm ${data.growth_30d > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {data.growth_30d > 0 ? '↗' : '↘'} {Math.abs(data.growth_30d).toFixed(1)}%
+                                          </span>
+                                          <span className="text-xs text-gray-500">30d</span>
+                                </div>
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                          </div>
+                        </div>
+
+                        {/* Additional Sections */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          {/* Employee Highlights */}
+                          {enrichmentData.enrichment.extracted.employee_highlights && Object.keys(enrichmentData.enrichment.extracted.employee_highlights).length > 0 && (
+                            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                              <div className="flex items-center space-x-2 mb-6">
+                                <span className="text-2xl">🌟</span>
+                                <h3 className="text-xl font-bold text-gray-900">Talent Highlights</h3>
+                              </div>
+                              
+                              {Object.entries(enrichmentData.enrichment.extracted.employee_highlights).slice(0, 3).map(([category, highlights]: [string, any]) => (
+                                <div key={category} className="mb-4">
+                                  <h4 className="font-semibold text-gray-700 mb-2">{category}</h4>
+                                  <div className="space-y-1">
+                                    {highlights.slice(0, 3).map((highlight: string, index: number) => (
+                                      <p key={index} className="text-sm text-gray-600 pl-3 border-l-2 border-gray-200">
+                                        {highlight}
+                                      </p>
+                                    ))}
+                                </div>
+                              </div>
+                              ))}
+                          </div>
+                        )}
+
+                          {/* Tags & Industry */}
+                          <div className="bg-white p-6 rounded-xl border border-gray-200">
+                            <div className="flex items-center space-x-2 mb-6">
+                              <span className="text-2xl">🏷️</span>
+                              <h3 className="text-xl font-bold text-gray-900">Industry & Tags</h3>
+                        </div>
+
+                            {/* Company Type & Customer Type */}
+                            <div className="mb-4">
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {enrichmentData.enrichment.extracted.company_type && (
+                                  <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                                    {enrichmentData.enrichment.extracted.company_type}
+                                  </span>
+                                )}
+                                {enrichmentData.enrichment.extracted.customer_type && (
+                                  <span className="px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                                    {enrichmentData.enrichment.extracted.customer_type}
+                                  </span>
+                                )}
+                                {enrichmentData.enrichment.extracted.ownership_status && (
+                                  <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-medium rounded-full">
+                                    {enrichmentData.enrichment.extracted.ownership_status}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Tags v2 grouped by type */}
+                            {enrichmentData.enrichment.extracted.tags_v2 && Object.keys(enrichmentData.enrichment.extracted.tags_v2).length > 0 && (
+                              <div className="space-y-3">
+                                {Object.entries(enrichmentData.enrichment.extracted.tags_v2).slice(0, 3).map(([type, tags]: [string, any]) => (
+                                  <div key={type}>
+                                    <p className="text-sm font-medium text-gray-700 mb-2 capitalize">
+                                      {type.replace(/_/g, ' ')}
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {tags.slice(0, 5).map((tag: string, index: number) => (
+                                        <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                          </div>
+                        )}
+
+                            {/* Legacy tags if no tags_v2 */}
+                            {(!enrichmentData.enrichment.extracted.tags_v2 || Object.keys(enrichmentData.enrichment.extracted.tags_v2).length === 0) && enrichmentData.enrichment.extracted.tags && (
+                              <div className="flex flex-wrap gap-2">
+                                {enrichmentData.enrichment.extracted.tags.slice(0, 8).map((tag: string, index: number) => (
+                                  <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom Section - Social & Related Companies */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          {/* Social Links & Contact */}
+                          <div className="bg-white p-6 rounded-xl border border-gray-200">
+                            <div className="flex items-center space-x-2 mb-6">
+                              <span className="text-2xl">🔗</span>
+                              <h3 className="text-xl font-bold text-gray-900">Online Presence</h3>
+                            </div>
+                            
+                            {/* Website */}
+                            {enrichmentData.enrichment.extracted.website && (
+                              <div className="mb-4">
+                                <a
+                                  href={enrichmentData.enrichment.extracted.website.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium"
+                                >
+                                  <span>🌐</span>
+                                  <span>{enrichmentData.enrichment.extracted.website.domain}</span>
+                                </a>
+                              </div>
+                            )}
+                            
+                            {/* Social Media */}
+                            {enrichmentData.enrichment.extracted.socials && (
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {Object.entries(enrichmentData.enrichment.extracted.socials).map(([platform, data]: [string, any]) => (
+                                  <a
+                                    key={platform}
+                                    href={data.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                    className="flex flex-col p-3 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
+                                  >
+                                    <span className="capitalize font-medium text-gray-700 text-sm">{platform}</span>
+                                    {data.handle && (
+                                      <span className="text-gray-500 text-xs">@{data.handle}</span>
+                                    )}
+                                    {data.followers && (
+                                      <span className="text-gray-400 text-xs">
+                                        {formatNumber(data.followers)} followers
+                                      </span>
+                                    )}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                            
+
+                          </div>
+
+                          {/* Related Companies */}
+                          {enrichmentData.enrichment.extracted.related_companies && (
+                            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                              <div className="flex items-center space-x-2 mb-6">
+                                <span className="text-2xl">🏢</span>
+                                <h3 className="text-xl font-bold text-gray-900">Company Network</h3>
+                              </div>
+                              
+                              {enrichmentData.enrichment.extracted.related_companies.acquisitions && enrichmentData.enrichment.extracted.related_companies.acquisitions.length > 0 && (
+                                <div className="mb-6">
+                                  <p className="text-sm font-medium text-gray-700 mb-3">Acquisitions</p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {enrichmentData.enrichment.extracted.related_companies.acquisitions.slice(0, 8).map((acquisition: any, index: number) => (
+                                      <div key={index} className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg border border-green-100">
+                                        <span className="text-green-600">📈</span>
+                                        <span className="text-sm text-gray-700 font-medium">
+                                          {translateCompanyUrn(acquisition)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {enrichmentData.enrichment.extracted.related_companies.subsidiaries && enrichmentData.enrichment.extracted.related_companies.subsidiaries.length > 0 && (
+                                <div className="mb-6">
+                                  <p className="text-sm font-medium text-gray-700 mb-3">Subsidiaries</p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {enrichmentData.enrichment.extracted.related_companies.subsidiaries.slice(0, 8).map((subsidiary: any, index: number) => (
+                                      <div key={index} className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                        <span className="text-blue-600">🏢</span>
+                                        <span className="text-sm text-gray-700 font-medium">
+                                          {translateCompanyUrn(subsidiary)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {enrichmentData.enrichment.extracted.related_companies.acquired_by && (
+                                <div className="mb-4">
+                                  <p className="text-sm font-medium text-gray-700 mb-3">Acquired By</p>
+                                  <div className="flex items-center space-x-2 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                                    <span className="text-purple-600">🎯</span>
+                                    <span className="text-sm text-gray-700 font-medium">
+                                      {translateCompanyUrn(enrichmentData.enrichment.extracted.related_companies.acquired_by)}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Prior Stealth Association */}
+                              {enrichmentData.enrichment.extracted.related_companies.prior_stealth_association && 
+                               enrichmentData.enrichment.extracted.related_companies.prior_stealth_association.previously_known_as && 
+                               enrichmentData.enrichment.extracted.related_companies.prior_stealth_association.previously_known_as.length > 0 && (
+                                <div className="mb-4">
+                                  <p className="text-sm font-medium text-gray-700 mb-3">Previously Known As</p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {enrichmentData.enrichment.extracted.related_companies.prior_stealth_association.previously_known_as.slice(0, 6).map((prevName: string, index: number) => (
+                                      <div key={index} className="flex items-center space-x-2 p-2 bg-yellow-50 rounded-lg border border-yellow-100">
+                                        <span className="text-yellow-600">📝</span>
+                                        <span className="text-sm text-gray-700 font-medium">
+                                          {prevName}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Beta Notice */}
+                              {enrichmentData.enrichment.extracted.related_companies.beta_notice && (
+                                <div className="mb-4">
+                                  <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                    <span className="text-blue-600">ℹ️</span>
+                                    <span className="text-xs text-blue-700">
+                                      {enrichmentData.enrichment.extracted.related_companies.beta_notice}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+
+                      </div>
+                    ) : (
+                      <div className="bg-red-50 border border-red-200 p-6 rounded-xl">
+                        <h4 className="text-lg font-medium text-red-800 mb-2">Enrichment Failed</h4>
+                        <p className="text-red-700">
+                          {enrichmentData.error || 'Unable to enrich company data at this time.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}
           <div className="lg:col-span-1 space-y-8">
             {/* Team */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <div className="flex items-center space-x-2 mb-4">
-                <span className="text-lg">👥</span>
-                <h3 className="text-lg font-semibold text-gray-900">Team</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg">👥</span>
+                  <h3 className="text-lg font-semibold text-gray-900">Team</h3>
+                </div>
+                {!enrichmentData?.enrichment?.extracted && (
+                  <button
+                    onClick={() => setActiveTab('enrichment')}
+                    className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                  >
+                    Enrich →
+                  </button>
+                )}
               </div>
               
               <div className="mb-4">
                 <p className="text-sm font-medium text-gray-500 mb-1">Total Employees</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  12 <span className="text-sm font-normal text-green-600">(est.)</span>
+                  {enrichmentData?.enrichment?.extracted?.headcount || '12'} 
+                  <span className="text-sm font-normal text-gray-500">
+                    {enrichmentData?.enrichment?.extracted?.headcount ? '' : ' (est.)'}
+                  </span>
                 </p>
               </div>
 
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-gray-900">Key Executives</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Derek Croote</p>
-                      <p className="text-xs text-gray-600">Co-founder & Chief Technical Officer – Engineering</p>
-                    </div>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <span className="text-sm">↗</span>
-                    </button>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Jessica Grossman Md</p>
-                      <p className="text-xs text-gray-600">Chief Executive Officer – Operations</p>
-                    </div>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <span className="text-sm">↗</span>
-                    </button>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-900">Key Executives</h4>
                 </div>
+                <div className="space-y-3">
+                  {/* CEO - Highlighted */}
+                  {enrichmentData?.enrichment?.extracted?.ceo && (
+                    <div className="flex justify-between items-start p-3 rounded-lg border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full font-medium">CEO</span>
+                          <p className="text-sm font-bold text-gray-900">
+                            {enrichmentData.enrichment.extracted.ceo.enriched_person?.full_name || enrichmentData.enrichment.extracted.ceo.title}
+                          </p>
+                        </div>
+                        <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+                          {enrichmentData.enrichment.extracted.ceo.enriched_person?.current_position?.title || enrichmentData.enrichment.extracted.ceo.title}
+                        </p>
+                        {enrichmentData.enrichment.extracted.ceo.enriched_person?.current_position?.company && (
+                          <p className="text-xs text-blue-600">
+                            at {enrichmentData.enrichment.extracted.ceo.enriched_person.current_position.company}
+                          </p>
+                        )}
+                        {enrichmentData.enrichment.extracted.ceo.enriched_person?.headline && (
+                          <p className="text-xs text-blue-600 mt-1 italic leading-relaxed">
+                            {enrichmentData.enrichment.extracted.ceo.enriched_person.headline.length > 60 ? 
+                              `${enrichmentData.enrichment.extracted.ceo.enriched_person.headline.substring(0, 60)}...` : 
+                              enrichmentData.enrichment.extracted.ceo.enriched_person.headline}
+                          </p>
+                        )}
+                      </div>
+                      {enrichmentData.enrichment.extracted.ceo.enriched_person?.contact?.linkedin_url ? (
+                        <a 
+                          href={enrichmentData.enrichment.extracted.ceo.enriched_person.contact.linkedin_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 ml-2 flex-shrink-0"
+                          title="View CEO LinkedIn Profile"
+                        >
+                          <span className="text-sm">🔗</span>
+                        </a>
+                      ) : enrichmentData.enrichment.extracted.ceo.person_urn ? (
+                        <button 
+                          onClick={() => {
+                            console.log('Enriching CEO:', enrichmentData.enrichment.extracted.ceo.person_urn)
+                            enrichPersonData(enrichmentData.enrichment.extracted.ceo.person_urn).then(() => {
+                              console.log('CEO enriched, reloading...')
+                              loadCompanyData()
+                            })
+                          }}
+                          className="text-purple-600 hover:text-purple-800 ml-2 flex-shrink-0"
+                          title="Load CEO LinkedIn Profile"
+                        >
+                          <span className="text-sm">⟳</span>
+                        </button>
+                      ) : (
+                        <button className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" disabled>
+                          <span className="text-sm">↗</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Other Leadership */}
+                  {enrichmentData?.enrichment?.extracted?.leadership && enrichmentData.enrichment.extracted.leadership.length > 0 ? (
+                    // Show actual leadership team from Harmonic AI (excluding CEO if already shown)
+                    enrichmentData.enrichment.extracted.leadership
+                      .filter(leader => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
+                      .slice(0, 3)
+                      .map((leader, index) => (
+                        <div key={index} className="flex justify-between items-start p-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">
+                              {leader.enriched_person?.full_name || leader.title}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                              {leader.enriched_person?.current_position?.title || leader.title}
+                            </p>
+                            {leader.enriched_person?.current_position?.company && (
+                              <p className="text-xs text-gray-500">
+                                at {leader.enriched_person.current_position.company}
+                              </p>
+                            )}
+                            {leader.enriched_person?.headline && (
+                              <p className="text-xs text-gray-400 mt-1 italic leading-relaxed">
+                                {leader.enriched_person.headline.length > 60 ? 
+                                  `${leader.enriched_person.headline.substring(0, 60)}...` : 
+                                  leader.enriched_person.headline}
+                              </p>
+                            )}
+                          </div>
+                          {leader.enriched_person?.contact?.linkedin_url ? (
+                            <a 
+                              href={leader.enriched_person.contact.linkedin_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 ml-2 flex-shrink-0"
+                              title="View LinkedIn Profile"
+                            >
+                              <span className="text-sm">🔗</span>
+                            </a>
+                          ) : leader.person_urn ? (
+                            <button 
+                              onClick={() => {
+                                console.log('Enriching person:', leader.person_urn)
+                                enrichPersonData(leader.person_urn).then(() => {
+                                  console.log('Person enriched, reloading...')
+                                  loadCompanyData()
+                                })
+                              }}
+                              className="text-purple-600 hover:text-purple-800 ml-2 flex-shrink-0"
+                              title="Load LinkedIn Profile"
+                            >
+                              <span className="text-sm">⟳</span>
+                            </button>
+                          ) : (
+                            <button className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" disabled>
+                              <span className="text-sm">↗</span>
+                            </button>
+                          )}
+                        </div>
+                      ))
+                  ) : !enrichmentData?.enrichment?.extracted?.ceo ? (
+                    // Fallback to static data if no enrichment data
+                    <>
+                      <div className="flex justify-between items-start p-2 rounded-lg border border-gray-100">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">Derek Croote</p>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">Co-founder & Chief Technical Officer</p>
+                        </div>
+                        <button className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" disabled>
+                          <span className="text-sm">↗</span>
+                        </button>
+                      </div>
+                      <div className="flex justify-between items-start p-2 rounded-lg border border-gray-100">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">Jessica Grossman Md</p>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">Chief Executive Officer</p>
+                        </div>
+                        <button className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" disabled>
+                          <span className="text-sm">↗</span>
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                
+                {!enrichmentData?.enrichment?.extracted && (
+                  <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <p className="text-xs text-purple-700">
+                      💡 Get real team data with Company Intel
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

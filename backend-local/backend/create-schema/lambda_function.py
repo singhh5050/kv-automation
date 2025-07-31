@@ -45,8 +45,7 @@ def lambda_handler(event, context):
             database=db_config["database"],
             user=db_config["user"],
             password=db_config["password"],
-            timeout=3,               # connection handshake
-            socket_timeout=30,       # queries / drops
+            timeout=30,              # connection timeout
             ssl_context=True         # correct SSL flag
         )
 
@@ -192,12 +191,65 @@ def create_database_schema(conn):
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE company_enrichments (
+        id                      SERIAL PRIMARY KEY,
+        company_id              INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        harmonic_entity_urn     VARCHAR(255),
+        harmonic_data           JSONB,
+        extracted_data          JSONB,
+        enrichment_status       VARCHAR(50) DEFAULT 'pending',
+        enriched_at             TIMESTAMP,
+        created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        -- Additional structured fields for better querying and performance
+        funding_total           NUMERIC,
+        funding_stage           VARCHAR(50),
+        valuation               NUMERIC,
+        headcount               INTEGER,
+        web_traffic             INTEGER,
+        stage                   VARCHAR(50),
+        company_type            VARCHAR(50),
+        location_city           VARCHAR(100),
+        location_state          VARCHAR(100),
+        location_country        VARCHAR(100),
+        
+        UNIQUE (company_id)
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE person_enrichments (
+        id                      SERIAL PRIMARY KEY,
+        person_urn              VARCHAR(255) UNIQUE NOT NULL,
+        company_id              INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+        full_name               VARCHAR(255),
+        first_name              VARCHAR(100),
+        last_name               VARCHAR(100),
+        title                   VARCHAR(255),
+        harmonic_data           JSONB NOT NULL,
+        extracted_data          JSONB,
+        enrichment_status       VARCHAR(50) DEFAULT 'pending',
+        enriched_at             TIMESTAMP,
+        created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # ---- 3. Indexes ----------------------------------------------------
     cursor.execute("CREATE INDEX idx_companies_normalized_name ON companies(normalized_name);")
     cursor.execute("CREATE INDEX idx_financial_reports_company_date ON financial_reports(company_id, report_date DESC);")
     cursor.execute("CREATE INDEX idx_financial_reports_company_period ON financial_reports(company_id, report_period, report_date DESC);")
     cursor.execute("CREATE INDEX idx_cap_table_rounds_company_date ON cap_table_rounds(company_id, round_date DESC);")
     cursor.execute("CREATE INDEX idx_cap_table_investors_round ON cap_table_investors(cap_table_round_id);")
+    cursor.execute("CREATE INDEX idx_company_enrichments_company_id ON company_enrichments(company_id);")
+    cursor.execute("CREATE INDEX idx_company_enrichments_status ON company_enrichments(enrichment_status);")
+    cursor.execute("CREATE INDEX idx_company_enrichments_funding ON company_enrichments(funding_total, funding_stage);")
+    cursor.execute("CREATE INDEX idx_company_enrichments_location ON company_enrichments(location_country, location_state, location_city);")
+    cursor.execute("CREATE INDEX idx_person_enrichments_person_urn ON person_enrichments(person_urn);")
+    cursor.execute("CREATE INDEX idx_person_enrichments_company_id ON person_enrichments(company_id);")
+    cursor.execute("CREATE INDEX idx_person_enrichments_status ON person_enrichments(enrichment_status);")
 
     print("🎉 Fresh schema created successfully")
     return {
@@ -205,7 +257,8 @@ def create_database_schema(conn):
         "message": "Database completely wiped and schema recreated",
         "tables_created": [
             "companies", "financial_reports",
-            "cap_table_rounds", "cap_table_investors", "cap_table_current"
+            "cap_table_rounds", "cap_table_investors", "cap_table_current", 
+            "company_enrichments", "person_enrichments"
         ]
     }
 
