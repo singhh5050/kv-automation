@@ -1132,7 +1132,7 @@ export default function CompanyDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {sortedInvestors.map((investor, index) => {
+                        {sortedInvestors.map((investor, index: number) => {
                           const isKV = investor.investor_name.startsWith('KV')
                           return (
                             <tr key={index} className={isKV ? 'bg-blue-50' : ''}>
@@ -1199,7 +1199,7 @@ export default function CompanyDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {company.financial_reports.map((report, index) => (
+                        {company.financial_reports.map((report, index: number) => (
                           <tr key={index}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                               {(report as any).file_name}
@@ -1925,7 +1925,7 @@ export default function CompanyDetailPage() {
                     enrichmentData.enrichment.extracted.leadership
                       .filter((leader: any) => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
                       .slice(0, 3)
-                      .map((leader: any, index) => (
+                      .map((leader: any, index: number) => (
                         <div key={index} className="flex justify-between items-start p-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">
