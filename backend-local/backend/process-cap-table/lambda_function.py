@@ -186,15 +186,31 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         df["Total Invested"] = df[invested_cols].sum(axis=1)
         df["Final Round Investment"] = df[last_invested_col] if last_invested_col else 0
 
-        # ——— 3 Pool values ———
+        # ——— 3 Pool values ———
         def row_value(inv_name, column):
             row = df.loc[df["Investor"].astype(str).str.strip() == inv_name]
             return row[column].values[0] if not row.empty and column in row else 0
 
-        total_pool_size_raw = row_value("Options Outstanding", "Final % FDS") + row_value("Pool Increase", "Final % FDS")
-        available_pool_raw = row_value("Option Pool Available", "Final % FDS")
+        # Raw values (still in whatever units the sheet stores – shares or % FDS)
+        options_outstanding_raw = row_value("Options Outstanding", "Final % FDS")
+        option_pool_available_raw = row_value("Option Pool Available", "Final % FDS")
+        pool_increase_raw = row_value("Pool Increase", "Final % FDS")
+        
+        # Same logic as before for total size
+        total_pool_size_raw = options_outstanding_raw + pool_increase_raw
+        
+        # Convert to decimal fractions so 6.2 % ➜ 0.062
+        options_outstanding = convert_fds(options_outstanding_raw)
+        options_available = convert_fds(option_pool_available_raw)
         total_pool_size = convert_fds(total_pool_size_raw)
-        available_pool = convert_fds(available_pool_raw)
+        available_pool = options_available  # For backwards compatibility
+        
+        # Handy VC KPI: what % of the pool is used?
+        # (aka "pool utilization", "pool burn", "option pool filled")
+        pool_utilization = (
+            options_outstanding / total_pool_size
+            if total_pool_size else 0
+        )
 
         # ——— 4 Investor list ———
         exclude = {"Warrants Preferred", "Warrants Common", "Options Outstanding", "Option Pool Available", "Pool Increase", "TOTAL", "0"}
@@ -219,7 +235,9 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 "amount_raised": amount_raised,
                 "round_date": round_date,
                 "total_pool_size": total_pool_size,
-                "pool_available": available_pool,
+                "pool_available": available_pool,  # For backwards compatibility
+                "pool_utilization": pool_utilization,  # NEW
+                "options_outstanding": options_outstanding,  # NEW
             },
             "investors": investors,
         }
@@ -236,6 +254,10 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 "amount_raised_extracted": amount_raised is not None,
                 "round_extracted": round_name != "Current",
                 "pool_data_found": bool(total_pool_size_raw > 0),
+                "option_pool_utilization": pool_utilization,   # NEW
+                "option_pool_used_pct": round(pool_utilization * 100, 2),  # human-readable
+                "options_outstanding": options_outstanding,    # NEW
+                "options_available": options_available,        # NEW (renamed for clarity)
                 "investors_with_investments": sum(1 for i in investors if i["final_round_investment"] > 0),
             },
         }
@@ -278,19 +300,22 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
 
         cur.execute(
             """INSERT INTO cap_table_rounds (company_id, round_name, valuation, amount_raised, round_date,
-               total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW(),NOW())
+               total_pool_size, pool_available, pool_utilization, options_outstanding, 
+               manually_edited, edited_by, edited_at, created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW(),NOW())
                ON CONFLICT (company_id, round_name) DO UPDATE SET
                     valuation=EXCLUDED.valuation,
                     amount_raised=EXCLUDED.amount_raised,
                     round_date=EXCLUDED.round_date,
                     total_pool_size=EXCLUDED.total_pool_size,
                     pool_available=EXCLUDED.pool_available,
+                    pool_utilization=EXCLUDED.pool_utilization,
+                    options_outstanding=EXCLUDED.options_outstanding,
                     manually_edited=EXCLUDED.manually_edited,
                     edited_by=EXCLUDED.edited_by,
                     edited_at=NOW(),
                     updated_at=NOW() RETURNING id""",
-            [company_id, round_data["round_name"], round_data.get("valuation"), round_data.get("amount_raised"), round_data.get("round_date"), round_data.get("total_pool_size"), round_data.get("pool_available"), False, "system_import"],
+            [company_id, round_data["round_name"], round_data.get("valuation"), round_data.get("amount_raised"), round_data.get("round_date"), round_data.get("total_pool_size"), round_data.get("pool_available"), round_data.get("pool_utilization"), round_data.get("options_outstanding"), False, "system_import"],
         )
         round_id = cur.fetchone()[0]
 

@@ -150,19 +150,21 @@ def create_database_schema(conn):
 
     cursor.execute("""
     CREATE TABLE cap_table_rounds (
-        id              SERIAL PRIMARY KEY,
-        company_id      INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-        round_name      VARCHAR(100) NOT NULL,
-        valuation       NUMERIC(20,2),
-        amount_raised   NUMERIC(20,2),
-        round_date      DATE,
-        total_pool_size NUMERIC(8,6),
-        pool_available  NUMERIC(8,6),
-        manually_edited BOOLEAN DEFAULT FALSE,
-        edited_by       VARCHAR(100),
-        edited_at       TIMESTAMP,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        id                  SERIAL PRIMARY KEY,
+        company_id          INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        round_name          VARCHAR(100) NOT NULL,
+        valuation           NUMERIC(20,2),
+        amount_raised       NUMERIC(20,2),
+        round_date          DATE,
+        total_pool_size     NUMERIC(8,6),
+        pool_available      NUMERIC(8,6),
+        pool_utilization    NUMERIC(8,6),
+        options_outstanding NUMERIC(8,6),
+        manually_edited     BOOLEAN DEFAULT FALSE,
+        edited_by           VARCHAR(100),
+        edited_at           TIMESTAMP,
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (company_id, round_name)
     );
     """)

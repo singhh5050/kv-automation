@@ -79,24 +79,24 @@ const formatCashOutDate = (cashOutDate: string | null | undefined) => {
 
 // Stage detection based on KV fund names - choose the latest stage
 const detectCompanyStage = (investors: any[]): string => {
-  const kvInvestors = investors?.filter(inv => inv.investor_name.startsWith('KV')) || []
+  const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
   
-  let hasLateStage = false
   let hasGrowthStage = false
+  let hasMainStage = false
   let hasEarlyStage = false
   
   for (const investor of kvInvestors) {
-    const name = investor.investor_name.toLowerCase()
+    const name = investor.investor_name?.toLowerCase() || ''
     
-    // Check for KV Opp (Late Stage) - highest priority
-    if (name.includes('opp')) {
-      hasLateStage = true
+    // Check for KV Opp and KV Excelsior (Growth Stage) - highest priority
+    if (name.includes('opp') || name.includes('excelsior')) {
+      hasGrowthStage = true
     }
-    // Check for KV [Roman Numeral] (Growth Stage) - but not if it contains "opp" or "seed"
-    else if (!name.includes('opp') && !name.includes('seed')) {
+    // Check for KV [Roman Numeral] (Main Stage) - but not if it contains "opp", "excelsior", or "seed"
+    else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
       const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
       if (romanNumeralPattern.test(name)) {
-        hasGrowthStage = true
+        hasMainStage = true
       }
     }
     // Check for KV Seed [A-Z] (Early Stage) - lowest priority
@@ -108,9 +108,9 @@ const detectCompanyStage = (investors: any[]): string => {
     }
   }
   
-  // Return the latest stage found (Late > Growth > Early)
-  if (hasLateStage) return 'Late Stage'
+  // Return the latest stage found (Growth > Main > Early)
   if (hasGrowthStage) return 'Growth Stage'
+  if (hasMainStage) return 'Main Stage'
   if (hasEarlyStage) return 'Early Stage'
   
   return 'Unknown'
@@ -326,14 +326,14 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
             )}
             <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-normal rounded-sm whitespace-nowrap border flex-shrink-0 ${
               companyStage === 'Early Stage' ? 'bg-green-50 text-green-600 border-green-200' :
-              companyStage === 'Growth Stage' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-              companyStage === 'Late Stage' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+              companyStage === 'Main Stage' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+              companyStage === 'Growth Stage' ? 'bg-purple-50 text-purple-600 border-purple-200' :
               'bg-slate-100 text-slate-600 border-slate-200'
             }`}>
               <span className="mr-0.5 text-xs">{
                 companyStage === 'Early Stage' ? '🌱' :
-                companyStage === 'Growth Stage' ? '📈' :
-                companyStage === 'Late Stage' ? '🚀' :
+                companyStage === 'Main Stage' ? '📈' :
+                companyStage === 'Growth Stage' ? '🚀' :
                 '❓'
               }</span>
               <span className="text-xs">{companyStage}</span>

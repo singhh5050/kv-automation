@@ -32,22 +32,22 @@ const normalizeCompanyName = (name: string): string => {
 const detectCompanyStage = (investors: any[]): string => {
   const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
   
-  let hasLateStage = false
   let hasGrowthStage = false
+  let hasMainStage = false
   let hasEarlyStage = false
   
   for (const investor of kvInvestors) {
     const name = investor.investor_name?.toLowerCase() || ''
     
-    // Check for KV Opp (Late Stage) - highest priority
-    if (name.includes('opp')) {
-      hasLateStage = true
+    // Check for KV Opp and KV Excelsior (Growth Stage) - highest priority
+    if (name.includes('opp') || name.includes('excelsior')) {
+      hasGrowthStage = true
     }
-    // Check for KV [Roman Numeral] (Growth Stage) - but not if it contains "opp" or "seed"
-    else if (!name.includes('opp') && !name.includes('seed')) {
+    // Check for KV [Roman Numeral] (Main Stage) - but not if it contains "opp", "excelsior", or "seed"
+    else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
       const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
       if (romanNumeralPattern.test(name)) {
-        hasGrowthStage = true
+        hasMainStage = true
       }
     }
     // Check for KV Seed [A-Z] (Early Stage) - lowest priority
@@ -59,9 +59,9 @@ const detectCompanyStage = (investors: any[]): string => {
     }
   }
   
-  // Return the latest stage found (Late > Growth > Early)
-  if (hasLateStage) return 'Late Stage'
+  // Return the latest stage found (Growth > Main > Early)
   if (hasGrowthStage) return 'Growth Stage'
+  if (hasMainStage) return 'Main Stage'
   if (hasEarlyStage) return 'Early Stage'
   
   return 'Unknown'
@@ -168,7 +168,7 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
         // Sort reports by date (newest first)
         reports.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
 
-        // Transform cap table data to match frontend interface (remove kv_stake and is_kv)
+        // Transform cap table data to match frontend interface
         let capTable: CapTableData | null = null
         if (overview.current_cap_table) {
           const ct = overview.current_cap_table
@@ -180,6 +180,8 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
             round_date: ct.round_date,
             total_pool_size: ct.total_pool_size,
             pool_available: ct.pool_available,
+            pool_utilization: ct.pool_utilization,
+            options_outstanding: ct.options_outstanding,
             investors: (ct.investors || []).map((inv: any) => ({
               investor_name: inv.investor_name,
               total_invested: inv.total_invested,
