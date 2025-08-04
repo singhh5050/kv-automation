@@ -46,23 +46,6 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
             message += `\n• Amount Raised: ${summary.amount_raised_extracted ? '✅ From metadata' : '❌ Not found'}`
             message += `\n• Round: ${summary.round_extracted ? '✅ From metadata' : '❌ Using default'}`
             message += `\n• Option Pool: ${summary.pool_data_found ? '✅ Found' : '❌ Not found'}`
-            if (summary.pool_data_found && summary.option_pool_used_pct !== undefined) {
-              message += `\n  - Pool Utilization: ${summary.option_pool_used_pct}%`
-              message += `\n  - Options Outstanding: ${(summary.options_outstanding * 100).toFixed(2)}%`
-              message += `\n  - Options Available: ${(summary.options_available * 100).toFixed(2)}%`
-              
-              // Add debugging info
-              if (summary.pool_increase !== undefined) {
-                message += `\n  - Pool Increase: ${(summary.pool_increase * 100).toFixed(2)}%`
-              }
-              if (summary.debug_raw_values) {
-                message += `\n\nRaw Values (from spreadsheet):`
-                message += `\n  - Options Outstanding: ${summary.debug_raw_values.options_outstanding_raw}`
-                message += `\n  - Option Pool Available: ${summary.debug_raw_values.option_pool_available_raw}`
-                message += `\n  - Pool Increase: ${summary.debug_raw_values.pool_increase_raw}`
-                message += `\n  - Total (calculated): ${summary.debug_raw_values.total_pool_size_raw}`
-              }
-            }
             message += `\n• Active Investors: ${summary.investors_with_investments || 0}`
           }
           

@@ -268,4 +268,3 @@ def create_database_schema(conn):
 # Local test runner
 if __name__ == "__main__":
     print(json.dumps(lambda_handler({}, {}), indent=2))
-

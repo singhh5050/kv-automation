@@ -1333,11 +1333,11 @@ export default function CompanyDetailPage() {
                               <td className="px-2 py-1 whitespace-nowrap text-xs text-amber-800 font-medium">
                                 {(() => {
                                   const totalPool = company.current_cap_table.total_pool_size || 0
-                                  const poolAvailable = company.current_cap_table.pool_available || 0
-                                  const poolUsed = totalPool - poolAvailable
+                                  const optionsOutstanding = company.current_cap_table.options_outstanding || 0
+                                  const optionsAvailable = totalPool - optionsOutstanding
                                   
                                   if (totalPool > 0) {
-                                    return `${(totalPool * 100).toFixed(1)}% (${poolUsed > 0 ? `${(poolUsed * 100).toFixed(1)}% used, ` : ''}${(poolAvailable * 100).toFixed(1)}% available)`
+                                    return `${(totalPool * 100).toFixed(1)}% (${optionsOutstanding > 0 ? `${(optionsOutstanding * 100).toFixed(1)}% used, ` : ''}${(optionsAvailable * 100).toFixed(1)}% available)`
                                   }
                                   return 'N/A'
                                 })()}
@@ -1389,6 +1389,12 @@ export default function CompanyDetailPage() {
                         <p className="text-sm font-bold text-amber-900">
                           {(company.current_cap_table.total_pool_size * 100).toFixed(1)}%
                         </p>
+                        {company.current_cap_table.options_outstanding != null && (
+                          <div className="text-xs text-amber-700 mt-1">
+                            <div>Used: {(company.current_cap_table.options_outstanding * 100).toFixed(1)}%</div>
+                            <div>Available: {((company.current_cap_table.total_pool_size - company.current_cap_table.options_outstanding) * 100).toFixed(1)}%</div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

@@ -79,37 +79,38 @@ const formatCashOutDate = (cashOutDate: string | null | undefined) => {
 
 // Stage detection based on KV fund names - choose the latest stage
 const detectCompanyStage = (investors: any[]): string => {
-  const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
+  const kvInvestors = investors?.filter(inv => inv.investor_name.startsWith('KV')) || []
   
   let hasGrowthStage = false
   let hasMainStage = false
   let hasEarlyStage = false
   
   for (const investor of kvInvestors) {
-    const name = investor.investor_name?.toLowerCase() || ''
+    const name = investor.investor_name.toLowerCase()
     
-    // Growth Stage: KV Opp or KV Excelsior (highest priority)
+    // Check for KV Opp or KV Excelsior (Growth Stage) - highest priority
     if (name.includes('opp') || name.includes('excelsior')) {
       hasGrowthStage = true
     }
-    // Early Stage: Any KV fund with "seed" (check before Main to avoid conflicts)
-    else if (name.includes('seed')) {
-      hasEarlyStage = true
-    }
-    // Main Stage: KV with Roman numerals (I, II, III, IV, V, etc.)
-    else {
-      // More comprehensive roman numeral pattern
-      const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{1,3}|ix|x|xi{1,3}|xii|xiii|xiv|xv)(\s|$)/i
+    // Check for KV [Roman Numeral] (Main Stage) - but not if it contains "opp", "excelsior", or "seed"
+    else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
+      const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
       if (romanNumeralPattern.test(name)) {
         hasMainStage = true
       }
     }
+    // Check for any fund with "seed" in the name (Early Stage) - lowest priority
+    else if (name.includes('seed')) {
+      hasEarlyStage = true
+    }
   }
   
   // Return the latest stage found (Growth > Main > Early)
-  return hasGrowthStage ? 'Growth Stage' : 
-         hasMainStage ? 'Main Stage' : 
-         hasEarlyStage ? 'Early Stage' : 'Unknown'
+  if (hasGrowthStage) return 'Growth Stage'
+  if (hasMainStage) return 'Main Stage'
+  if (hasEarlyStage) return 'Early Stage'
+  
+  return 'Unknown'
 }
 
 interface CompanyCardProps {
@@ -322,14 +323,14 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
             )}
             <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-normal rounded-sm whitespace-nowrap border flex-shrink-0 ${
               companyStage === 'Early Stage' ? 'bg-green-50 text-green-600 border-green-200' :
-              companyStage === 'Main Stage' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-              companyStage === 'Growth Stage' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+              companyStage === 'Growth Stage' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+              companyStage === 'Late Stage' ? 'bg-purple-50 text-purple-600 border-purple-200' :
               'bg-slate-100 text-slate-600 border-slate-200'
             }`}>
               <span className="mr-0.5 text-xs">{
                 companyStage === 'Early Stage' ? '🌱' :
-                companyStage === 'Main Stage' ? '📈' :
-                companyStage === 'Growth Stage' ? '🚀' :
+                companyStage === 'Growth Stage' ? '📈' :
+                companyStage === 'Late Stage' ? '🚀' :
                 '❓'
               }</span>
               <span className="text-xs">{companyStage}</span>
