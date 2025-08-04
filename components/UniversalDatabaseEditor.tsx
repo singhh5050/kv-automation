@@ -174,6 +174,8 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
         round_date: 'DATE',
         total_pool_size: 'NUMERIC',
         pool_available: 'NUMERIC',
+        pool_utilization: 'NUMERIC',
+        options_outstanding: 'NUMERIC',
         manually_edited: 'BOOLEAN',
         edited_by: 'VARCHAR',
         edited_at: 'TIMESTAMP',

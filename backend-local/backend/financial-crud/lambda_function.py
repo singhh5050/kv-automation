@@ -1076,9 +1076,11 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
         # Get current cap table data
         current_cap_table = None
         try:
+            # Try to fetch with new option pool columns first
             cursor.execute("""
                 SELECT ctr.id, ctr.round_name, ctr.valuation, ctr.amount_raised, 
-                       ctr.round_date, ctr.total_pool_size, ctr.pool_available
+                       ctr.round_date, ctr.total_pool_size, ctr.pool_available,
+                       ctr.pool_utilization, ctr.options_outstanding
                 FROM cap_table_current ctc
                 JOIN cap_table_rounds ctr ON ctc.cap_table_round_id = ctr.id
                 WHERE ctc.company_id = %s
@@ -1086,8 +1088,23 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
             
             round_row = cursor.fetchone()
         except Exception as e:
-            print(f"Warning: Cap table query failed (table may not exist): {str(e)}")
-            round_row = None
+            print(f"Warning: Cap table query with new columns failed, trying fallback: {str(e)}")
+            # Fallback to old query for backwards compatibility
+            try:
+                cursor.execute("""
+                    SELECT ctr.id, ctr.round_name, ctr.valuation, ctr.amount_raised, 
+                           ctr.round_date, ctr.total_pool_size, ctr.pool_available
+                    FROM cap_table_current ctc
+                    JOIN cap_table_rounds ctr ON ctc.cap_table_round_id = ctr.id
+                    WHERE ctc.company_id = %s
+                """, [company_id])
+                
+                old_round_row = cursor.fetchone()
+                # Extend with None values for new columns
+                round_row = old_round_row + (None, None) if old_round_row else None
+            except Exception as e2:
+                print(f"Warning: Cap table query failed (table may not exist): {str(e2)}")
+                round_row = None
         
         if round_row:
             # Get investors for this round
@@ -1133,6 +1150,8 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'round_date': round_row[4].isoformat() if round_row[4] else None,
                 'total_pool_size': float(round_row[5]) if round_row[5] else None,
                 'pool_available': float(round_row[6]) if round_row[6] else None,
+                'pool_utilization': float(round_row[7]) if round_row[7] is not None else None,
+                'options_outstanding': float(round_row[8]) if round_row[8] is not None else None,
                 'kv_stake': kv_stake,
                 'investors': investors
             }
@@ -1606,9 +1625,11 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
         # Get cap table rounds
         cap_table_rounds = []
         try:
+            # Try to fetch with new option pool columns first
             cursor.execute("""
                 SELECT id, round_name, valuation, amount_raised, round_date,
-                       total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+                       total_pool_size, pool_available, pool_utilization, options_outstanding,
+                       manually_edited, edited_by, edited_at, created_at, updated_at
                 FROM cap_table_rounds
                 WHERE company_id = %s
                 ORDER BY round_date DESC, created_at DESC
@@ -1623,14 +1644,45 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
                     'round_date': round_row[4].isoformat() if round_row[4] else None,
                     'total_pool_size': float(round_row[5]) if round_row[5] is not None else None,
                     'pool_available': float(round_row[6]) if round_row[6] is not None else None,
-                    'manually_edited': bool(round_row[7]) if round_row[7] is not None else False,
-                    'edited_by': round_row[8],
-                    'edited_at': round_row[9].isoformat() if round_row[9] else None,
-                    'created_at': round_row[10].isoformat() if round_row[10] else None,
-                    'updated_at': round_row[11].isoformat() if round_row[11] else None
+                    'pool_utilization': float(round_row[7]) if round_row[7] is not None else None,
+                    'options_outstanding': float(round_row[8]) if round_row[8] is not None else None,
+                    'manually_edited': bool(round_row[9]) if round_row[9] is not None else False,
+                    'edited_by': round_row[10],
+                    'edited_at': round_row[11].isoformat() if round_row[11] else None,
+                    'created_at': round_row[12].isoformat() if round_row[12] else None,
+                    'updated_at': round_row[13].isoformat() if round_row[13] else None
                 })
         except Exception as e:
-            print(f"Warning: Could not fetch cap table rounds: {str(e)}")
+            print(f"Warning: Could not fetch cap table rounds with new columns, trying fallback: {str(e)}")
+            # Fallback to old query for backwards compatibility
+            try:
+                cursor.execute("""
+                    SELECT id, round_name, valuation, amount_raised, round_date,
+                           total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+                    FROM cap_table_rounds
+                    WHERE company_id = %s
+                    ORDER BY round_date DESC, created_at DESC
+                """, [company_id])
+                
+                for round_row in cursor.fetchall():
+                    cap_table_rounds.append({
+                        'id': round_row[0],
+                        'round_name': round_row[1],
+                        'valuation': float(round_row[2]) if round_row[2] is not None else None,
+                        'amount_raised': float(round_row[3]) if round_row[3] is not None else None,
+                        'round_date': round_row[4].isoformat() if round_row[4] else None,
+                        'total_pool_size': float(round_row[5]) if round_row[5] is not None else None,
+                        'pool_available': float(round_row[6]) if round_row[6] is not None else None,
+                        'pool_utilization': None,  # New field, set to None for backwards compatibility
+                        'options_outstanding': None,  # New field, set to None for backwards compatibility
+                        'manually_edited': bool(round_row[7]) if round_row[7] is not None else False,
+                        'edited_by': round_row[8],
+                        'edited_at': round_row[9].isoformat() if round_row[9] else None,
+                        'created_at': round_row[10].isoformat() if round_row[10] else None,
+                        'updated_at': round_row[11].isoformat() if round_row[11] else None
+                    })
+            except Exception as e2:
+                print(f"Warning: Could not fetch cap table rounds: {str(e2)}")
         
         # Get cap table investors for all rounds
         cap_table_investors = []
