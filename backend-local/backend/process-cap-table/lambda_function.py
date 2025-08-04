@@ -196,8 +196,8 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         option_pool_available_raw = row_value("Option Pool Available", "Final % FDS")
         pool_increase_raw = row_value("Pool Increase", "Final % FDS")
         
-        # Same logic as before for total size
-        total_pool_size_raw = options_outstanding_raw + pool_increase_raw
+        # Correct total calculation: Options Outstanding + Options Available + Pool Increase
+        total_pool_size_raw = options_outstanding_raw + option_pool_available_raw + pool_increase_raw
         
         # Convert to decimal fractions so 6.2 % ➜ 0.062
         options_outstanding = convert_fds(options_outstanding_raw)
@@ -258,6 +258,14 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 "option_pool_used_pct": round(pool_utilization * 100, 2),  # human-readable
                 "options_outstanding": options_outstanding,    # NEW
                 "options_available": options_available,        # NEW (renamed for clarity)
+                "pool_increase": convert_fds(pool_increase_raw),  # NEW - for debugging
+                # Raw values for debugging
+                "debug_raw_values": {
+                    "options_outstanding_raw": options_outstanding_raw,
+                    "option_pool_available_raw": option_pool_available_raw,
+                    "pool_increase_raw": pool_increase_raw,
+                    "total_pool_size_raw": total_pool_size_raw
+                },
                 "investors_with_investments": sum(1 for i in investors if i["final_round_investment"] > 0),
             },
         }
