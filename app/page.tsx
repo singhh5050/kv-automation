@@ -39,32 +39,30 @@ const detectCompanyStage = (investors: any[]): string => {
   for (const investor of kvInvestors) {
     const name = investor.investor_name?.toLowerCase() || ''
     
-    // Check for KV Opp and KV Excelsior (Growth Stage) - highest priority
+    // Growth Stage: KV Opp or KV Excelsior (highest priority)
     if (name.includes('opp') || name.includes('excelsior')) {
       hasGrowthStage = true
     }
-    // Check for KV [Roman Numeral] (Main Stage) - but not if it contains "opp", "excelsior", or "seed"
-    else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
-      const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
+    // Early Stage: Any KV fund with "seed" (check before Main to avoid conflicts)
+    else if (name.includes('seed')) {
+      hasEarlyStage = true
+    }
+    // Main Stage: KV with Roman numerals (I, II, III, IV, V, etc.)
+    else {
+      // More comprehensive roman numeral pattern
+      const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{1,3}|ix|x|xi{1,3}|xii|xiii|xiv|xv)(\s|$)/i
       if (romanNumeralPattern.test(name)) {
         hasMainStage = true
-      }
-    }
-    // Check for KV Seed [A-Z] (Early Stage) - lowest priority
-    else if (name.includes('seed')) {
-      const seedPattern = /kv\s+seed\s+[a-z]/i
-      if (seedPattern.test(name)) {
-        hasEarlyStage = true
       }
     }
   }
   
   // Return the latest stage found (Growth > Main > Early)
-  if (hasGrowthStage) return 'Growth Stage'
-  if (hasMainStage) return 'Main Stage'
-  if (hasEarlyStage) return 'Early Stage'
+  const result = hasGrowthStage ? 'Growth Stage' : 
+                 hasMainStage ? 'Main Stage' : 
+                 hasEarlyStage ? 'Early Stage' : 'Unknown'
   
-  return 'Unknown'
+  return result
 }
 
 // Coalesce companies with the same normalized name

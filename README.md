@@ -405,9 +405,11 @@ Streamlined workflows for:
 ### Investment Stage Analysis
 The platform automatically detects and categorizes companies based on KV fund participation:
 
-- **Early Stage**: KV Seed funds (A-Z designation)
-- **Growth Stage**: KV Roman numeral funds (I-XV)
-- **Late Stage**: KV Opportunity funds
+- **Early Stage**: KV Seed funds (any fund containing "seed" in the name)
+- **Main Stage**: KV Roman numeral funds (I, II, III, IV, V, etc.)
+- **Growth Stage**: KV Opportunity funds and KV Excelsior
+
+**Classification Priority**: Growth > Main > Early (highest stage fund determines company classification)
 
 ### Competitive Intelligence
 Automated competitive landscape analysis including:
