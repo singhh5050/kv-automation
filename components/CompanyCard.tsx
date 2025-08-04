@@ -323,12 +323,14 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
             )}
             <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-normal rounded-sm whitespace-nowrap border flex-shrink-0 ${
               companyStage === 'Early Stage' ? 'bg-green-50 text-green-600 border-green-200' :
+              companyStage === 'Main Stage' ? 'bg-orange-50 text-orange-600 border-orange-200' :
               companyStage === 'Growth Stage' ? 'bg-blue-50 text-blue-600 border-blue-200' :
               companyStage === 'Late Stage' ? 'bg-purple-50 text-purple-600 border-purple-200' :
               'bg-slate-100 text-slate-600 border-slate-200'
             }`}>
               <span className="mr-0.5 text-xs">{
                 companyStage === 'Early Stage' ? '🌱' :
+                companyStage === 'Main Stage' ? '🏢' :
                 companyStage === 'Growth Stage' ? '📈' :
                 companyStage === 'Late Stage' ? '🚀' :
                 '❓'
