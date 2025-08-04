@@ -377,6 +377,23 @@ export async function getCompanyEnrichment(companyId: string) {
 }
 
 /**
+ * Update enrichment data for a company
+ */
+export async function updateCompanyEnrichment(companyId: string, enrichmentData: any) {
+  return apiRequest('/harmonic-enrichment', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_company_enrichment',
+      company_id: companyId,
+      enrichment_data: enrichmentData,
+    }),
+  })
+}
+
+/**
  * Enrich person data using Harmonic AI (secure backend call)
  */
 export async function enrichPerson(personUrn: string) {

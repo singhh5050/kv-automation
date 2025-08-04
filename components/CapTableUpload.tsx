@@ -46,6 +46,15 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
             message += `\n• Amount Raised: ${summary.amount_raised_extracted ? '✅ From metadata' : '❌ Not found'}`
             message += `\n• Round: ${summary.round_extracted ? '✅ From metadata' : '❌ Using default'}`
             message += `\n• Option Pool: ${summary.pool_data_found ? '✅ Found' : '❌ Not found'}`
+            if (summary.pool_data_found) {
+              message += `\n• Pool Utilization: ${summary.option_pool_used_pct || 0}% used`
+              if (summary.options_outstanding !== undefined) {
+                message += `\n• Options Outstanding: ${(summary.options_outstanding * 100).toFixed(2)}%`
+              }
+              if (summary.options_available !== undefined) {
+                message += `\n• Options Available: ${(summary.options_available * 100).toFixed(2)}%`
+              }
+            }
             message += `\n• Active Investors: ${summary.investors_with_investments || 0}`
           }
           

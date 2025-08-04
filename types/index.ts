@@ -33,6 +33,8 @@ export interface FinancialReport {
     round_date: string | null
     total_pool_size: number | null
     pool_available: number | null
+    pool_utilization: number | null
+    options_outstanding: number | null
     investors: CapTableInvestor[]
   }
 

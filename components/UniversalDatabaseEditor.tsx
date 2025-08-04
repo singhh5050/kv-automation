@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { getAllCompanyData, updateCompany, updateCapTableRound, updateCapTableInvestor, updateFinancialMetrics } from '@/lib/api'
+import { getAllCompanyData, updateCompany, updateCapTableRound, updateCapTableInvestor, updateFinancialMetrics, updateCompanyEnrichment } from '@/lib/api'
 
 interface DatabaseField {
   name: string
@@ -79,6 +79,59 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
           break
         case 'cap_table_investors':
           result = await updateCapTableInvestor(recordId, { [field]: parsedValue })
+          break
+        case 'company_enrichments':
+          // For enrichment updates, we need to find the company_id and build proper enrichment data
+          const enrichmentRecord = allData.company_enrichments?.find((r: any) => r.id === recordId)
+          if (!enrichmentRecord) {
+            throw new Error('Enrichment record not found')
+          }
+          
+          // Build the enrichment data update
+          const enrichmentUpdate: any = {}
+          
+          // For JSON fields (harmonic_data, extracted_data), parse and update
+          if (field === 'harmonic_data' || field === 'extracted_data') {
+            enrichmentUpdate[field] = parsedValue
+          } else {
+            // For individual structured fields, update the extracted_data JSON
+            const currentExtracted = enrichmentRecord.extracted_data 
+              ? (typeof enrichmentRecord.extracted_data === 'string' 
+                ? JSON.parse(enrichmentRecord.extracted_data) 
+                : enrichmentRecord.extracted_data)
+              : {}
+            
+            // Update the specific field in extracted data
+            if (field.startsWith('location_')) {
+              const locationField = field.replace('location_', '')
+              currentExtracted.location = currentExtracted.location || {}
+              currentExtracted.location[locationField] = parsedValue
+            } else if (field.startsWith('funding_')) {
+              const fundingField = field.replace('funding_', '')
+              currentExtracted.funding = currentExtracted.funding || {}
+              currentExtracted.funding[fundingField] = parsedValue
+            } else if (field.startsWith('ceo_')) {
+              const ceoField = field.replace('ceo_', '')
+              currentExtracted.ceo = currentExtracted.ceo || {}
+              if (ceoField === 'name') {
+                currentExtracted.ceo.full_name = parsedValue
+              } else if (ceoField === 'linkedin') {
+                currentExtracted.ceo.contact = currentExtracted.ceo.contact || {}
+                currentExtracted.ceo.contact.linkedin_url = parsedValue
+              } else if (ceoField === 'email') {
+                currentExtracted.ceo.contact = currentExtracted.ceo.contact || {}
+                currentExtracted.ceo.contact.email = parsedValue
+              } else {
+                currentExtracted.ceo[ceoField] = parsedValue
+              }
+            } else {
+              currentExtracted[field] = parsedValue
+            }
+            
+            enrichmentUpdate.extracted_data = currentExtracted
+          }
+          
+          result = await updateCompanyEnrichment(enrichmentRecord.company_id.toString(), enrichmentUpdate)
           break
         default:
           throw new Error(`Unknown table: ${table}`)
@@ -174,6 +227,8 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
         round_date: 'DATE',
         total_pool_size: 'NUMERIC',
         pool_available: 'NUMERIC',
+        pool_utilization: 'NUMERIC',
+        options_outstanding: 'NUMERIC',
         manually_edited: 'BOOLEAN',
         edited_by: 'VARCHAR',
         edited_at: 'TIMESTAMP',
@@ -191,6 +246,31 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
         edited_by: 'VARCHAR',
         edited_at: 'TIMESTAMP',
         created_at: 'TIMESTAMP'
+      },
+      company_enrichments: {
+        id: 'SERIAL',
+        company_id: 'INTEGER',
+        harmonic_entity_urn: 'VARCHAR',
+        harmonic_data: 'TEXT',
+        extracted_data: 'TEXT',
+        enrichment_status: 'VARCHAR',
+        enriched_at: 'TIMESTAMP',
+        created_at: 'TIMESTAMP',
+        updated_at: 'TIMESTAMP',
+        funding_total: 'NUMERIC',
+        funding_stage: 'VARCHAR',
+        valuation: 'NUMERIC',
+        headcount: 'INTEGER',
+        web_traffic: 'INTEGER',
+        stage: 'VARCHAR',
+        company_type: 'VARCHAR',
+        location_city: 'VARCHAR',
+        location_state: 'VARCHAR',
+        location_country: 'VARCHAR',
+        ceo_name: 'VARCHAR',
+        ceo_title: 'VARCHAR',
+        ceo_linkedin: 'VARCHAR',
+        ceo_email: 'VARCHAR'
       }
     }
     
@@ -424,6 +504,7 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
       {renderTable('financial_reports', allData.financial_reports, 'Financial Reports')}
       {renderTable('cap_table_rounds', allData.cap_table_rounds, 'Cap Table Rounds')}
       {renderTable('cap_table_investors', allData.cap_table_investors, 'Cap Table Investors')}
+      {renderTable('company_enrichments', allData.company_enrichments, 'Company Enrichments')}
 
       <div className="bg-gray-50 border rounded-lg p-4">
         <h3 className="font-medium text-gray-900 mb-2">Summary</h3>

@@ -39,6 +39,7 @@ def lambda_handler(event, context):
 
     try:
         # ── Connect with pg8000; proper SSL and timeout settings ──
+        ssl_context = ssl.create_default_context()
         conn = pg8000.connect(
             host=db_config["host"],
             port=db_config["port"],
@@ -46,7 +47,7 @@ def lambda_handler(event, context):
             user=db_config["user"],
             password=db_config["password"],
             timeout=30,              # connection timeout
-            ssl_context=True         # correct SSL flag
+            ssl_context=ssl_context  # proper SSL context
         )
 
         conn.autocommit = True       # every DDL is its own tx
@@ -150,19 +151,21 @@ def create_database_schema(conn):
 
     cursor.execute("""
     CREATE TABLE cap_table_rounds (
-        id              SERIAL PRIMARY KEY,
-        company_id      INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-        round_name      VARCHAR(100) NOT NULL,
-        valuation       NUMERIC(20,2),
-        amount_raised   NUMERIC(20,2),
-        round_date      DATE,
-        total_pool_size NUMERIC(8,6),
-        pool_available  NUMERIC(8,6),
-        manually_edited BOOLEAN DEFAULT FALSE,
-        edited_by       VARCHAR(100),
-        edited_at       TIMESTAMP,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        id                  SERIAL PRIMARY KEY,
+        company_id          INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        round_name          VARCHAR(100) NOT NULL,
+        valuation           NUMERIC(20,2),
+        amount_raised       NUMERIC(20,2),
+        round_date          DATE,
+        total_pool_size     NUMERIC(8,6),
+        pool_available      NUMERIC(8,6),
+        pool_utilization    NUMERIC(8,6),
+        options_outstanding NUMERIC(8,6),
+        manually_edited     BOOLEAN DEFAULT FALSE,
+        edited_by           VARCHAR(100),
+        edited_at           TIMESTAMP,
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (company_id, round_name)
     );
     """)
@@ -214,6 +217,10 @@ def create_database_schema(conn):
         location_city           VARCHAR(100),
         location_state          VARCHAR(100),
         location_country        VARCHAR(100),
+        ceo_name                VARCHAR(200),
+        ceo_title               VARCHAR(200),
+        ceo_linkedin            VARCHAR(500),
+        ceo_email               VARCHAR(200),
         
         UNIQUE (company_id)
     );

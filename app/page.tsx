@@ -32,22 +32,22 @@ const normalizeCompanyName = (name: string): string => {
 const detectCompanyStage = (investors: any[]): string => {
   const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
   
-  let hasLateStage = false
   let hasGrowthStage = false
+  let hasMainStage = false
   let hasEarlyStage = false
   
   for (const investor of kvInvestors) {
     const name = investor.investor_name?.toLowerCase() || ''
     
-    // Check for KV Opp (Late Stage) - highest priority
-    if (name.includes('opp')) {
-      hasLateStage = true
+    // Check for KV Opp and KV Excelsior (Growth Stage) - highest priority
+    if (name.includes('opp') || name.includes('excelsior')) {
+      hasGrowthStage = true
     }
-    // Check for KV [Roman Numeral] (Growth Stage) - but not if it contains "opp" or "seed"
-    else if (!name.includes('opp') && !name.includes('seed')) {
+    // Check for KV [Roman Numeral] (Main Stage) - but not if it contains "opp", "excelsior", or "seed"
+    else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
       const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
       if (romanNumeralPattern.test(name)) {
-        hasGrowthStage = true
+        hasMainStage = true
       }
     }
     // Check for KV Seed [A-Z] (Early Stage) - lowest priority
@@ -59,9 +59,9 @@ const detectCompanyStage = (investors: any[]): string => {
     }
   }
   
-  // Return the latest stage found (Late > Growth > Early)
-  if (hasLateStage) return 'Late Stage'
+  // Return the latest stage found (Growth > Main > Early)
   if (hasGrowthStage) return 'Growth Stage'
+  if (hasMainStage) return 'Main Stage'
   if (hasEarlyStage) return 'Early Stage'
   
   return 'Unknown'
@@ -180,6 +180,8 @@ const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]>
             round_date: ct.round_date,
             total_pool_size: ct.total_pool_size,
             pool_available: ct.pool_available,
+            pool_utilization: ct.pool_utilization,
+            options_outstanding: ct.options_outstanding,
             investors: (ct.investors || []).map((inv: any) => ({
               investor_name: inv.investor_name,
               total_invested: inv.total_invested,
@@ -237,6 +239,9 @@ export default function Home() {
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
   const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingEnrichment, setIsLoadingEnrichment] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  const [enrichmentProgress, setEnrichmentProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'healthy' | 'unhealthy'>('unknown')
   const [showDebugPanel, setShowDebugPanel] = useState(false)
@@ -302,30 +307,40 @@ export default function Home() {
     }
 
     setIsLoading(true)
+    setLoadingProgress(0)
     try {
       console.log('🔄 Loading companies from database...')
+      setLoadingProgress(10)
+      
       const result = await getCompanies()
       console.log('📊 Raw database result:', result)
+      setLoadingProgress(30)
       
       if (result.data && !result.error) {
         const dbCompanies = result.data.data?.companies || []
         console.log('🏢 Database companies:', dbCompanies)
         console.log('📈 Number of companies found:', dbCompanies.length)
+        setLoadingProgress(50)
         
         if (dbCompanies.length === 0) {
           console.log('⚠️ No companies found in database')
           setCompanies([])
+          setLoadingProgress(100)
         } else {
           console.log('🔄 Converting database format to frontend format...')
           const frontendCompanies = await convertDatabaseToFrontend(dbCompanies)
           console.log('✅ Converted companies:', frontendCompanies)
           console.log('📊 Number of frontend companies:', frontendCompanies.length)
+          setLoadingProgress(80)
+          
           setCompanies(frontendCompanies)
+          setFilteredCompanies(frontendCompanies)
+          setLoadingProgress(100)
           
           // Cache the loaded data
           companiesCache.set(frontendCompanies)
           
-          // Load enrichment data for companies
+          // Load enrichment data for companies asynchronously (don't block UI)
           loadEnrichmentData(frontendCompanies)
         }
       } else {
@@ -341,36 +356,51 @@ export default function Home() {
   }
 
   const loadEnrichmentData = async (companies: Company[]) => {
+    if (companies.length === 0) return
+    
+    setIsLoadingEnrichment(true)
+    setEnrichmentProgress(0)
+    
     try {
       console.log('🔍 Loading enrichment data for', companies.length, 'companies...')
       
       // Load enrichment data sequentially to avoid overwhelming the server
       const enrichmentMap: Record<string, any> = {}
       
-              for (const company of companies) {
-          try {
-            const enrichmentResult = await getCompanyEnrichment(company.id)
-            console.log(`Enrichment result for ${company.name}:`, enrichmentResult)
-            if (enrichmentResult.data && !enrichmentResult.error && enrichmentResult.data.data) {
-              console.log(`Raw enrichment data for ${company.name}:`, enrichmentResult.data.data)
-              // Store the data in the structure expected by CompanyCard
-              enrichmentMap[company.id] = {
-                enrichment: {
-                  extracted: enrichmentResult.data.data.extracted_data
-                }
+      for (let i = 0; i < companies.length; i++) {
+        const company = companies[i]
+        try {
+          const enrichmentResult = await getCompanyEnrichment(company.id)
+          console.log(`Enrichment result for ${company.name}:`, enrichmentResult)
+          if (enrichmentResult.data && !enrichmentResult.error && enrichmentResult.data.data) {
+            console.log(`Raw enrichment data for ${company.name}:`, enrichmentResult.data.data)
+            // Store the data in the structure expected by CompanyCard
+            enrichmentMap[company.id] = {
+              enrichment: {
+                extracted: enrichmentResult.data.data.extracted_data
               }
-              console.log(`Stored enrichment data for ${company.name}:`, enrichmentMap[company.id])
             }
-          } catch (error) {
-            console.log(`No enrichment data for ${company.name}:`, error)
-            // Continue with next company instead of failing completely
+            console.log(`Stored enrichment data for ${company.name}:`, enrichmentMap[company.id])
           }
+        } catch (error) {
+          console.log(`No enrichment data for ${company.name}:`, error)
+          // Continue with next company instead of failing completely
         }
+        
+        // Update progress
+        const progress = Math.round(((i + 1) / companies.length) * 100)
+        setEnrichmentProgress(progress)
+        
+        // Update enrichment data incrementally so user sees progress
+        setEnrichmentData({...enrichmentMap})
+      }
       
       console.log('✅ Loaded enrichment data for', Object.keys(enrichmentMap).length, 'companies')
       setEnrichmentData(enrichmentMap)
     } catch (error) {
       console.error('❌ Error loading enrichment data:', error)
+    } finally {
+      setIsLoadingEnrichment(false)
     }
   }
 
@@ -714,12 +744,46 @@ export default function Home() {
         </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading State with Progress */}
       {isLoading && companies.length === 0 && (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading companies...</h2>
-          <p className="text-gray-600">Fetching data from database</p>
+          <p className="text-gray-600 mb-4">Fetching data from database</p>
+          
+          {/* Progress Bar */}
+          <div className="max-w-md mx-auto">
+            <div className="bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${loadingProgress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">{loadingProgress}%</p>
+          </div>
+        </div>
+      )}
+
+      {/* Enrichment Loading Indicator */}
+      {isLoadingEnrichment && companies.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-blue-800">Loading enrichment data...</span>
+              </div>
+              <span className="text-sm text-blue-600">{enrichmentProgress}%</span>
+            </div>
+            <div className="mt-2">
+              <div className="bg-blue-200 rounded-full h-1">
+                <div 
+                  className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+                  style={{ width: `${enrichmentProgress}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1603,12 +1603,14 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'processing_status': report_row[21]
             })
         
-        # Get cap table rounds
+        # Get cap table rounds (with backwards compatibility for new columns)
         cap_table_rounds = []
         try:
+            # Try with new columns first
             cursor.execute("""
                 SELECT id, round_name, valuation, amount_raised, round_date,
-                       total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+                       total_pool_size, pool_available, pool_utilization, options_outstanding, 
+                       manually_edited, edited_by, edited_at, created_at, updated_at
                 FROM cap_table_rounds
                 WHERE company_id = %s
                 ORDER BY round_date DESC, created_at DESC
@@ -1623,14 +1625,45 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
                     'round_date': round_row[4].isoformat() if round_row[4] else None,
                     'total_pool_size': float(round_row[5]) if round_row[5] is not None else None,
                     'pool_available': float(round_row[6]) if round_row[6] is not None else None,
-                    'manually_edited': bool(round_row[7]) if round_row[7] is not None else False,
-                    'edited_by': round_row[8],
-                    'edited_at': round_row[9].isoformat() if round_row[9] else None,
-                    'created_at': round_row[10].isoformat() if round_row[10] else None,
-                    'updated_at': round_row[11].isoformat() if round_row[11] else None
+                    'pool_utilization': float(round_row[7]) if round_row[7] is not None else None,
+                    'options_outstanding': float(round_row[8]) if round_row[8] is not None else None,
+                    'manually_edited': bool(round_row[9]) if round_row[9] is not None else False,
+                    'edited_by': round_row[10],
+                    'edited_at': round_row[11].isoformat() if round_row[11] else None,
+                    'created_at': round_row[12].isoformat() if round_row[12] else None,
+                    'updated_at': round_row[13].isoformat() if round_row[13] else None
                 })
         except Exception as e:
-            print(f"Warning: Could not fetch cap table rounds: {str(e)}")
+            # Fallback to old query if new columns don't exist
+            print(f"Warning: New columns not found, falling back to old schema: {str(e)}")
+            try:
+                cursor.execute("""
+                    SELECT id, round_name, valuation, amount_raised, round_date,
+                           total_pool_size, pool_available, manually_edited, edited_by, edited_at, created_at, updated_at
+                    FROM cap_table_rounds
+                    WHERE company_id = %s
+                    ORDER BY round_date DESC, created_at DESC
+                """, [company_id])
+                
+                for round_row in cursor.fetchall():
+                    cap_table_rounds.append({
+                        'id': round_row[0],
+                        'round_name': round_row[1],
+                        'valuation': float(round_row[2]) if round_row[2] is not None else None,
+                        'amount_raised': float(round_row[3]) if round_row[3] is not None else None,
+                        'round_date': round_row[4].isoformat() if round_row[4] else None,
+                        'total_pool_size': float(round_row[5]) if round_row[5] is not None else None,
+                        'pool_available': float(round_row[6]) if round_row[6] is not None else None,
+                        'pool_utilization': None,  # Default for missing column
+                        'options_outstanding': None,  # Default for missing column
+                        'manually_edited': bool(round_row[7]) if round_row[7] is not None else False,
+                        'edited_by': round_row[8],
+                        'edited_at': round_row[9].isoformat() if round_row[9] else None,
+                        'created_at': round_row[10].isoformat() if round_row[10] else None,
+                        'updated_at': round_row[11].isoformat() if round_row[11] else None
+                    })
+            except Exception as e2:
+                print(f"Warning: Could not fetch cap table rounds: {str(e2)}")
         
         # Get cap table investors for all rounds
         cap_table_investors = []
@@ -1663,6 +1696,88 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
             except Exception as e:
                 print(f"Warning: Could not fetch cap table investors: {str(e)}")
         
+        # Get company enrichment data (with full structured fields)
+        company_enrichments = []
+        try:
+            # Select all enrichment columns including structured fields and CEO data
+            cursor.execute("""
+                SELECT id, company_id, harmonic_entity_urn, harmonic_data, extracted_data,
+                       enrichment_status, enriched_at, created_at, updated_at,
+                       funding_total, funding_stage, valuation, headcount, web_traffic,
+                       stage, company_type, location_city, location_state, location_country,
+                       ceo_name, ceo_title, ceo_linkedin, ceo_email
+                FROM company_enrichments
+                WHERE company_id = %s
+                ORDER BY enriched_at DESC
+            """, [company_id])
+            
+            for enrichment_row in cursor.fetchall():
+                company_enrichments.append({
+                    'id': enrichment_row[0],
+                    'company_id': enrichment_row[1],
+                    'harmonic_entity_urn': enrichment_row[2],
+                    'harmonic_data': enrichment_row[3],
+                    'extracted_data': enrichment_row[4],
+                    'enrichment_status': enrichment_row[5],
+                    'enriched_at': enrichment_row[6].isoformat() if enrichment_row[6] else None,
+                    'created_at': enrichment_row[7].isoformat() if enrichment_row[7] else None,
+                    'updated_at': enrichment_row[8].isoformat() if enrichment_row[8] else None,
+                    'funding_total': float(enrichment_row[9]) if enrichment_row[9] is not None else None,
+                    'funding_stage': enrichment_row[10],
+                    'valuation': float(enrichment_row[11]) if enrichment_row[11] is not None else None,
+                    'headcount': int(enrichment_row[12]) if enrichment_row[12] is not None else None,
+                    'web_traffic': int(enrichment_row[13]) if enrichment_row[13] is not None else None,
+                    'stage': enrichment_row[14],
+                    'company_type': enrichment_row[15],
+                    'location_city': enrichment_row[16],
+                    'location_state': enrichment_row[17],
+                    'location_country': enrichment_row[18],
+                    'ceo_name': enrichment_row[19],
+                    'ceo_title': enrichment_row[20],
+                    'ceo_linkedin': enrichment_row[21],
+                    'ceo_email': enrichment_row[22]
+                })
+        except Exception as e:
+            print(f"Warning: Could not fetch company enrichments with new schema, trying fallback: {str(e)}")
+            # Fallback for backwards compatibility
+            try:
+                cursor.execute("""
+                    SELECT id, company_id, harmonic_entity_urn, harmonic_data, extracted_data,
+                           enrichment_status, enriched_at, created_at, updated_at
+                    FROM company_enrichments
+                    WHERE company_id = %s
+                    ORDER BY enriched_at DESC
+                """, [company_id])
+                
+                for enrichment_row in cursor.fetchall():
+                    company_enrichments.append({
+                        'id': enrichment_row[0],
+                        'company_id': enrichment_row[1],
+                        'harmonic_entity_urn': enrichment_row[2],
+                        'harmonic_data': enrichment_row[3],
+                        'extracted_data': enrichment_row[4],
+                        'enrichment_status': enrichment_row[5],
+                        'enriched_at': enrichment_row[6].isoformat() if enrichment_row[6] else None,
+                        'created_at': enrichment_row[7].isoformat() if enrichment_row[7] else None,
+                        'updated_at': enrichment_row[8].isoformat() if enrichment_row[8] else None,
+                        'funding_total': None,
+                        'funding_stage': None,
+                        'valuation': None,
+                        'headcount': None,
+                        'web_traffic': None,
+                        'stage': None,
+                        'company_type': None,
+                        'location_city': None,
+                        'location_state': None,
+                        'location_country': None,
+                        'ceo_name': None,
+                        'ceo_title': None,
+                        'ceo_linkedin': None,
+                        'ceo_email': None
+                    })
+            except Exception as e2:
+                print(f"Warning: Could not fetch company enrichments: {str(e2)}")
+        
         cursor.close()
         conn.close()
         
@@ -1673,10 +1788,12 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
                 'financial_reports': financial_reports,
                 'cap_table_rounds': cap_table_rounds,
                 'cap_table_investors': cap_table_investors,
+                'company_enrichments': company_enrichments,
                 'summary': {
                     'financial_reports_count': len(financial_reports),
                     'cap_table_rounds_count': len(cap_table_rounds),
-                    'cap_table_investors_count': len(cap_table_investors)
+                    'cap_table_investors_count': len(cap_table_investors),
+                    'company_enrichments_count': len(company_enrichments)
                 }
             }
         }
