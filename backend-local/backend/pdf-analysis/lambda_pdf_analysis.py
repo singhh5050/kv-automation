@@ -334,8 +334,8 @@ ALL text fields must use **Markdown formatting** for better readability:
 **Strategic Implications**: *The CPA improvement and retention stability provide confidence for scaling to 25k policies while maintaining unit economics. The enhanced lead-to-sale rate suggests our media partner optimization is working.*
 ```
 
-### For financialSummary - Narrative-driven summary:
-Begin with a 2-3 sentence "Executive Narrative" that tells the quarter's story (context → implications → forward-looking). Follow with **bold metrics** embedded inline throughout the narrative. Connect the dots between different metrics to create a cohesive board-ready story.
+### For financialSummary - Board Deck Summary (PRIMARY FOCUS):
+**IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including financial performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
 
 ## WRITING STYLE
 Write analysis in the style of an executive summary for board members:
@@ -382,7 +382,7 @@ For every section that contains numbers, weave a compelling narrative that answe
   "cashOutDate": "April 2025",
   "runway": 18,
   "budgetVsActual": "Markdown table with Budget vs Actual metrics and narrative context",
-  "financialSummary": "Narrative-driven executive summary with **bold metrics** and strategic implications",
+  "financialSummary": "PRIMARY FOCUS: Exactly 7-10 bullet points precisely summarizing the entire board deck (financial performance, operations, strategy, risks, milestones) with **bold metrics** and brief context",
   "sectorHighlightA": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**",
   "sectorHighlightB": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**", 
   "keyRisks": "Markdown bullet list with emoji status (⚠️) and strategic risk context",

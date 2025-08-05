@@ -1151,35 +1151,53 @@ export default function CompanyDetailPage() {
             )}
 
             {activeTab === 'overview' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
-                {/* 1. Financial Overview */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="space-y-6">
+                {/* 1. Key Summary - First and Most Prominent */}
+                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">💼</span>
+                  <div className="flex items-center space-x-2 mb-4">
+                    <span className="text-lg">📋</span>
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Company Overview</h3>
-                      <p className="text-gray-600 text-xs">📊 Financial performance and projections</p>
+                      <h3 className="text-lg font-bold text-gray-900">Key Summary</h3>
+                      <p className="text-gray-600 text-sm">📊 Comprehensive board deck overview</p>
                     </div>
                   </div>
                   
                   {latestReport ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2 rounded border border-blue-100">
-                        <div className="flex items-center space-x-1 mb-1">
-                          <span className="text-xs">📊</span>
-                          <h4 className="font-semibold text-blue-900 text-xs">Financial Summary</h4>
-                        </div>
-                        <MarkdownContent content={(latestReport as any).financial_summary || 'No financial summary available'} className="text-xs text-blue-800" />
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                      <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm text-blue-900 leading-relaxed" />
+                    </div>
+                  ) : (
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
+                      <div className="text-2xl mb-3">📋</div>
+                      <p className="text-gray-500 font-medium mb-2">No key summary available</p>
+                      <p className="text-gray-400 text-sm">Upload a recent board deck to see the comprehensive overview</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Secondary Information Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
+                  {/* 2a. Other Financial Details */}
+                  <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                    {/* Header */}
+                    <div className="flex items-center space-x-1 mb-3">
+                      <span className="text-sm">💼</span>
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
+                        <p className="text-gray-600 text-xs">📊 Budget analysis and team updates</p>
                       </div>
-                      
-                      <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2 rounded border border-purple-100">
-                        <div className="flex items-center space-x-1 mb-1">
-                          <span className="text-xs">⚖️</span>
-                          <h4 className="font-semibold text-purple-900 text-xs">Budget vs Actual</h4>
+                    </div>
+                    
+                    {latestReport ? (
+                      <div className="grid grid-cols-1 gap-3">
+                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2 rounded border border-purple-100">
+                          <div className="flex items-center space-x-1 mb-1">
+                            <span className="text-xs">⚖️</span>
+                            <h4 className="font-semibold text-purple-900 text-xs">Budget vs Actual</h4>
+                          </div>
+                          <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-xs text-purple-800" />
                         </div>
-                        <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-xs text-purple-800" />
-                      </div>
                       
                       {(latestReport as any)?.personnel_updates && (
                         <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2 rounded border border-green-100">
@@ -1210,8 +1228,8 @@ export default function CompanyDetailPage() {
                   )}
                 </div>
 
-                {/* 2. Sector Updates */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                  {/* 2b. Sector Updates */}
+                  <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
                     <span className="text-sm">{sectorLabels.icon}</span>
                     <div>
@@ -1257,6 +1275,7 @@ export default function CompanyDetailPage() {
                       )}
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
             )}
