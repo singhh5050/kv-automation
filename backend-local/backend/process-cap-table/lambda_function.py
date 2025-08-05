@@ -4,10 +4,14 @@ import base64
 import io
 import re
 import ssl
+import math
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from typing import Dict, Any
 
 import pg8000
 import pandas as pd
+import numpy as np
 
 # ──────────────────────────────────────────────────────────────────────────
 # Utility helpers
@@ -39,11 +43,66 @@ def convert_fds(value: Any) -> float:
 
 
 def sanitize_round_name(raw: str) -> str:
-    """Extract a clean round label like 'Series A‑3' from a noisy cell."""
+    """Extract a clean round label like 'Series A‑3' from a noisy cell."""
     if not isinstance(raw, str):
         return "Current"
     m = re.search(r"Series\s+[A-Z]+(?:-?\d+)?", raw, re.IGNORECASE)
     return m.group(0).title() if m else raw.strip()
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Defensive data cleaning utilities
+# ──────────────────────────────────────────────────────────────────────────
+
+def _is_missing(x):
+    """True for None, NaN, NaT, blank strings, or placeholder text."""
+    if x is None:
+        return True
+    if isinstance(x, float) and (math.isnan(x) or pd.isna(x)):
+        return True
+    if x is pd.NaT:
+        return True
+    if isinstance(x, str) and not x.strip():
+        return True
+    if isinstance(x, str) and x.strip().lower() in {"tbd", "tbc", "na", "n/a", "nat", "--"}:
+        return True
+    return False
+
+def _clean_string(x, default="", fixes_log=None):
+    """Return a trimmed string or the default."""
+    if _is_missing(x):
+        if fixes_log is not None:
+            fixes_log.append(f"Cleaned missing/invalid string value '{x}' → '{default}'")
+        return default
+    return str(x).strip()
+
+def _clean_date(raw, fallback_months=1, fixes_log=None):
+    """
+    Return a real `datetime.date`.
+    - If the cell parses, use it.
+    - Else return today() - fallback_months.
+    """
+    ts = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(ts):
+        fallback_date = datetime.utcnow().date() - relativedelta(months=fallback_months)
+        if fixes_log is not None:
+            fixes_log.append(f"Fixed invalid date '{raw}' → {fallback_date} (today - {fallback_months} months)")
+        return fallback_date
+    return ts.date()     # already naive date object
+
+def _clean_float(raw, fixes_log=None):
+    """Coerce to float or None."""
+    try:
+        f = float(raw)
+        if math.isnan(f):
+            if fixes_log is not None:
+                fixes_log.append(f"Cleaned NaN float value → None")
+            return None
+        return f
+    except Exception:
+        if fixes_log is not None:
+            fixes_log.append(f"Fixed invalid numeric value '{raw}' → None")
+        return None
 
 # ──────────────────────────────────────────────────────────────────────────
 # Lambda entrypoint
@@ -87,13 +146,18 @@ def process_cap_table_xlsx(xlsx_b64: str, filename: str) -> Dict[str, Any]:
     return process_cap_table_xlsx_with_override(xlsx_b64, filename, None)
 
 def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
+    defensive_fixes = []  # Track what defensive fixes were applied
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
 
         # ——— 1 Metadata (first 6 rows) ———
         try:
             df_meta = pd.read_excel(xlsx_io, nrows=6, header=None)
-            extracted_company_name = df_meta.iloc[0, 1] if df_meta.shape[1] > 1 else "Unknown Company"
+            row0 = df_meta.iloc[0]
+            extracted_company_name = next(
+                (_clean_string(c, fixes_log=defensive_fixes) for c in row0 if not _is_missing(c)), 
+                "Unknown Company"
+            )
             
             # Use override if provided, otherwise use extracted name
             company_name = company_name_override if company_name_override else extracted_company_name
@@ -132,23 +196,17 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                     round_name = sanitize_round_name(round_raw)
                     
                     # Extract valuation and amount raised from the same Series row
-                    valuation = safe_float(df_meta.at[idx, effective_cols[0]]) if effective_cols else None
-                    amount_raised = safe_float(df_meta.at[idx, raised_cols[0]]) if raised_cols else None
+                    valuation = _clean_float(df_meta.at[idx, effective_cols[0]], fixes_log=defensive_fixes) if effective_cols else None
+                    amount_raised = _clean_float(df_meta.at[idx, raised_cols[0]], fixes_log=defensive_fixes) if raised_cols else None
                     
                     # Extract round date from the same row
-                    round_date = None
-                    if date_cols:
-                        raw_date = df_meta.at[idx, date_cols[0]]
-                        try:
-                            round_date = pd.to_datetime(raw_date, errors="coerce").date().isoformat() if pd.notna(raw_date) else None
-                        except Exception:
-                            round_date = None
+                    round_date = _clean_date(df_meta.at[idx, date_cols[0]], fixes_log=defensive_fixes) if date_cols else _clean_date(None, fixes_log=defensive_fixes)
                 else:
                     # No Series rows found, fall back to graceful defaults
                     round_raw = "Current"
                     round_name = sanitize_round_name(round_raw)
-                    valuation = safe_float(df_meta[effective_cols[0]].dropna().iloc[-1]) if effective_cols else None
-                    amount_raised = safe_float(df_meta[raised_cols[0]].dropna().iloc[-1]) if raised_cols else None
+                    valuation = _clean_float(df_meta[effective_cols[0]].dropna().iloc[-1], fixes_log=defensive_fixes) if effective_cols else None
+                    amount_raised = _clean_float(df_meta[raised_cols[0]].dropna().iloc[-1], fixes_log=defensive_fixes) if raised_cols else None
                     round_date = None
             else:
                 # No Round column found, fall back to old behavior
@@ -240,6 +298,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 "options_outstanding": options_outstanding,  # NEW
             },
             "investors": investors,
+            "defensive_fixes": defensive_fixes,
         }
         save_result = save_cap_table_round_internal(cap_table)
         if not save_result["success"]:
@@ -278,6 +337,9 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
 
 def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
     """Persist round + investors; identical to your original flow."""
+    
+    # Get defensive fixes list from input data
+    defensive_fixes = data.get("defensive_fixes", [])
 
     db_cfg = {
         "host": os.environ.get("DB_HOST"),
@@ -294,6 +356,11 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
     round_data = data["round_data"]
     if not round_data.get("round_name"):
         return {"success": False, "error": "round_name is required"}
+
+    # Last-chance defensive scrub before SQL
+    round_data["round_date"] = _clean_date(round_data.get("round_date"), fixes_log=defensive_fixes)
+    round_data["valuation"] = _clean_float(round_data.get("valuation"), fixes_log=defensive_fixes)
+    round_data["amount_raised"] = _clean_float(round_data.get("amount_raised"), fixes_log=defensive_fixes)
 
     try:
         ctx = ssl.create_default_context()
@@ -339,7 +406,17 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
         cur.close(); conn.close()
 
-        return {"success": True, "data": {"company_name": data["company_name"], "company_id": company_id, "round_id": round_id, "round_name": round_data["round_name"], "investors_count": len(data.get("investors", []))}}
+        return {
+            "success": True, 
+            "data": {
+                "company_name": data["company_name"], 
+                "company_id": company_id, 
+                "round_id": round_id, 
+                "round_name": round_data["round_name"], 
+                "investors_count": len(data.get("investors", [])),
+                "defensive_fixes": defensive_fixes
+            }
+        }
     except Exception as e:
         return {"success": False, "error": f"DB save failed: {e}"}
 

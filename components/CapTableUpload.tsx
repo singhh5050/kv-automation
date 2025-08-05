@@ -49,6 +49,15 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
             message += `\n• Active Investors: ${summary.investors_with_investments || 0}`
           }
           
+          // Show defensive fixes if any were applied
+          if (data?.defensive_fixes && data.defensive_fixes.length > 0) {
+            message += `\n\n🛠️ Defensive Fixes Applied:`
+            data.defensive_fixes.forEach((fix: string, index: number) => {
+              message += `\n${index + 1}. ${fix}`
+            })
+            message += `\n\nNote: These fixes ensure clean data reaches the database. Original file data may have had formatting issues.`
+          }
+          
           alert(message)
         }
       } catch (error) {
