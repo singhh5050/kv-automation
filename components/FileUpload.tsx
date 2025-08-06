@@ -166,8 +166,8 @@ export default function FileUpload({ onUpload, isLoading }: FileUploadProps) {
             
             <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
               <p className="text-xs text-blue-800">
-                <strong>Note:</strong> If a company name isn't correct, you can edit it in the database. 
-                We don't have merge functionality yet - you'd need to re-add files to the correct name.
+                <strong>Note:</strong> If a company name isn&apos;t correct, you can edit it in the database. 
+                We don&apos;t have merge functionality yet - you&apos;d need to re-add files to the correct name.
               </p>
             </div>
             
