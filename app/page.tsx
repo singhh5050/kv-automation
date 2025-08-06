@@ -182,7 +182,8 @@ export default function Home() {
   // Filter states
   const [filters, setFilters] = useState({
     stage: '',
-    sector: ''
+    sector: '',
+    search: ''
   })
 
   // Load companies from cache or database on mount
@@ -194,6 +195,13 @@ export default function Home() {
   // Apply filters whenever companies or filters change
   useEffect(() => {
     let filtered = companies
+
+    // Apply search filter
+    if (filters.search) {
+      filtered = filtered.filter(company => 
+        company.name?.toLowerCase().includes(filters.search.toLowerCase())
+      )
+    }
 
     // Apply sector filter  
     if (filters.sector) {
@@ -580,6 +588,28 @@ export default function Home() {
           {/* Filter Content */}
           <div className={`${showFilters ? 'block' : 'hidden'} sm:block py-3`}>
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-4">
+              {/* Search Input */}
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Search</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    placeholder="Search companies..."
+                    className="text-sm border border-gray-300 rounded px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[200px] sm:w-auto"
+                  />
+                  {filters.search && (
+                    <button
+                      onClick={() => setFilters({ ...filters, search: '' })}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
                 <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stage</label>
                 <select
@@ -618,9 +648,9 @@ export default function Home() {
                 </select>
               </div>
 
-              {(filters.sector || filters.stage) && (
+              {(filters.sector || filters.stage || filters.search) && (
                 <button
-                  onClick={() => setFilters({ stage: '', sector: '' })}
+                  onClick={() => setFilters({ stage: '', sector: '', search: '' })}
                   className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200 whitespace-nowrap"
                 >
                   Clear Filters
@@ -729,6 +759,7 @@ export default function Home() {
           <div className="mb-4">
             <p className="text-sm text-gray-600">
               Showing {filteredCompanies.length} of {companies.length} companies
+              {filters.search && ` matching "${filters.search}"`}
               {filters.sector && ` in ${filters.sector} sector`}
               {filters.stage && ` at ${filters.stage}`}
             </p>
