@@ -6,15 +6,6 @@ import { Company } from '../types'
 import { deleteCompany } from '../lib/api'
 import { X } from 'lucide-react'
 
-// Company name normalization for display (removes legal suffixes but preserves case)
-const normalizeCompanyName = (name: string): string => {
-  return name
-    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/gi, '')
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // Currency formatting utility
 const formatCurrency = (value: string | number | null | undefined): string => {
   if (!value || value === 'N/A' || value === '') return 'N/A'
@@ -135,7 +126,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
   const cashOutDateInfo = formatCashOutDate(latestReport?.cashOutDate);
 
   // Get clean display name
-  const displayName = normalizeCompanyName(company.name);
+  const displayName = company.name; // Use exact name from database
 
   // Dynamically find KV funds and calculate total stake and investment
   const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
@@ -162,8 +153,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent card click
     
-    const displayName = normalizeCompanyName(company.name)
-    if (!confirm(`Are you sure you want to delete "${displayName}" and all its data? This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to delete "${company.name}" and all its data? This action cannot be undone.`)) {
       return
     }
 
@@ -231,7 +221,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
             </div>
           </div>
           <div className="min-w-0 flex-1 flex items-center">
-            <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{displayName}</h3>
+            <h3 className="text-base sm:text-lg font-bold text-gray-900 group-hover:text-blue-700 transition-colors truncate">{displayName}</h3>
           </div>
         </div>
       </div>

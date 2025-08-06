@@ -19,15 +19,6 @@ import {
   Legend
 } from 'recharts'
 
-// Company name normalization for display
-const normalizeCompanyName = (name: string): string => {
-  return name
-    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/gi, '')
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // Currency formatting utility
 const formatCurrency = (value: string | number | null | undefined): string => {
   if (!value || value === 'N/A' || value === '') return 'N/A'
@@ -549,7 +540,7 @@ export default function CompanyDetailPage() {
     )
   }
 
-  const displayName = normalizeCompanyName(company.company.name)
+  const displayName = company.company.name // Use exact name from database
   const latestReport = company.financial_reports[0]
   
   // Get sector from company data or latest report
@@ -591,20 +582,14 @@ export default function CompanyDetailPage() {
               </button>
             </div>
             <div className="flex items-center space-x-3">
-              {/* Enhanced Enrichment Widget */}
-              <div className="flex items-center space-x-3 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-300 rounded-lg p-3 shadow-sm">
-                <div className="flex items-center space-x-2">
-                  <span className="text-lg">🚀</span>
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900">Enrich Company Data</h4>
-                    <p className="text-xs text-gray-600">Get real-time data from Harmonic AI</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
+              {/* Simplified Enrichment Widget */}
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-300 rounded-lg p-3">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">🚀 Enrich Company Data</h4>
+                <div className="flex flex-col sm:flex-row gap-2">
                   <select
                     value={identifierType}
                     onChange={(e) => setIdentifierType(e.target.value)}
-                    className="text-sm border border-purple-200 bg-white rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="text-sm border border-purple-200 bg-white rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="website_url">Website URL</option>
                     <option value="website_domain">Domain</option>
@@ -623,7 +608,7 @@ export default function CompanyDetailPage() {
                       identifierType === 'crunchbase_url' ? 'crunchbase.com/organization/name' :
                       'twitter.com/company'
                     }
-                    className="w-48 text-sm border border-purple-200 bg-white rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 placeholder-gray-400"
+                    className="flex-1 text-sm border border-purple-200 bg-white rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
                     onKeyPress={(e) => e.key === 'Enter' && handleEnrichCompany()}
                   />
                   <button
@@ -677,47 +662,47 @@ export default function CompanyDetailPage() {
             </div>
           </div>
           
-          {/* Compact Stats Grid - 2 rows */}
-          <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+          {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">👤 CEO</p>
-              <p className="text-sm font-semibold text-gray-900 truncate">
+              <p className="text-sm font-semibold text-gray-900">
                 {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 
                  enrichmentData?.enrichment?.extracted?.ceo?.title || 
-                 'Oded Eran'}
+                 'Cristóbal'}
               </p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
               <p className="text-sm font-semibold text-gray-900">Main</p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">{sectorLabels.icon} Sector</p>
               <p className="text-sm font-semibold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💰 Valuation</p>
               <p className="text-sm font-semibold text-gray-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💵 Last Round</p>
               <p className="text-sm font-semibold text-gray-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
             </div>
             
-            <div className="p-2 rounded-md bg-blue-50 text-center border border-blue-200">
+            <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
               <p className="text-xs font-medium text-blue-600 mb-1">🎯 KV Own</p>
               <p className="text-sm font-semibold text-blue-700">
                 {kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💎 KV Funds</p>
-              <p className="text-xs font-semibold text-gray-900 truncate">
+              <p className="text-sm font-semibold text-gray-900 truncate">
                 {company.current_cap_table?.investors
                   ?.filter(inv => inv.investor_name.startsWith('KV'))
                   ?.map(inv => inv.investor_name.split(' ')[1] || inv.investor_name) // Show just "VII" instead of "KV VII"
@@ -726,17 +711,33 @@ export default function CompanyDetailPage() {
               </p>
             </div>
             
-            <div className="p-2 rounded-md bg-gray-50 text-center">
+            <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📍 Location</p>
-              <p className="text-xs font-semibold text-gray-900 truncate">
+              <p className="text-sm font-semibold text-gray-900 truncate">
                 {enrichmentData?.enrichment?.extracted?.location?.city || 'Boston'}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Compact Tabs */}
-        <div className="bg-white rounded-lg border border-gray-200 mb-6 p-1 shadow-sm">
+        {/* Mobile: Dropdown Navigation */}
+        <div className="sm:hidden bg-white rounded-lg border border-gray-200 mb-6 p-3 shadow-sm">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as any)}
+            className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="metrics">💰 Cash Position</option>
+            <option value="financials">📊 Financials</option>
+            <option value="overview">📈 Latest Updates</option>
+            <option value="captable">🏦 Cap Table</option>
+            <option value="reports">📄 Financial Reports ({company.financial_reports.length})</option>
+            <option value="database">🗄️ Database</option>
+          </select>
+        </div>
+
+        {/* Desktop: Tab Navigation */}
+        <div className="hidden sm:block bg-white rounded-lg border border-gray-200 mb-6 p-1 shadow-sm">
           <nav className="flex flex-wrap gap-1">
             <button
               onClick={() => setActiveTab('metrics')}
@@ -782,19 +783,6 @@ export default function CompanyDetailPage() {
               <span>🏦</span>
               <span>Cap Table</span>
             </button>
-            {/* Temporarily hidden - Company Intel tab moved to header 
-            <button
-              onClick={() => setActiveTab('enrichment')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
-                activeTab === 'enrichment'
-                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span>🚀</span>
-              <span>Company Intel</span>
-            </button>
-            */}
             <button
               onClick={() => setActiveTab('reports')}
               className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
@@ -828,7 +816,7 @@ export default function CompanyDetailPage() {
           {/* Main Content - Full Width */}
           <div className="w-full">
             {activeTab === 'metrics' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ gridTemplateColumns: '2fr 1.4fr 1fr' }}>
+              <div className="space-y-4 lg:grid lg:grid-cols-3 lg:space-y-0 lg:gap-4">
                 {/* 1. Combined Cash Position & History - Proportional Width */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
@@ -840,50 +828,92 @@ export default function CompanyDetailPage() {
                     </div>
                   </div>
                   
-                  {/* Main Content: Metrics (1/4) + Chart (3/4) */}
-                  <div className="grid grid-cols-4 gap-4 mb-4">
-                    {/* Metrics - 1/4 width */}
-                    <div className="col-span-1">
-                      <div className="space-y-2">
-                        <EditableMetric
-                          label="Cash on Hand"
-                          value={(latestReport as any)?.cash_on_hand || 'N/A'}
-                          reportId={latestReportId || undefined}
-                          field="cash_on_hand"
-                          onUpdate={loadCompanyData}
-                          isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                        />
-                        <EditableMetric
-                          label="Monthly Burn"
-                          value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
-                          reportId={latestReportId || undefined}
-                          field="monthly_burn_rate"
-                          onUpdate={loadCompanyData}
-                          isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                        />
-                        <EditableMetric
-                          label="Runway"
-                          value={latestReport?.runway || 'N/A'}
-                          reportId={latestReportId || undefined}
-                          field="runway"
-                          onUpdate={loadCompanyData}
-                          formatValue={(value) => `${value} months`}
-                          parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
-                          isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                        />
+                  {/* Mobile: Metrics stacked, Desktop: Metrics + Chart side by side */}
+                  <div className="sm:hidden space-y-3 mb-4">
+                    {/* Mobile: All metrics stacked vertically */}
+                    <EditableMetric
+                      label="Cash on Hand"
+                      value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                      reportId={latestReportId || undefined}
+                      field="cash_on_hand"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                    />
+                    <EditableMetric
+                      label="Monthly Burn"
+                      value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                      reportId={latestReportId || undefined}
+                      field="monthly_burn_rate"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                    />
+                    <EditableMetric
+                      label="Runway"
+                      value={latestReport?.runway || 'N/A'}
+                      reportId={latestReportId || undefined}
+                      field="runway"
+                      onUpdate={loadCompanyData}
+                      formatValue={(value) => `${value} months`}
+                      parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                    />
+                    <div className="bg-gray-50 p-3 rounded-md">
+                      <p className="text-sm text-gray-600">
+                        Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
+                      </p>
+                    </div>
+                    {/* Mobile: Chart below metrics */}
+                    <div className="h-64">
+                      <SimpleCashChart reports={company.financial_reports} />
+                    </div>
+                  </div>
+
+                  {/* Desktop: Original side-by-side layout */}
+                  <div className="hidden sm:block">
+                    <div className="grid grid-cols-4 gap-4 mb-4">
+                      {/* Metrics - 1/4 width */}
+                      <div className="col-span-1">
+                        <div className="space-y-2">
+                          <EditableMetric
+                            label="Cash on Hand"
+                            value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                            reportId={latestReportId || undefined}
+                            field="cash_on_hand"
+                            onUpdate={loadCompanyData}
+                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                          />
+                          <EditableMetric
+                            label="Monthly Burn"
+                            value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                            reportId={latestReportId || undefined}
+                            field="monthly_burn_rate"
+                            onUpdate={loadCompanyData}
+                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                          />
+                          <EditableMetric
+                            label="Runway"
+                            value={latestReport?.runway || 'N/A'}
+                            reportId={latestReportId || undefined}
+                            field="runway"
+                            onUpdate={loadCompanyData}
+                            formatValue={(value) => `${value} months`}
+                            parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
+                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                          />
+                        </div>
+                        
+                        <div className="mt-3">
+                          <p className="text-xs text-gray-600 mb-1">
+                            Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
+                          </p>
+                        </div>
                       </div>
                       
-                      <div className="mt-3">
-                        <p className="text-xs text-gray-600 mb-1">
-                          Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* Chart - 3/4 width */}
-                    <div className="col-span-3">
-                      <div className="h-64">
-                        <SimpleCashChart reports={company.financial_reports} />
+                      {/* Chart - 3/4 width */}
+                      <div className="col-span-3">
+                        <div className="h-64">
+                          <SimpleCashChart reports={company.financial_reports} />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1176,8 +1206,8 @@ export default function CompanyDetailPage() {
                   )}
                 </div>
 
-                {/* 2. Secondary Information Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ gridTemplateColumns: '1.2fr 1fr' }}>
+                {/* 2. Secondary Information - Mobile: Single column, Desktop: Two columns */}
+                <div className="space-y-4 lg:grid lg:grid-cols-2 lg:space-y-0 lg:gap-4">
                   {/* 2a. Other Financial Details */}
                   <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                     {/* Header */}
@@ -1281,7 +1311,7 @@ export default function CompanyDetailPage() {
             )}
 
             {activeTab === 'captable' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ gridTemplateColumns: '2fr 1.4fr 1fr' }}>
+              <div className="space-y-4 lg:grid lg:grid-cols-3 lg:space-y-0 lg:gap-4">
                 {/* 1. Cap Table - Double Width */}
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
@@ -1422,7 +1452,7 @@ export default function CompanyDetailPage() {
             )}
 
             {activeTab === 'reports' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ gridTemplateColumns: '2fr 1.4fr 1fr' }}>
+              <div className="space-y-4 lg:grid lg:grid-cols-3 lg:space-y-0 lg:gap-4">
                 {/* 1. Reports Table - Double Width */}
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
@@ -1583,7 +1613,7 @@ export default function CompanyDetailPage() {
                   </div>
                   
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-4 md:grid md:grid-cols-3 md:space-y-0 md:gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Identifier Type
@@ -1987,7 +2017,7 @@ export default function CompanyDetailPage() {
                         </div>
 
                         {/* Bottom Section - Social & Related Companies */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="space-y-8 lg:grid lg:grid-cols-2 lg:space-y-0 lg:gap-8">
                           {/* Social Links & Contact */}
                           <div className="bg-white p-6 rounded-xl border border-gray-200">
                             <div className="flex items-center space-x-2 mb-6">
@@ -2012,7 +2042,7 @@ export default function CompanyDetailPage() {
                             
                             {/* Social Media */}
                             {enrichmentData.enrichment.extracted.socials && (
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                 {Object.entries(enrichmentData.enrichment.extracted.socials).map(([platform, data]: [string, any]) => (
                                   <a
                                     key={platform}
@@ -2049,7 +2079,7 @@ export default function CompanyDetailPage() {
                               {enrichmentData.enrichment.extracted.related_companies.acquisitions && enrichmentData.enrichment.extracted.related_companies.acquisitions.length > 0 && (
                                 <div className="mb-6">
                                   <p className="text-sm font-medium text-gray-700 mb-3">Acquisitions</p>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <div className="space-y-2 md:grid md:grid-cols-2 md:space-y-0 md:gap-2">
                                     {enrichmentData.enrichment.extracted.related_companies.acquisitions.slice(0, 8).map((acquisition: any, index: number) => (
                                       <div key={index} className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg border border-green-100">
                                         <span className="text-green-600">📈</span>
@@ -2065,7 +2095,7 @@ export default function CompanyDetailPage() {
                               {enrichmentData.enrichment.extracted.related_companies.subsidiaries && enrichmentData.enrichment.extracted.related_companies.subsidiaries.length > 0 && (
                                 <div className="mb-6">
                                   <p className="text-sm font-medium text-gray-700 mb-3">Subsidiaries</p>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <div className="space-y-2 md:grid md:grid-cols-2 md:space-y-0 md:gap-2">
                                     {enrichmentData.enrichment.extracted.related_companies.subsidiaries.slice(0, 8).map((subsidiary: any, index: number) => (
                                       <div key={index} className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg border border-blue-100">
                                         <span className="text-blue-600">🏢</span>
@@ -2096,7 +2126,7 @@ export default function CompanyDetailPage() {
                                enrichmentData.enrichment.extracted.related_companies.prior_stealth_association.previously_known_as.length > 0 && (
                                 <div className="mb-4">
                                   <p className="text-sm font-medium text-gray-700 mb-3">Previously Known As</p>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <div className="space-y-2 md:grid md:grid-cols-2 md:space-y-0 md:gap-2">
                                     {enrichmentData.enrichment.extracted.related_companies.prior_stealth_association.previously_known_as.slice(0, 6).map((prevName: string, index: number) => (
                                       <div key={index} className="flex items-center space-x-2 p-2 bg-yellow-50 rounded-lg border border-yellow-100">
                                         <span className="text-yellow-600">📝</span>
@@ -2136,6 +2166,26 @@ export default function CompanyDetailPage() {
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'database' && (
+              <div className="space-y-4">
+                {/* Database Editor Section */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                  <div className="flex items-center space-x-2 mb-4">
+                    <span className="text-xl">🗄️</span>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">Database Editor</h3>
+                      <p className="text-gray-600 text-sm">⚡ Direct database access and editing tools</p>
+                    </div>
+                  </div>
+                  
+                  <UniversalDatabaseEditor 
+                    companyId={companyId}
+                    onUpdate={loadCompanyData}
+                  />
+                </div>
               </div>
             )}
           </div>

@@ -59,6 +59,7 @@ def lambda_handler(event, context):
     pdf_base64 = body.get('pdf_data') or body.get('pdf_b64')
     filename = body.get('filename', 'document.pdf')
     company_name_override = body.get('company_name_override')
+    user_provided_name = body.get('user_provided_name', False)  # NEW: Flag for user-provided names
     compressed = body.get('compressed', False)
     
     if not pdf_base64:
@@ -106,7 +107,7 @@ def lambda_handler(event, context):
         print(f"Extracted text length: {len(extracted_text)} characters")
         
         # Analyze with OpenAI (with optional company name override)
-        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override)
+        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override, user_provided_name)
         
         return {
             'statusCode': 200,
@@ -203,7 +204,7 @@ def normalize_analysis_for_db(d: dict) -> dict:
 
     return d
 
-def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
+def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_override: str = None, user_provided_name: bool = False) -> Dict[str, Any]:
     """
     Analyze PDF with company name override for mass import
     """
@@ -234,7 +235,7 @@ def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_overrid
             }
         
         # Analyze with OpenAI
-        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override)
+        analysis_result = analyze_with_openai(extracted_text, filename, company_name_override, user_provided_name)
         
         return {
             "success": True,
@@ -247,7 +248,7 @@ def analyze_pdf_with_override(pdf_data: str, filename: str, company_name_overrid
             "error": f"PDF analysis failed: {str(e)}"
         }
 
-def analyze_with_openai(text, filename, company_name_override: str = None):
+def analyze_with_openai(text, filename, company_name_override: str = None, user_provided_name: bool = False):
     """Analyze PDF text with OpenAI using o3 model - simple approach"""
     
     # Check for API key
@@ -449,7 +450,11 @@ Content:
             analysis_result['filename'] = filename
             if company_name_override:
                 analysis_result['companyName'] = company_name_override
-                print(f"Overrode company name to: {company_name_override}")
+                analysis_result['user_provided_name'] = user_provided_name
+                print(f"{'User-provided' if user_provided_name else 'Overrode'} company name to: {company_name_override}")
+            elif user_provided_name:
+                # If user_provided_name flag is set but no override, preserve whatever was extracted
+                analysis_result['user_provided_name'] = True
 
             # Normalize for database compatibility
             analysis_result = normalize_analysis_for_db(analysis_result)
@@ -465,6 +470,7 @@ Content:
             fallback_company_name = company_name_override if company_name_override else filename.replace('.pdf', '')
             fallback_result = {
                 'companyName': fallback_company_name,
+                'user_provided_name': user_provided_name,
                 'reportDate': datetime.now().strftime('%Y-%m-%d'),
                 'reportPeriod': 'Analysis Period',
                 'filename': filename,

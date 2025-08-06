@@ -18,16 +18,6 @@ import {
 } from '@/lib/api'
 import { companiesCache } from '@/lib/companiesCache'
 
-// Company name normalization for matching
-const normalizeCompanyName = (name: string): string => {
-  return name
-    .toLowerCase()
-    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/g, '')
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // Stage detection based on KV fund names - choose the latest stage
 const detectCompanyStage = (investors: any[]): string => {
   const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
@@ -64,63 +54,10 @@ const detectCompanyStage = (investors: any[]): string => {
   return 'Unknown'
 }
 
-// Coalesce companies with the same normalized name
+// No coalescing - return companies exactly as they are in database
 const coalesceCompanies = (companies: Company[]): Company[] => {
-  const companyMap = new Map<string, Company>()
-  
-  console.log('🔄 Starting company coalescing...')
-  
-  for (const company of companies) {
-    const normalizedName = normalizeCompanyName(company.name)
-    
-    if (companyMap.has(normalizedName)) {
-      // Merge with existing company
-      const existing = companyMap.get(normalizedName)!
-      console.log(`🔗 Merging "${company.name}" into "${existing.name}" (normalized: "${normalizedName}")`)
-      
-      // Combine reports and remove duplicates by ID
-      const allReports = [...existing.reports, ...company.reports]
-      const uniqueReports = allReports.filter((report, index, self) => 
-        index === self.findIndex(r => r.id === report.id)
-      )
-      
-      // Sort reports by date (newest first)
-      uniqueReports.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
-      
-      // Use the most recent cap table (or prefer one with data)
-      let mergedCapTable = existing.capTable
-      if (!mergedCapTable && company.capTable) {
-        mergedCapTable = company.capTable
-        console.log(`  📊 Using cap table from "${company.name}"`)
-      } else if (existing.capTable && company.capTable) {
-        // Use the one with the most recent round_date
-        const existingDate = existing.capTable.round_date ? new Date(existing.capTable.round_date) : new Date(0)
-        const companyDate = company.capTable.round_date ? new Date(company.capTable.round_date) : new Date(0)
-        mergedCapTable = companyDate > existingDate ? company.capTable : existing.capTable
-        console.log(`  📊 Using cap table from "${mergedCapTable === company.capTable ? company.name : existing.name}" (more recent)`)
-      }
-      
-      console.log(`  📄 Combined ${existing.reports.length} + ${company.reports.length} = ${uniqueReports.length} unique reports`)
-      
-      // Update the existing company with merged data
-      companyMap.set(normalizedName, {
-        ...existing,
-        name: existing.name, // Keep the first company name encountered
-        reports: uniqueReports,
-        latestReport: uniqueReports[0] || null,
-        capTable: mergedCapTable
-      })
-    } else {
-      // First time seeing this normalized name
-      console.log(`✨ New company: "${company.name}" (normalized: "${normalizedName}")`)
-      companyMap.set(normalizedName, { ...company })
-    }
-  }
-  
-  const coalesced = Array.from(companyMap.values())
-  console.log(`🎯 Coalescing complete: ${companies.length} companies → ${coalesced.length} unique companies`)
-  
-  return coalesced
+  console.log(`📋 Showing all companies as-is: ${companies.length} companies`)
+  return companies
 }
 
 // Convert database company format to frontend format using new overview API
@@ -239,6 +176,8 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'healthy' | 'unhealthy'>('unknown')
   const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [showUploads, setShowUploads] = useState(false)
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -382,14 +321,14 @@ export default function Home() {
     }
   }
 
-  const handleFileUpload = async (files: File[]) => {
+  const handleFileUpload = async (files: File[], companyName?: string) => {
     setIsLoading(true)
     setErrorMessage(null)
     
     for (const file of files) {
       try {
-        console.log(`Uploading file: ${file.name}`)
-        const result = await uploadFile(file)
+        console.log(`Uploading file: ${file.name}${companyName ? ` for company: ${companyName}` : ''}`)
+        const result = await uploadFile(file, companyName)
         
         if (result.error) {
           console.error('Upload error:', result.error)
@@ -419,7 +358,8 @@ export default function Home() {
               keyRisks: data.keyRisks || 'N/A',
               personnelUpdates: data.personnelUpdates || 'N/A',
               nextMilestones: data.nextMilestones || 'N/A',
-              sector: data.sector || 'unknown'
+              sector: data.sector || 'unknown',
+              user_provided_name: data.user_provided_name || !!companyName  // Flag for user-provided names
             })
             
             if (saveResult.error) {
@@ -553,24 +493,43 @@ export default function Home() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
                 Portfolio Companies
               </h1>
-              <p className="text-gray-600">Track and manage your investment portfolio</p>
+              <p className="text-gray-600 text-sm sm:text-base">Track and manage your investment portfolio</p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               <button
                 onClick={() => loadCompanies(true)}
                 disabled={isLoading}
-                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
               >
                 <span>🔄</span>
-                <span>Reload Cache</span>
+                <span className="hidden sm:inline">Reload Cache</span>
+                <span className="sm:hidden">Reload</span>
               </button>
-              <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
-              <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
+              
+              {/* Upload Toggle Button (Mobile) */}
+              <div className="sm:hidden">
+                <button
+                  onClick={() => setShowUploads(!showUploads)}
+                  className="flex items-center justify-center space-x-2 w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  <span>📁</span>
+                  <span>Upload Files</span>
+                  <span className={`transform transition-transform ${showUploads ? 'rotate-180' : ''}`}>
+                    ▼
+                  </span>
+                </button>
+              </div>
+              
+              {/* Upload Buttons - Always visible on desktop, collapsible on mobile */}
+              <div className={`${showUploads ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto`}>
+                <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
+                <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
+              </div>
             </div>
           </div>
         </div>
@@ -578,54 +537,78 @@ export default function Home() {
 
       {/* Filters */}
       <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stage</label>
-              <select
-                value={filters.stage}
-                onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[110px]"
-              >
-                <option value="">All Stages</option>
-                {Array.from(new Set(companies.map(c => c.stage).filter(Boolean)))
-                  .sort()
-                  .map(stage => (
-                    <option key={stage} value={stage}>
-                      {stage}
-                    </option>
-                  ))
-                }
-              </select>
-            </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Filter Toggle Button (Mobile) */}
+          <div className="sm:hidden py-3">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+            >
+              <span className="flex items-center">
+                <span className="mr-2">🔍</span>
+                Filters
+                {(filters.stage || filters.sector) && (
+                  <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
+                    {[filters.stage, filters.sector].filter(Boolean).length}
+                  </span>
+                )}
+              </span>
+              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+          </div>
 
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Sector</label>
-              <select
-                value={filters.sector}
-                onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[110px]"
-              >
-                <option value="">All Sectors</option>
-                {Array.from(new Set(companies.map(c => c.sector).filter(Boolean)))
-                  .sort()
-                  .map(sector => (
-                    <option key={sector} value={sector}>
-                      {sector!.charAt(0).toUpperCase() + sector!.slice(1)}
-                    </option>
-                  ))
-                }
-              </select>
-            </div>
+          {/* Filter Content */}
+          <div className={`${showFilters ? 'block' : 'hidden'} sm:block py-3`}>
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stage</label>
+                <select
+                  value={filters.stage}
+                  onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[110px] sm:w-auto"
+                >
+                  <option value="">All Stages</option>
+                  {Array.from(new Set(companies.map(c => c.stage).filter(Boolean)))
+                    .sort()
+                    .map(stage => (
+                      <option key={stage} value={stage}>
+                        {stage}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
 
-            {(filters.sector || filters.stage) && (
-              <button
-                onClick={() => setFilters({ stage: '', sector: '' })}
-                className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200 whitespace-nowrap"
-              >
-                Clear Filters
-              </button>
-            )}
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Sector</label>
+                <select
+                  value={filters.sector}
+                  onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[110px] sm:w-auto"
+                >
+                  <option value="">All Sectors</option>
+                  {Array.from(new Set(companies.map(c => c.sector).filter(Boolean)))
+                    .sort()
+                    .map(sector => (
+                      <option key={sector} value={sector}>
+                        {sector!.charAt(0).toUpperCase() + sector!.slice(1)}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              {(filters.sector || filters.stage) && (
+                <button
+                  onClick={() => setFilters({ stage: '', sector: '' })}
+                  className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200 whitespace-nowrap"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -723,7 +706,7 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
         {!isLoading && companies.length > 0 && (
           <div className="mb-4">
             <p className="text-sm text-gray-600">
@@ -751,7 +734,7 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
             {filteredCompanies.map((company) => (
               <CompanyCard
                 key={company.id}
@@ -767,7 +750,7 @@ export default function Home() {
       {/* Developer Tools Toggle */}
       <button
         onClick={() => setShowDebugPanel(!showDebugPanel)}
-        className="fixed bottom-4 right-4 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+        className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 bg-gray-800 text-white p-2 sm:p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors text-sm sm:text-base"
         title="Developer Tools"
       >
         🛠️

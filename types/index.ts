@@ -50,6 +50,7 @@ export interface FinancialReport {
     name: string
     sector?: string
     stage?: string
+    manually_edited?: boolean  // Flag for user-provided names
     reports: FinancialReport[]
     latestReport: FinancialReport | null
     capTable?: CapTableData | null

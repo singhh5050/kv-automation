@@ -90,6 +90,8 @@ def lambda_handler(event, context):
         result = delete_person_enrichment(db_config, body.get("person_urn"))
     elif operation == "delete_company":
         result = delete_company(db_config, body.get("company_id"))
+    elif operation == "get_company_names":
+        result = get_company_names(db_config)
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -345,8 +347,18 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
         
-        # Normalize company name for matching
-        normalized_name = normalize_company_name(data['companyName'])
+        # Skip normalization for user-provided names
+        user_provided = data.get('user_provided_name', False)
+        if user_provided:
+            # For user-provided names, use lowercase for case-insensitive matching
+            normalized_name = data['companyName'].lower().strip()
+            manually_edited = True
+            edited_by = "user_provided"
+        else:
+            # For auto-detected names, use normalization
+            normalized_name = normalize_company_name(data['companyName'])
+            manually_edited = False
+            edited_by = "system_import"
         
         # Insert company if it doesn't exist
         company_insert = """
@@ -355,7 +367,7 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
             ON CONFLICT (normalized_name) DO NOTHING
         """
         
-        cursor.execute(company_insert, [data['companyName'], normalized_name, False, "system_import"])
+        cursor.execute(company_insert, [data['companyName'], normalized_name, manually_edited, edited_by])
         
         # Get company ID
         cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
@@ -482,6 +494,7 @@ def get_companies(db_config: Dict) -> Dict[str, Any]:
                 c.normalized_name, 
                 c.created_at, 
                 c.updated_at,
+                c.manually_edited,
                 (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
             FROM 
                 companies c
@@ -900,8 +913,18 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
         
-        # Normalize company name for matching
-        normalized_name = normalize_company_name(data['company_name'])
+        # Skip normalization for user-provided names
+        user_provided = data.get('user_provided_name', False)
+        if user_provided:
+            # For user-provided names, use lowercase for case-insensitive matching
+            normalized_name = data['company_name'].lower().strip()
+            manually_edited = True
+            edited_by = "user_provided"
+        else:
+            # For auto-detected names, use normalization
+            normalized_name = normalize_company_name(data['company_name'])
+            manually_edited = False
+            edited_by = "system_import"
         
         # Insert company if it doesn't exist
         company_insert = """
@@ -910,7 +933,7 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             ON CONFLICT (normalized_name) DO NOTHING
         """
         
-        cursor.execute(company_insert, [data['company_name'], normalized_name, False, "system_import"])
+        cursor.execute(company_insert, [data['company_name'], normalized_name, manually_edited, edited_by])
         
         # Get company ID
         cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
@@ -2169,4 +2192,40 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
             'error': f'Failed to delete company: {str(e)}'
         }
     finally:
-        conn.close() 
+        conn.close()
+
+def get_company_names(db_config: Dict) -> Dict[str, Any]:
+    """
+    Get all company names for dropdown selection
+    """
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Get all company names sorted alphabetically
+        query = """
+            SELECT id, name, manually_edited
+            FROM companies
+            ORDER BY LOWER(name) ASC
+        """
+        
+        cursor.execute(query)
+        companies = _cursor_to_dict(cursor)
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': companies
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get company names: {str(e)}'
+        } 

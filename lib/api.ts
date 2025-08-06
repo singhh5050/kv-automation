@@ -53,23 +53,31 @@ async function apiRequest<T = any>(
 /**
  * Extract and analyze PDF content using OpenAI
  */
-export async function extractPdf(pdfData: string, filename: string) {
+export async function extractPdf(pdfData: string, filename: string, companyName?: string) {
+  const requestBody: any = {
+    pdf_data: pdfData,
+    filename,
+  }
+  
+  // Add company name and user_provided_name flag if provided
+  if (companyName) {
+    requestBody.company_name_override = companyName
+    requestBody.user_provided_name = true
+  }
+  
   return apiRequest('/analyze-pdf', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      pdf_data: pdfData,
-      filename,
-    }),
+    body: JSON.stringify(requestBody),
   })
 }
 
 /**
  * Upload file for processing - converts to base64 and calls PDF analysis
  */
-export async function uploadFile(file: File) {
+export async function uploadFile(file: File, companyName?: string) {
   try {
     // Convert file to base64
     const base64Data = await fileToBase64(file)
@@ -77,8 +85,8 @@ export async function uploadFile(file: File) {
     // Remove the data:application/pdf;base64, prefix if present
     const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/, '')
     
-    // Call the PDF analysis Lambda function
-    return await extractPdf(cleanBase64, file.name)
+    // Call the PDF analysis Lambda function with optional company name
+    return await extractPdf(cleanBase64, file.name, companyName)
   } catch (error) {
     console.error('File upload error:', error)
     return { error: error instanceof Error ? error.message : 'File upload failed' }
@@ -239,16 +247,24 @@ export async function getCompanyOverview(companyId: string) {
 /**
  * Process cap table XLSX file and extract data
  */
-export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }) {
+export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }, companyName?: string) {
+  const requestBody: any = {
+    operation: 'process_cap_table_xlsx',
+    ...xlsxData,
+  }
+  
+  // Add company name and user_provided_name flag if provided
+  if (companyName) {
+    requestBody.company_name_override = companyName
+    requestBody.user_provided_name = true
+  }
+  
   return apiRequest('/process-cap-table', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      operation: 'process_cap_table_xlsx',
-      ...xlsxData,
-    }),
+    body: JSON.stringify(requestBody),
   })
 }
 
@@ -404,6 +420,21 @@ export async function deleteCompany(companyId: string) {
     body: JSON.stringify({
       operation: 'delete_company',
       company_id: companyId,
+    }),
+  })
+}
+
+/**
+ * Get company names for dropdown selection
+ */
+export async function getCompanyNames() {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_company_names',
     }),
   })
 } 

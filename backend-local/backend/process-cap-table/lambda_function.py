@@ -131,10 +131,13 @@ def lambda_handler(event, context):
 
     xlsx_b64 = body.get("xlsx_data")
     filename = body.get("filename", "cap_table.xlsx")
+    company_name_override = body.get("company_name_override")
+    user_provided_name = body.get("user_provided_name", False)
+    
     if not xlsx_b64:
         return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Missing xlsx_data"})}
 
-    result = process_cap_table_xlsx(xlsx_b64, filename)
+    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name)
     status = 200 if result["success"] else 500
     return {"statusCode": status, "headers": headers, "body": json.dumps(result)}
 
@@ -145,7 +148,7 @@ def lambda_handler(event, context):
 def process_cap_table_xlsx(xlsx_b64: str, filename: str) -> Dict[str, Any]:
     return process_cap_table_xlsx_with_override(xlsx_b64, filename, None)
 
-def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None) -> Dict[str, Any]:
+def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None, user_provided_name: bool = False) -> Dict[str, Any]:
     defensive_fixes = []  # Track what defensive fixes were applied
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
@@ -287,6 +290,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         # Bundle for DB save
         cap_table = {
             "company_name": company_name,
+            "user_provided_name": user_provided_name,  # NEW: Flag for user-provided names
             "round_data": {
                 "round_name": round_name,
                 "valuation": valuation,
@@ -367,9 +371,21 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         conn = pg8000.connect(**db_cfg, ssl_context=ctx, timeout=30)
         cur = conn.cursor()
 
-        norm_name = normalize_company_name(data["company_name"])
+        # Skip normalization for user-provided names
+        user_provided = data.get("user_provided_name", False)
+        if user_provided:
+            # For user-provided names, use lowercase for case-insensitive matching
+            norm_name = data["company_name"].lower().strip()
+            manually_edited = True
+            edited_by = "user_provided"
+        else:
+            # For auto-detected names, use normalization
+            norm_name = normalize_company_name(data["company_name"])
+            manually_edited = False
+            edited_by = "system_import"
+        
         cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, False, "system_import"])
+                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
         cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
         company_id = cur.fetchone()[0]
 
