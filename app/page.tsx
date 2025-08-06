@@ -189,7 +189,7 @@ export default function Home() {
   useEffect(() => {
     loadCompaniesWithCache()
     checkBackendHealth()
-  }, [loadCompaniesWithCache])
+  }, [])
 
   // Apply filters whenever companies or filters change
   useEffect(() => {
@@ -218,7 +218,7 @@ export default function Home() {
     setFilteredCompanies(filtered)
   }, [companies, filters])
 
-  const loadCompaniesWithCache = useCallback(async () => {
+  const loadCompaniesWithCache = async () => {
     // First check if we have valid cached data
     const cachedCompanies = companiesCache.get()
     if (cachedCompanies && cachedCompanies.length > 0) {
@@ -231,7 +231,7 @@ export default function Home() {
 
     // If no cache, load from database
     await loadCompanies()
-  }, [])
+  }
 
   const loadCompanies = async (forceReload = false) => {
     // If forcing reload, clear cache first
