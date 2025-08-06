@@ -1,7 +1,7 @@
 'use client'
 
 // Trigger Vercel deployment - Database Editor fixes applied
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import FileUpload from '@/components/FileUpload'
 import CapTableUpload from '@/components/CapTableUpload'
 import CompanyCard from '@/components/CompanyCard'
@@ -193,10 +193,6 @@ export default function Home() {
 
   // Apply filters whenever companies or filters change
   useEffect(() => {
-    applyFilters()
-  }, [applyFilters])
-
-  const applyFilters = useCallback(() => {
     let filtered = companies
 
     // Apply sector filter  
@@ -217,6 +213,28 @@ export default function Home() {
 
     setFilteredCompanies(filtered)
   }, [companies, filters])
+
+  const applyFilters = () => {
+    let filtered = companies
+
+    // Apply sector filter  
+    if (filters.sector) {
+      filtered = filtered.filter(company => 
+        company.sector?.toLowerCase() === filters.sector.toLowerCase()
+      )
+    }
+
+    // Apply stage filter
+    if (filters.stage) {
+      filtered = filtered.filter(company => 
+        company.stage === filters.stage
+      )
+    }
+
+    // Apply other filters as needed...
+
+    setFilteredCompanies(filtered)
+  }
 
   const loadCompaniesWithCache = async () => {
     // First check if we have valid cached data
