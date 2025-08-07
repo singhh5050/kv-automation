@@ -816,9 +816,9 @@ export default function CompanyDetailPage() {
           {/* Main Content - Full Width */}
           <div className="w-full">
             {activeTab === 'metrics' && (
-              <div className="space-y-4 lg:grid lg:grid-cols-3 lg:space-y-0 lg:gap-4">
-                {/* 1. Combined Cash Position & History - Proportional Width */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="space-y-4 lg:grid lg:grid-cols-8 lg:space-y-0 lg:gap-4">
+                {/* 1. Combined Cash Position & History - Takes up 4/8 of width (2x larger) */}
+                <div className="lg:col-span-4 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
                     <span className="text-sm">💰</span>
@@ -966,8 +966,8 @@ export default function CompanyDetailPage() {
                   </div>
                 </div>
 
-                {/* 3. Upcoming Milestones */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                {/* 3. Upcoming Milestones - Takes up 2/8 of width */}
+                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-2">
                     <span className="text-sm">🎯</span>
                     <div>
@@ -989,8 +989,8 @@ export default function CompanyDetailPage() {
                   )}
                 </div>
 
-                {/* 4. Team */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                {/* 4. Team - Takes up 2/8 of width (smaller) */}
+                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-1">
                       <span className="text-sm">👥</span>

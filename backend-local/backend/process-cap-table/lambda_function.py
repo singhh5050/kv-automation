@@ -371,23 +371,35 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         conn = pg8000.connect(**db_cfg, ssl_context=ctx, timeout=30)
         cur = conn.cursor()
 
-        # Skip normalization for user-provided names
+        # Handle user-provided vs auto-detected names differently
         user_provided = data.get("user_provided_name", False)
         if user_provided:
-            # For user-provided names, use lowercase for case-insensitive matching
-            norm_name = data["company_name"].lower().strip()
+            # For user-provided names, use exact name matching - no normalization
+            exact_name = data["company_name"].strip()
             manually_edited = True
             edited_by = "user_provided"
+            
+            # Try exact match first
+            cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
+            existing = cur.fetchone()
+            
+            if not existing:
+                # Create new company with exact name and itself as normalized name for uniqueness
+                cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                                VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())""", [exact_name, exact_name, manually_edited, edited_by])
+                cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
+            
+            company_id = cur.fetchone()[0] if not existing else existing[0]
         else:
-            # For auto-detected names, use normalization
+            # For auto-detected names, use normalization for fuzzy matching
             norm_name = normalize_company_name(data["company_name"])
             manually_edited = False
             edited_by = "system_import"
-        
-        cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
-        cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
-        company_id = cur.fetchone()[0]
+            
+            cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                            VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
+            cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
+            company_id = cur.fetchone()[0]
 
         cur.execute(
             """INSERT INTO cap_table_rounds (company_id, round_name, valuation, amount_raised, round_date,
