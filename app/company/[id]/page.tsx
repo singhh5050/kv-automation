@@ -1171,7 +1171,7 @@ export default function CompanyDetailPage() {
                       <p className="text-sm font-bold text-blue-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
                     </div>
                     <div className="bg-green-50 p-2 rounded border border-green-100">
-                      <p className="text-xs text-green-600 font-medium">Total Raised</p>
+                      <p className="text-xs text-green-600 font-medium">Last Round Raised</p>
                       <p className="text-sm font-bold text-green-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
                     </div>
                     <div className="bg-purple-50 p-2 rounded border border-purple-100">
@@ -1419,7 +1419,7 @@ export default function CompanyDetailPage() {
                       <p className="text-sm font-bold text-blue-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
                     </div>
                     <div className="bg-green-50 p-2 rounded border border-green-100">
-                      <p className="text-xs text-green-600 font-medium">Total Raised</p>
+                      <p className="text-xs text-green-600 font-medium">Last Round Raised</p>
                       <p className="text-sm font-bold text-green-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
                     </div>
                     <div className="bg-purple-50 p-2 rounded border border-purple-100">
