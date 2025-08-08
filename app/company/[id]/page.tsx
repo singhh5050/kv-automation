@@ -821,7 +821,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-4 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">💰</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Cash Position</h3>
                       <p className="text-gray-600 text-xs">💡 Click values to edit</p>
@@ -847,16 +846,19 @@ export default function CompanyDetailPage() {
                       onUpdate={loadCompanyData}
                       isManuallyEdited={(latestReport as any)?.manually_edited || false}
                     />
-                    <EditableMetric
-                      label="Runway"
-                      value={latestReport?.runway || 'N/A'}
-                      reportId={latestReportId || undefined}
-                      field="runway"
-                      onUpdate={loadCompanyData}
-                      formatValue={(value) => `${value} months`}
-                      parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
-                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                    />
+                    {(() => {
+                      const cashOutDate = (latestReport as any)?.cash_out_date
+                      if (!cashOutDate) return null
+                      const end = new Date(cashOutDate).getTime()
+                      const now = Date.now()
+                      const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
+                      return (
+                        <div className="bg-gray-50 p-3 rounded-md">
+                          <p className="text-xs font-medium text-gray-600">Runway</p>
+                          <p className="text-sm font-bold text-gray-900">{monthsLeft} months</p>
+                        </div>
+                      )
+                    })()}
                     <div className="bg-gray-50 p-3 rounded-md">
                       <p className="text-sm text-gray-600">
                         Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
@@ -890,16 +892,19 @@ export default function CompanyDetailPage() {
                             onUpdate={loadCompanyData}
                             isManuallyEdited={(latestReport as any)?.manually_edited || false}
                           />
-                          <EditableMetric
-                            label="Runway"
-                            value={latestReport?.runway || 'N/A'}
-                            reportId={latestReportId || undefined}
-                            field="runway"
-                            onUpdate={loadCompanyData}
-                            formatValue={(value) => `${value} months`}
-                            parseValue={(value) => parseInt(String(value).replace(/[^0-9]/g, '')) || 0}
-                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                          />
+                          {(() => {
+                            const cashOutDate = (latestReport as any)?.cash_out_date
+                            if (!cashOutDate) return null
+                            const end = new Date(cashOutDate).getTime()
+                            const now = Date.now()
+                            const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
+                            return (
+                              <div className="bg-gray-50 p-3 rounded-md">
+                                <p className="text-xs font-medium text-gray-600">Runway</p>
+                                <p className="text-sm font-bold text-gray-900">{monthsLeft} months</p>
+                              </div>
+                            )
+                          })()}
                         </div>
                         
                         <div className="mt-3">
@@ -932,17 +937,14 @@ export default function CompanyDetailPage() {
                         const elapsed = Math.max(0, now - start)
                         const pctElapsed = Math.min(elapsed / total * 100, 100)
                         
-                        const monthsUsed = Math.round(elapsed / 1000 / 60 / 60 / 24 / 30)
-                        const monthsLeft = Math.round((total - elapsed) / 1000 / 60 / 60 / 24 / 30)
+                        const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
                         
                         return (
-                          <div className="border-t pt-3 mt-2">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-xs font-medium text-gray-900">Runway Progress</h4>
-                              <span className="text-xs text-gray-600">
-                                {monthsUsed} months used, {monthsLeft} months left
-                              </span>
-                            </div>
+                            <div className="border-t pt-3 mt-2">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-medium text-gray-900">Runway</h4>
+                                <span className="text-xs text-gray-600">{monthsLeft} months left</span>
+                              </div>
                             <div className="w-full bg-gray-200 rounded-full h-3">
                               <div 
                                 className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
@@ -956,7 +958,7 @@ export default function CompanyDetailPage() {
                       // Fallback if dates aren't available
                       return (
                         <div className="border-t pt-3 mt-2">
-                          <h4 className="text-xs font-medium text-gray-900 mb-2">Runway Progress</h4>
+                          <h4 className="text-xs font-medium text-gray-900 mb-2">Runway</h4>
                           <div className="w-full bg-gray-200 rounded-full h-3">
                             <div className="bg-gray-400 h-3 rounded-full" style={{ width: '50%' }}></div>
                           </div>
@@ -969,7 +971,6 @@ export default function CompanyDetailPage() {
                 {/* 3. Upcoming Milestones - Takes up 2/8 of width */}
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-2">
-                    <span className="text-sm">🎯</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Upcoming Milestones</h3>
                       <p className="text-gray-600 text-xs">📅 Key targets and deadlines</p>
@@ -993,7 +994,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-1">
-                      <span className="text-sm">👥</span>
                       <div>
                         <h3 className="text-sm font-bold text-gray-900">Team</h3>
                         <p className="text-gray-600 text-xs">👤 Key executives</p>
@@ -1057,35 +1057,36 @@ export default function CompanyDetailPage() {
 
                       {/* Other Leadership - Compact */}
                       {enrichmentData?.enrichment?.extracted?.leadership && enrichmentData.enrichment.extracted.leadership.length > 0 ? (
-                        enrichmentData.enrichment.extracted.leadership
-                          .filter((leader: any) => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
-                          .slice(0, 2)
-                          .map((leader: any, index: number) => (
-                            <div key={index} className="p-1.5 rounded border border-gray-100">
-                              <div className="flex items-center justify-between">
-                                {leader.enriched_person?.contact?.linkedin_url ? (
-                                  <a 
-                                    href={leader.enriched_person.contact.linkedin_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-xs font-medium text-blue-700 hover:text-blue-900 hover:underline truncate"
-                                  >
-                                    {leader.enriched_person?.full_name || leader.title}
-                                  </a>
-                                ) : (
-                                  <p className="text-xs font-medium text-gray-900 truncate">
-                                    {leader.enriched_person?.full_name || leader.title}
-                                  </p>
-                                )}
-                                {leader.enriched_person?.contact?.linkedin_url && (
-                                  <span className="text-xs text-blue-600 ml-1">🔗</span>
-                                )}
+                        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                          {enrichmentData.enrichment.extracted.leadership
+                            .filter((leader: any) => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
+                            .map((leader: any, index: number) => (
+                              <div key={index} className="p-1.5 rounded border border-gray-100">
+                                <div className="flex items-center justify-between">
+                                  {leader.enriched_person?.contact?.linkedin_url ? (
+                                    <a 
+                                      href={leader.enriched_person.contact.linkedin_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs font-medium text-blue-700 hover:text-blue-900 hover:underline truncate"
+                                    >
+                                      {leader.enriched_person?.full_name || leader.title}
+                                    </a>
+                                  ) : (
+                                    <p className="text-xs font-medium text-gray-900 truncate">
+                                      {leader.enriched_person?.full_name || leader.title}
+                                    </p>
+                                  )}
+                                  {leader.enriched_person?.contact?.linkedin_url && (
+                                    <span className="text-xs text-blue-600 ml-1">🔗</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-600 truncate">
+                                  {leader.enriched_person?.current_position?.title || leader.title}
+                                </p>
                               </div>
-                              <p className="text-xs text-gray-600 truncate">
-                                {leader.enriched_person?.current_position?.title || leader.title}
-                              </p>
-                            </div>
-                          ))
+                            ))}
+                        </div>
                       ) : !enrichmentData?.enrichment?.extracted?.ceo ? (
                         // Fallback to static data if no enrichment data
                         <>
@@ -1119,7 +1120,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📊</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Financial Overview</h3>
                       <p className="text-gray-600 text-xs">📈 Comprehensive financial analysis</p>
@@ -1155,7 +1155,6 @@ export default function CompanyDetailPage() {
                 {/* 2. Quick Stats */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📈</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Quick Stats</h3>
                       <p className="text-gray-600 text-xs">⚡ Key metrics at a glance</p>
@@ -1183,19 +1182,18 @@ export default function CompanyDetailPage() {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* 1. Key Summary - First and Most Prominent */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-2 mb-4">
-                    <span className="text-lg">📋</span>
-                    <div>
-                      <h3 className="text-lg font-bold text-gray-900">Key Summary</h3>
-                      <p className="text-gray-600 text-sm">📊 Comprehensive board deck overview</p>
+                                      <div className="flex items-center space-x-2 mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900">Key Summary</h3>
+                        <p className="text-gray-600 text-sm">📊 Comprehensive board deck overview</p>
+                      </div>
                     </div>
-                  </div>
                   
                   {latestReport ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-                      <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm text-blue-900 leading-relaxed" />
+                      <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-xs text-blue-900 leading-relaxed" />
                     </div>
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
@@ -1209,11 +1207,10 @@ export default function CompanyDetailPage() {
                 {/* 2. Secondary Information - Mobile: Single column, Desktop: Two columns */}
                 <div className="space-y-4 lg:grid lg:grid-cols-2 lg:space-y-0 lg:gap-4">
                   {/* 2a. Other Financial Details */}
-                  <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                    {/* Header */}
-                    <div className="flex items-center space-x-1 mb-3">
-                      <span className="text-sm">💼</span>
-                      <div>
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                  {/* Header */}
+                  <div className="flex items-center space-x-1 mb-3">
+                    <div>
                         <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
                         <p className="text-gray-600 text-xs">📊 Budget analysis and team updates</p>
                       </div>
@@ -1261,7 +1258,6 @@ export default function CompanyDetailPage() {
                   {/* 2b. Sector Updates */}
                   <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">{sectorLabels.icon}</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Sector Updates</h3>
                       <p className="text-gray-600 text-xs">🎯 Industry-specific analysis</p>
@@ -1316,7 +1312,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">🏦</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Cap Table</h3>
                       <p className="text-gray-600 text-xs">💼 Ownership structure and investment details</p>
@@ -1408,7 +1403,6 @@ export default function CompanyDetailPage() {
                 {/* 2. Summary Stats */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📊</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Summary</h3>
                       <p className="text-gray-600 text-xs">⚡ Key ownership metrics</p>
@@ -1417,7 +1411,7 @@ export default function CompanyDetailPage() {
                   
                   <div className="space-y-2">
                     <div className="bg-blue-50 p-2 rounded border border-blue-100">
-                      <p className="text-xs text-blue-600 font-medium">Total Valuation</p>
+                      <p className="text-xs text-blue-600 font-medium">Latest Valuation</p>
                       <p className="text-sm font-bold text-blue-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
                     </div>
                     <div className="bg-green-50 p-2 rounded border border-green-100">
@@ -1457,7 +1451,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📄</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Financial Documents</h3>
                       <p className="text-gray-600 text-xs">📋 Key financial reports and statements</p>
@@ -1509,7 +1502,6 @@ export default function CompanyDetailPage() {
                 {/* 2. Report Stats */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📊</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Report Stats</h3>
                       <p className="text-gray-600 text-xs">⚡ Document summary</p>
@@ -1553,7 +1545,6 @@ export default function CompanyDetailPage() {
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">🗄️</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Database Editor</h3>
                       <p className="text-gray-600 text-xs">⚡ Direct database access and editing tools</p>
@@ -1568,7 +1559,6 @@ export default function CompanyDetailPage() {
                 {/* 2. Database Stats */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-3">
-                    <span className="text-sm">📊</span>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Database Stats</h3>
                       <p className="text-gray-600 text-xs">⚡ System information</p>

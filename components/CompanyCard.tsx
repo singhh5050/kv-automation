@@ -132,7 +132,10 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
   const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
   const kvStake = kvInvestors.reduce((total, investor) => total + (investor.final_fds || 0), 0);
   const kvTotalInvestment = kvInvestors.reduce((total, investor) => total + (investor.total_invested || 0), 0);
-  const kvFundNames = kvInvestors.map(investor => investor.investor_name).join(', ');
+  // Display-friendly fund names: remove leading "KV " to avoid repetition with the "KV Funds" label
+  const kvFundNames = kvInvestors
+    .map(investor => investor.investor_name.replace(/^KV\s*/i, '').trim())
+    .join(', ');
   
   // Detect company stage based on KV fund names
   const companyStage = hasCapTable ? detectCompanyStage(company.capTable!.investors) : 'Unknown';
