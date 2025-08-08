@@ -1060,6 +1060,10 @@ export default function CompanyDetailPage() {
                         <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                           {enrichmentData.enrichment.extracted.leadership
                             .filter((leader: any) => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
+                            .filter((leader: any) => {
+                              const titleRaw = (leader.enriched_person?.current_position?.title || leader.title || '').toLowerCase()
+                              return !(/\binvestor\b|\bboard\b/i.test(titleRaw))
+                            })
                             .map((leader: any, index: number) => (
                               <div key={index} className="p-1.5 rounded border border-gray-100">
                                 <div className="flex items-center justify-between">
