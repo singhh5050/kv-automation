@@ -553,15 +553,24 @@ export default function CompanyDetailPage() {
       ?.reduce((total, inv) => total + (inv.final_fds || 0), 0) || 0 
     : 0;
 
-  // Sort investors to put KV funds at the top
+  // Sort investors to put KV funds at the top and any 'total' rows at the end
   const sortedInvestors = company.current_cap_table?.investors ? [...company.current_cap_table.investors].sort((a, b) => {
-    const aIsKV = a.investor_name.startsWith('KV')
-    const bIsKV = b.investor_name.startsWith('KV')
-    
+    const aName = a.investor_name || ''
+    const bName = b.investor_name || ''
+    const aIsTotal = /total/i.test(aName)
+    const bIsTotal = /total/i.test(bName)
+
+    // Send any 'total' rows to the end
+    if (aIsTotal && !bIsTotal) return 1
+    if (!aIsTotal && bIsTotal) return -1
+
+    const aIsKV = aName.startsWith('KV')
+    const bIsKV = bName.startsWith('KV')
+
     if (aIsKV && !bIsKV) return -1
     if (!aIsKV && bIsKV) return 1
-    
-    // If both are KV or both are not KV, sort by total invested (descending)
+
+    // If both are KV or both are not KV (and neither is total), sort by total invested (descending)
     const aInvested = a.total_invested || 0
     const bInvested = b.total_invested || 0
     return bInvested - aInvested
