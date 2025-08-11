@@ -479,9 +479,9 @@ export default function CompanyDetailPage() {
       return urn
     } else if (urn && typeof urn === 'object') {
       // If it's an object, try to get name or company_urn
-      return urn.name || urn.company_name || translateCompanyUrn(urn.company_urn) || 'Unknown Company'
+      return urn.name || urn.company_name || translateCompanyUrn(urn.company_urn) || 'Not found'
     }
-    return 'Unknown Company'
+    return 'Not found'
   }
 
   // Function to refresh all data (company + enrichment)
@@ -669,13 +669,13 @@ export default function CompanyDetailPage() {
               <p className="text-sm font-semibold text-gray-900">
                 {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 
                  enrichmentData?.enrichment?.extracted?.ceo?.title || 
-                 'Cristóbal'}
+                 'Not found'}
               </p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
-              <p className="text-sm font-semibold text-gray-900">Main</p>
+              <p className="text-sm font-semibold text-gray-900">N/A</p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
@@ -714,7 +714,7 @@ export default function CompanyDetailPage() {
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📍 Location</p>
               <p className="text-sm font-semibold text-gray-900 truncate">
-                {enrichmentData?.enrichment?.extracted?.location?.city || 'Boston'}
+                {enrichmentData?.enrichment?.extracted?.location?.city || 'N/A'}
               </p>
             </div>
           </div>
@@ -1012,10 +1012,7 @@ export default function CompanyDetailPage() {
                   <div className="mb-3">
                     <p className="text-xs font-medium text-gray-500 mb-1">Total Employees</p>
                     <p className="text-lg font-bold text-gray-900">
-                      {enrichmentData?.enrichment?.extracted?.headcount || '82'} 
-                      <span className="text-xs font-normal text-gray-500">
-                        {enrichmentData?.enrichment?.extracted?.headcount ? '' : ' (est.)'}
-                      </span>
+                      {enrichmentData?.enrichment?.extracted?.headcount ?? 'N/A'}
                     </p>
                   </div>
 
@@ -1092,17 +1089,10 @@ export default function CompanyDetailPage() {
                             ))}
                         </div>
                       ) : !enrichmentData?.enrichment?.extracted?.ceo ? (
-                        // Fallback to static data if no enrichment data
-                        <>
-                          <div className="p-1.5 rounded border border-gray-100">
-                            <p className="text-xs font-medium text-gray-900">Cristóbal Undurraga</p>
-                            <p className="text-xs text-gray-600">Co-founder & CEO</p>
-                          </div>
-                          <div className="p-1.5 rounded border border-gray-100">
-                            <p className="text-xs font-medium text-gray-900">Shayle Kann</p>
-                            <p className="text-xs text-gray-600">Investor and Board Observer</p>
-                          </div>
-                        </>
+                        // Fallback when there is no enrichment data
+                        <div className="p-1.5 rounded border border-gray-100">
+                          <p className="text-xs text-gray-600">No leadership data found</p>
+                        </div>
                       ) : null}
                     </div>
                     
@@ -1711,7 +1701,7 @@ export default function CompanyDetailPage() {
                           </div>
                               )}
                               <h2 className="text-lg font-bold text-gray-900 mb-1">
-                                {enrichmentData.enrichment.extracted.name || 'Unknown Company'}
+                                {enrichmentData.enrichment.extracted.name || 'Not found'}
                               </h2>
                               <p className="text-gray-600 mb-3 text-sm">
                                 {enrichmentData.enrichment.extracted.short_description || enrichmentData.enrichment.extracted.description}

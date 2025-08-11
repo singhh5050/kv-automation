@@ -4,13 +4,8 @@
 
 /**
  * Normalize company name for matching and display
- * Removes legal suffixes and special characters
+ * Should be identical to actual name, but lowercased only
  */
 export const normalizeCompanyName = (name: string): string => {
-  return name
-    .toLowerCase()
-    .replace(/\b(corp|corporation|inc|incorporated|ltd|limited|llc|co\.?)\b/g, '')
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return (name || '').toLowerCase().trim()
 }

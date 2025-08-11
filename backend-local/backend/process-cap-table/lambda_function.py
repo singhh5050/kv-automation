@@ -376,20 +376,35 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         if user_provided:
             # For user-provided names, use exact name matching - no normalization
             exact_name = data["company_name"].strip()
+            normalized_exact = exact_name.lower().strip()
             manually_edited = True
             edited_by = "user_provided"
             
-            # Try exact match first
+            # Prefer exact match by name
             cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
             existing = cur.fetchone()
             
-            if not existing:
-                # Create new company with exact name and itself as normalized name for uniqueness
-                cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                                VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())""", [exact_name, exact_name, manually_edited, edited_by])
-                cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
-            
-            company_id = cur.fetchone()[0] if not existing else existing[0]
+            if existing:
+                company_id = existing[0]
+            else:
+                # Try match by normalized_name to avoid duplicate cards differing only by case/spacing
+                cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                existing_norm = cur.fetchone()
+                if existing_norm:
+                    company_id = existing_norm[0]
+                else:
+                    # Create new company; guard against race or pre-existing record with same normalized_name
+                    cur.execute(
+                        """
+                        INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())
+                        ON CONFLICT (normalized_name) DO NOTHING
+                        """,
+                        [exact_name, normalized_exact, manually_edited, edited_by]
+                    )
+                    # Select by normalized_name to get id regardless of conflict/no-conflict
+                    cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                    company_id = cur.fetchone()[0]
         else:
             # For auto-detected names, use normalization for fuzzy matching
             norm_name = normalize_company_name(data["company_name"])
@@ -452,11 +467,4 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
 def normalize_company_name(name: str) -> str:
     if not name:
         return ""
-    return (
-        name.lower()
-        .replace("corp", "").replace("corporation", "")
-        .replace("inc", "").replace("incorporated", "")
-        .replace("ltd", "").replace("limited", "")
-        .replace("llc", "").replace("co.", "").replace("co", "")
-        .strip()
-    )
+    return name.lower().strip()

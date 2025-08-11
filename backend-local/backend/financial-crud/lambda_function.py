@@ -1285,15 +1285,34 @@ def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         company_id, original_name = company_row
         
-        # Build dynamic update query
+        # Determine final name (new or existing)
+        final_name = str(updates['name']) if 'name' in updates and updates['name'] is not None else original_name
+        auto_normalized = normalize_company_name(final_name)
+        
+        # Prevent duplicate normalized_name collision with other companies
+        cursor.execute(
+            "SELECT id FROM companies WHERE normalized_name = %s AND id <> %s",
+            [auto_normalized, company_id]
+        )
+        conflict = cursor.fetchone()
+        if conflict:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': f"Another company already uses normalized_name '{auto_normalized}'. Rename would conflict."
+            }
+        
+        # Build dynamic update query: always set normalized_name from final_name; set name only if provided
         set_clauses = []
         params = []
         
-        allowed_fields = ['name', 'normalized_name']
-        for field, value in updates.items():
-            if field in allowed_fields:
-                set_clauses.append(f"{field} = %s")
-                params.append(str(value) if value is not None else None)
+        if 'name' in updates and updates['name'] is not None:
+            set_clauses.append("name = %s")
+            params.append(str(updates['name']))
+        # Always force normalized_name to match final_name
+        set_clauses.append("normalized_name = %s")
+        params.append(auto_normalized)
         
         if not set_clauses:
             cursor.close()
@@ -1319,12 +1338,13 @@ def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
         cursor.close()
         conn.close()
         
+        updated_fields = ['normalized_name'] + ([ 'name' ] if 'name' in updates and updates['name'] is not None else [])
         return {
             'success': True,
             'data': {
                 'company_id': company_id,
                 'original_name': original_name,
-                'updated_fields': list(updates.keys()),
+                'updated_fields': updated_fields,
                 'manually_edited': True
             }
         }
@@ -1764,16 +1784,11 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
 
 def normalize_company_name(name: str) -> str:
     """
-    Normalize company name for matching (matches backend/app/models.py)
+    Normalize company name for matching (lowercase only; do not strip suffixes)
     """
     if not name:
         return ""
-    return (name.lower()
-            .replace('corp', '').replace('corporation', '')
-            .replace('inc', '').replace('incorporated', '')
-            .replace('ltd', '').replace('limited', '')
-            .replace('llc', '').replace('co.', '').replace('co', '')
-            .strip())
+    return name.lower().strip()
 
 def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
     """
