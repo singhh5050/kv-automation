@@ -274,11 +274,19 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         )
 
         # ——— 4 Investor list ———
-        exclude = {"Warrants Preferred", "Warrants Common", "Options Outstanding", "Option Pool Available", "Pool Increase", "TOTAL", "0"}
+        exclude = {"warrants preferred", "warrants common", "options outstanding", "option pool available", "pool increase", "total", "0"}
         investors = []
         for _, r in df.iterrows():
             name = str(r["Investor"]).strip()
-            if name in exclude or not name:
+            if not name:
+                continue
+            name_l = name.lower().strip()
+            # Exclude known non-investor rows (case-insensitive) and totals
+            if (
+                name_l in exclude
+                or "total" in name_l  # catch variants like "TOTAL (USD)", "Grand Total"
+                or ("employee" in name_l and "option" in name_l and "pool" in name_l)  # Employee Option Pool rows
+            ):
                 continue
             investors.append({
                 "investor_name": name,
