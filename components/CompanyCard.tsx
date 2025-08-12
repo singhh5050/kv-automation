@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Company } from '../types'
-import { deleteCompany } from '../lib/api'
+import { deleteCompany, uploadFile, processCapTableXlsx, saveCapTableRound, saveFinancialReport } from '../lib/api'
 import { X } from 'lucide-react'
 
 // Currency formatting utility
@@ -114,6 +114,7 @@ interface CompanyCardProps {
 export default function CompanyCard({ company, onClick, enrichmentData, onDelete }: CompanyCardProps) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
+  const [uploading, setUploading] = useState(false)
   
   // Debug enrichment data
   console.log(`CompanyCard for ${company.name} - enrichmentData:`, enrichmentData)
@@ -174,6 +175,69 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
       alert(`Delete failed: ${err.message}`)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const result = await uploadFile(file, company.name, Number(company.id))
+      if (result.error) {
+        alert(`Upload failed: ${result.error}`)
+        return
+      }
+      const data: any = result.data?.data || result.data
+      // Ensure save to DB with explicit company_id
+      await saveFinancialReport({
+        company_id: Number(company.id),
+        filename: file.name,
+        reportDate: data?.reportDate || new Date().toISOString().split('T')[0],
+        reportPeriod: data?.reportPeriod || 'Unknown Period',
+        cashOnHand: data?.cashOnHand,
+        monthlyBurnRate: data?.monthlyBurnRate,
+        cashOutDate: data?.cashOutDate,
+        runway: data?.runway,
+        budgetVsActual: data?.budgetVsActual,
+        financialSummary: data?.financialSummary,
+        sectorHighlightA: data?.sectorHighlightA,
+        sectorHighlightB: data?.sectorHighlightB,
+        keyRisks: data?.keyRisks,
+        personnelUpdates: data?.personnelUpdates,
+        nextMilestones: data?.nextMilestones,
+        sector: data?.sector,
+        user_provided_name: true,
+      })
+      alert('PDF uploaded and saved to this company')
+      router.refresh()
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleCapTableUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const base64 = Buffer.from(arrayBuffer).toString('base64')
+      const result = await processCapTableXlsx({ xlsx_data: base64, filename: file.name }, company.name, Number(company.id))
+      if (result.error) {
+        alert(`Cap table processing failed: ${result.error}`)
+        return
+      }
+      alert('Cap table uploaded to this company')
+      router.refresh()
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
     }
   }
 
@@ -352,12 +416,22 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
               {latestReport ? `${reportCount} report${reportCount !== 1 ? 's' : ''}` : 'No reports'}
             </span>
           </div>
-          <button 
-            onClick={handleViewDetails}
-            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            View Details
-          </button>
+          <div className="flex items-center gap-2">
+            <label className="px-2 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors shadow-sm cursor-pointer">
+              Upload PDF
+              <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploading} />
+            </label>
+            <label className="px-2 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer">
+              Upload Cap Table
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleCapTableUpload} disabled={uploading} />
+            </label>
+            <button 
+              onClick={handleViewDetails}
+              className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              View Details
+            </button>
+          </div>
         </div>
       </div>
     </div>

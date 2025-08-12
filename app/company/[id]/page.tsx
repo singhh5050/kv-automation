@@ -292,6 +292,7 @@ export default function CompanyDetailPage() {
   const [loadingEnrichment, setLoadingEnrichment] = useState(false)
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [identifierType, setIdentifierType] = useState('website_url')
+  const [activeOverviewSection, setActiveOverviewSection] = useState<'key' | 'sector' | 'details'>('key')
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -853,7 +854,7 @@ export default function CompanyDetailPage() {
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-2">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Cash Position</h3>
+                      <h3 className="text-sm font-bold text-gray-900">Summary</h3>
                     </div>
                   </div>
                   
@@ -1185,128 +1186,154 @@ export default function CompanyDetailPage() {
               </div>
             )}
 
-            {activeTab === 'overview' && (
-              <div className="space-y-6">
-                {/* 1. Key Summary - First and Most Prominent */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center space-x-1 mb-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">Key Summary</h3>
-                    </div>
-                  </div>
-                  
-                  {latestReport ? (
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-                      <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-xs text-blue-900 leading-relaxed" />
-                    </div>
-                  ) : (
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
-                      <div className="text-2xl mb-3">📋</div>
-                      <p className="text-gray-500 font-medium mb-2">No key summary available</p>
-                      <p className="text-gray-400 text-sm">Upload a recent board deck to see the comprehensive overview</p>
-                    </div>
-                  )}
-                </div>
+                          {activeTab === 'overview' && (
+               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                 {/* Left vertical nav */}
+                 <aside className="lg:col-span-3 bg-white rounded-lg border border-gray-200 p-3 h-max sticky top-4">
+                   <nav className="flex lg:flex-col gap-2">
+                     <button
+                       onClick={() => setActiveOverviewSection('key')}
+                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                         activeOverviewSection === 'key'
+                           ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                       }`}
+                     >
+                       <span className="flex items-center gap-2"><span>📈</span> <span>Key Updates</span></span>
+                     </button>
+                     <button
+                       onClick={() => setActiveOverviewSection('sector')}
+                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                         activeOverviewSection === 'sector'
+                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                       }`}
+                     >
+                       <span className="flex items-center gap-2"><span>🏷️</span> <span>Sector Updates</span></span>
+                     </button>
+                     <button
+                       onClick={() => setActiveOverviewSection('details')}
+                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                         activeOverviewSection === 'details'
+                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                       }`}
+                     >
+                       <span className="flex items-center gap-2"><span>🧾</span> <span>Additional Details</span></span>
+                     </button>
+                   </nav>
+                 </aside>
 
-                {/* 2. Secondary Information - Mobile: Single column, Desktop: Two columns */}
-                <div className="space-y-4 lg:grid lg:grid-cols-2 lg:space-y-0 lg:gap-4">
-                  {/* 2a. Other Financial Details */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
-                    <div>
-                        <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
-                    </div>
-                  </div>
-                    
-                    {latestReport ? (
-                      <div className="grid grid-cols-1 gap-3">
-                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2 rounded border border-purple-100">
-                          <div className="flex items-center space-x-1 mb-1">
-                            <span className="text-xs">⚖️</span>
-                            <h4 className="font-semibold text-purple-900 text-xs">Budget vs Actual</h4>
-                          </div>
-                          <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-xs text-purple-800" />
-                        </div>
-                      
-                      {(latestReport as any)?.personnel_updates && (
-                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2 rounded border border-green-100">
-                          <div className="flex items-center space-x-1 mb-1">
-                            <span className="text-xs">👥</span>
-                            <h4 className="font-semibold text-green-900 text-xs">Personnel Updates</h4>
-                          </div>
-                          <MarkdownContent content={(latestReport as any).personnel_updates} className="text-xs" />
-                        </div>
-                      )}
-                      
-                      {(latestReport as any)?.key_risks && (
-                        <div className="bg-gradient-to-br from-red-50 to-pink-50 p-2 rounded border border-red-100">
-                          <div className="flex items-center space-x-1 mb-1">
-                            <span className="text-xs">⚠️</span>
-                            <h4 className="font-semibold text-red-900 text-xs">Key Risks</h4>
-                          </div>
-                          <MarkdownContent content={(latestReport as any).key_risks} className="text-xs" />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
-                      <div className="text-lg mb-2">📊</div>
-                      <p className="text-gray-500 font-medium mb-1 text-xs">No financial reports available</p>
-                      <p className="text-gray-400 text-xs">Upload board decks to see financial insights</p>
-                    </div>
-                  )}
-                </div>
+                 {/* Right content - only render selected section */}
+                 <section className="lg:col-span-9 space-y-4">
+                   {activeOverviewSection === 'key' && (
+                     <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                       <div className="mb-2">
+                         <h3 className="text-sm font-bold text-gray-900">Key Updates</h3>
+                       </div>
+                       {latestReport ? (
+                         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                           <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
+                         </div>
+                       ) : (
+                         <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
+                           <div className="text-2xl mb-3">📋</div>
+                           <p className="text-gray-500 font-medium mb-2">No key summary available</p>
+                           <p className="text-gray-400 text-sm">Upload a recent board deck to see the comprehensive overview</p>
+                         </div>
+                       )}
+                     </div>
+                   )}
 
-                  {/* 2b. Sector Updates */}
-                  <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center space-x-1 mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">Sector Updates</h3>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {/* Sector Highlight A */}
-                    <div>
-                      <div className="flex items-center space-x-1 mb-1">
-                        <span className="text-xs">{sectorLabels.icon}</span>
-                        <h4 className="font-semibold text-orange-900 text-xs">{sectorLabels.highlightA}</h4>
-                      </div>
-                      {(latestReport as any)?.sector_highlight_a ? (
-                        <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-2 rounded border border-orange-100">
-                          <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-xs" />
-                        </div>
-                      ) : (
-                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-2 rounded border-2 border-dashed border-gray-200 text-center">
-                          <div className="text-sm mb-1">{sectorLabels.icon}</div>
-                          <p className="text-gray-500 text-xs font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data</p>
-                        </div>
-                      )}
-                    </div>
+                   {activeOverviewSection === 'sector' && (
+                     <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                       <div className="mb-2">
+                         <h3 className="text-sm font-bold text-gray-900">Sector Updates</h3>
+                       </div>
+                       <div className="space-y-3">
+                         <div>
+                           <div className="flex items-center space-x-1 mb-2">
+                             <span className="text-xs">{sectorLabels.icon}</span>
+                             <h4 className="font-semibold text-orange-900 text-xs">{sectorLabels.highlightA}</h4>
+                           </div>
+                           {(latestReport as any)?.sector_highlight_a ? (
+                             <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-3 rounded border border-orange-100">
+                               <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm leading-7" />
+                             </div>
+                           ) : (
+                             <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
+                               <div className="text-lg mb-1">{sectorLabels.icon}</div>
+                               <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data</p>
+                             </div>
+                           )}
+                         </div>
 
-                    {/* Sector Highlight B */}
-                    <div>
-                      <div className="flex items-center space-x-1 mb-1">
-                        <span className="text-xs">🔬</span>
-                        <h4 className="font-semibold text-indigo-900 text-xs">{sectorLabels.highlightB}</h4>
-                      </div>
-                      {(latestReport as any)?.sector_highlight_b ? (
-                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-2 rounded border border-indigo-100">
-                          <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-xs" />
-                        </div>
-                      ) : (
-                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-2 rounded border-2 border-dashed border-gray-200 text-center">
-                          <div className="text-sm mb-1">🔬</div>
-                          <p className="text-gray-500 text-xs font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                </div>
-              </div>
+                         <div>
+                           <div className="flex items-center space-x-1 mb-2">
+                             <span className="text-xs">🔬</span>
+                             <h4 className="font-semibold text-indigo-900 text-xs">{sectorLabels.highlightB}</h4>
+                           </div>
+                           {(latestReport as any)?.sector_highlight_b ? (
+                             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded border border-indigo-100">
+                               <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm leading-7" />
+                             </div>
+                           ) : (
+                             <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
+                               <div className="text-lg mb-1">🔬</div>
+                               <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data</p>
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeOverviewSection === 'details' && (
+                     <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                       <div className="mb-2">
+                         <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
+                       </div>
+                       {latestReport ? (
+                         <div className="grid grid-cols-1 gap-3">
+                           <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-3 rounded border border-purple-100">
+                             <div className="flex items-center space-x-1 mb-2">
+                               <span className="text-xs">⚖️</span>
+                               <h4 className="font-semibold text-purple-900 text-xs">Budget vs Actual</h4>
+                             </div>
+                             <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm leading-7 text-purple-800" />
+                           </div>
+                         
+                           {(latestReport as any)?.personnel_updates && (
+                             <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded border border-green-100">
+                               <div className="flex items-center space-x-1 mb-2">
+                                 <span className="text-xs">👥</span>
+                                 <h4 className="font-semibold text-green-900 text-xs">Personnel Updates</h4>
+                               </div>
+                               <MarkdownContent content={(latestReport as any).personnel_updates} className="text-sm leading-7" />
+                             </div>
+                           )}
+                         
+                           {(latestReport as any)?.key_risks && (
+                             <div className="bg-gradient-to-br from-red-50 to-pink-50 p-3 rounded border border-red-100">
+                               <div className="flex items-center space-x-1 mb-2">
+                                 <span className="text-xs">⚠️</span>
+                                 <h4 className="font-semibold text-red-900 text-xs">Key Risks</h4>
+                               </div>
+                               <MarkdownContent content={(latestReport as any).key_risks} className="text-sm leading-7" />
+                             </div>
+                           )}
+                         </div>
+                       ) : (
+                         <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
+                           <div className="text-lg mb-2">📊</div>
+                           <p className="text-gray-500 font-medium mb-1 text-sm">No financial reports available</p>
+                           <p className="text-gray-400 text-sm">Upload board decks to see financial insights</p>
+                         </div>
+                       )}
+                     </div>
+                   )}
+                 </section>
+               </div>
             )}
 
             {activeTab === 'captable' && (

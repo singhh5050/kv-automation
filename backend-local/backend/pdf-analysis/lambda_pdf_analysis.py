@@ -60,6 +60,7 @@ def lambda_handler(event, context):
     filename = body.get('filename', 'document.pdf')
     company_name_override = body.get('company_name_override')
     user_provided_name = body.get('user_provided_name', False)  # NEW: Flag for user-provided names
+    company_id = body.get('company_id')  # NEW: Explicit company target (bypass autodetect)
     compressed = body.get('compressed', False)
     
     if not pdf_base64:
@@ -108,6 +109,9 @@ def lambda_handler(event, context):
         
         # Analyze with OpenAI (with optional company name override)
         analysis_result = analyze_with_openai(extracted_text, filename, company_name_override, user_provided_name)
+        # If explicit company_id provided, attach it so downstream save can skip name resolution
+        if company_id:
+            analysis_result['company_id'] = company_id
         
         return {
             'statusCode': 200,

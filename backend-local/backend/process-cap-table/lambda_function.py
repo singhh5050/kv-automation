@@ -133,11 +133,12 @@ def lambda_handler(event, context):
     filename = body.get("filename", "cap_table.xlsx")
     company_name_override = body.get("company_name_override")
     user_provided_name = body.get("user_provided_name", False)
+    company_id = body.get("company_id")  # NEW: Explicit company to attach cap table to
     
     if not xlsx_b64:
         return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Missing xlsx_data"})}
 
-    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name)
+    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name, company_id)
     status = 200 if result["success"] else 500
     return {"statusCode": status, "headers": headers, "body": json.dumps(result)}
 
@@ -148,12 +149,12 @@ def lambda_handler(event, context):
 def process_cap_table_xlsx(xlsx_b64: str, filename: str) -> Dict[str, Any]:
     return process_cap_table_xlsx_with_override(xlsx_b64, filename, None)
 
-def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None, user_provided_name: bool = False) -> Dict[str, Any]:
+def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None, user_provided_name: bool = False, company_id: int | None = None) -> Dict[str, Any]:
     defensive_fixes = []  # Track what defensive fixes were applied
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
 
-        # ——— 1 Metadata (first 6 rows) ———
+        # ——— 1 Metadata (first 6 rows) ———
         try:
             df_meta = pd.read_excel(xlsx_io, nrows=6, header=None)
             row0 = df_meta.iloc[0]
@@ -181,43 +182,84 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 except ValueError:
                     return None
 
-            # Find the latest round row containing the word "Series"
-            effective_cols = [c for c in df_meta.columns if "Effective Post-Money" in str(c)]
-            raised_cols = [c for c in df_meta.columns if "Total Amt Raised" in str(c)]
+            # Identify candidate columns
             date_cols = [c for c in df_meta.columns if "date" in str(c).lower()]
-            
-            if not df_meta.empty and "Round" in df_meta.columns:
-                series_mask = df_meta["Round"].astype(str).str.contains(
-                    r"Series",  # Could extend with r"(Series|Seed|SAFE)" if needed
-                    case=False,
-                    na=False,
-                )
-                if series_mask.any():
-                    # Use the same row for round name, valuation, amount raised, and date
-                    idx = series_mask[series_mask].index[-1]
-                    round_raw = df_meta.at[idx, "Round"]
-                    round_name = sanitize_round_name(round_raw)
-                    
-                    # Extract valuation and amount raised from the same Series row
-                    valuation = _clean_float(df_meta.at[idx, effective_cols[0]], fixes_log=defensive_fixes) if effective_cols else None
-                    amount_raised = _clean_float(df_meta.at[idx, raised_cols[0]], fixes_log=defensive_fixes) if raised_cols else None
-                    
-                    # Extract round date from the same row
-                    round_date = _clean_date(df_meta.at[idx, date_cols[0]], fixes_log=defensive_fixes) if date_cols else _clean_date(None, fixes_log=defensive_fixes)
-                else:
-                    # No Series rows found, fall back to graceful defaults
-                    round_raw = "Current"
-                    round_name = sanitize_round_name(round_raw)
-                    valuation = _clean_float(df_meta[effective_cols[0]].dropna().iloc[-1], fixes_log=defensive_fixes) if effective_cols else None
-                    amount_raised = _clean_float(df_meta[raised_cols[0]].dropna().iloc[-1], fixes_log=defensive_fixes) if raised_cols else None
-                    round_date = None
-            else:
-                # No Round column found, fall back to old behavior
-                round_raw = "Current"
+            # Be flexible: include any column mentioning Post-Money (accept hyphen or en-dash)
+            post_money_cols = [
+                c for c in df_meta.columns
+                if re.search(r"post[\s\-–]?money", str(c).lower())
+            ]
+            # Amount raised variants
+            amt_raised_cols = [
+                c for c in df_meta.columns
+                if (("amt" in str(c).lower() and "raised" in str(c).lower()) or "amount raised" in str(c).lower())
+            ]
+
+            # Choose the latest round row by most recent date among date_cols
+            chosen_idx = None
+            chosen_date = None
+            if not df_meta.empty:
+                for idx in df_meta.index:
+                    row_date = None
+                    for dc in date_cols:
+                        try:
+                            d = pd.to_datetime(df_meta.at[idx, dc], errors="coerce")
+                            if pd.notna(d):
+                                rd = d.to_pydatetime().date()
+                                if row_date is None or rd > row_date:
+                                    row_date = rd
+                        except Exception:
+                            continue
+                    # Track the most recent dated row, break ties preferring 'Closing' in Round
+                    if row_date is not None:
+                        prefer = (
+                            "Round" in df_meta.columns and
+                            isinstance(df_meta.at[idx, "Round"], str) and
+                            "closing" in df_meta.at[idx, "Round"].lower()
+                        )
+                        if (
+                            chosen_date is None or
+                            row_date > chosen_date or
+                            (row_date == chosen_date and prefer)
+                        ):
+                            chosen_date = row_date
+                            chosen_idx = idx
+
+            # Fallbacks if no date present: prefer last row that contains a 'Round' label of any sort;
+            # else just pick the last non-empty row
+            if chosen_idx is None:
+                if "Round" in df_meta.columns:
+                    non_empty_mask = df_meta["Round"].astype(str).str.strip() != ""
+                    if non_empty_mask.any():
+                        chosen_idx = non_empty_mask[non_empty_mask].index[-1]
+                if chosen_idx is None:
+                    chosen_idx = df_meta.index[-1] if len(df_meta.index) > 0 else None
+
+            # Extract round name
+            if chosen_idx is not None and "Round" in df_meta.columns:
+                round_raw = df_meta.at[chosen_idx, "Round"]
                 round_name = sanitize_round_name(round_raw)
-                valuation = safe_float(df_meta[effective_cols[0]].dropna().iloc[-1]) if effective_cols else None
-                amount_raised = safe_float(df_meta[raised_cols[0]].dropna().iloc[-1]) if raised_cols else None
-                round_date = None
+            else:
+                round_name = "Current"
+
+            # Helper to pick the last non-null numeric in preferred columns for the chosen row
+            def pick_value_from_cols(row_idx, cols):
+                if row_idx is None or not cols:
+                    return None
+                value = None
+                for col in cols:
+                    try:
+                        cand = safe_float(df_meta.at[row_idx, col])
+                        if cand is not None:
+                            value = cand  # keep overwriting to effectively select the "last" matching column
+                    except Exception:
+                        continue
+                return value
+
+            valuation = pick_value_from_cols(chosen_idx, post_money_cols)
+            amount_raised = pick_value_from_cols(chosen_idx, amt_raised_cols)
+            # Use chosen_date if we found one, else None
+            round_date = chosen_date
         except Exception as e:
             print(f"⚠️  Metadata parse error: {e}")
             company_name, round_name, valuation, amount_raised, round_date = "Unknown Company", "Current", None, None, None
@@ -225,7 +267,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         # Reset buffer for main table read
         xlsx_io.seek(0)
 
-        # ——— 2 Main investor table ———
+        # ——— 2 Main investor table ———
         df = pd.read_excel(xlsx_io, skiprows=5).iloc[:, 1:]
         if df.empty:
             return {"success": False, "error": "No data rows found in XLSX"}
@@ -273,7 +315,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
             if total_pool_size else 0
         )
 
-        # ——— 4 Investor list ———
+        # ——— 4 Investor list ———
         exclude = {"Warrants Preferred", "Warrants Common", "Options Outstanding", "Option Pool Available", "Pool Increase", "TOTAL", "0"}
         investors = []
         for _, r in df.iterrows():
@@ -291,6 +333,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         cap_table = {
             "company_name": company_name,
             "user_provided_name": user_provided_name,  # NEW: Flag for user-provided names
+            "company_id": company_id,  # NEW: explicit target id when provided
             "round_data": {
                 "round_name": round_name,
                 "valuation": valuation,
@@ -371,50 +414,61 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         conn = pg8000.connect(**db_cfg, ssl_context=ctx, timeout=30)
         cur = conn.cursor()
 
-        # Handle user-provided vs auto-detected names differently
-        user_provided = data.get("user_provided_name", False)
-        if user_provided:
-            # For user-provided names, use exact name matching - no normalization
-            exact_name = data["company_name"].strip()
-            normalized_exact = exact_name.lower().strip()
+        # If explicit company_id is provided, trust it and skip name resolution
+        explicit_company_id = data.get("company_id")
+        if explicit_company_id:
+            cur.execute("SELECT id FROM companies WHERE id = %s", [explicit_company_id])
+            row = cur.fetchone()
+            if not row:
+                return {"success": False, "error": f"Company with id {explicit_company_id} not found"}
+            company_id = explicit_company_id
             manually_edited = True
             edited_by = "user_provided"
-            
-            # Prefer exact match by name
-            cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
-            existing = cur.fetchone()
-            
-            if existing:
-                company_id = existing[0]
-            else:
-                # Try match by normalized_name to avoid duplicate cards differing only by case/spacing
-                cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
-                existing_norm = cur.fetchone()
-                if existing_norm:
-                    company_id = existing_norm[0]
-                else:
-                    # Create new company; guard against race or pre-existing record with same normalized_name
-                    cur.execute(
-                        """
-                        INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())
-                        ON CONFLICT (normalized_name) DO NOTHING
-                        """,
-                        [exact_name, normalized_exact, manually_edited, edited_by]
-                    )
-                    # Select by normalized_name to get id regardless of conflict/no-conflict
-                    cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
-                    company_id = cur.fetchone()[0]
         else:
-            # For auto-detected names, use normalization for fuzzy matching
-            norm_name = normalize_company_name(data["company_name"])
-            manually_edited = False
-            edited_by = "system_import"
-            
-            cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                            VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
-            cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
-            company_id = cur.fetchone()[0]
+            # Handle user-provided vs auto-detected names differently
+            user_provided = data.get("user_provided_name", False)
+            if user_provided:
+                # For user-provided names, use exact name matching - no normalization
+                exact_name = data["company_name"].strip()
+                normalized_exact = exact_name.lower().strip()
+                manually_edited = True
+                edited_by = "user_provided"
+                
+                # Prefer exact match by name
+                cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
+                existing = cur.fetchone()
+                
+                if existing:
+                    company_id = existing[0]
+                else:
+                    # Try match by normalized_name to avoid duplicate cards differing only by case/spacing
+                    cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                    existing_norm = cur.fetchone()
+                    if existing_norm:
+                        company_id = existing_norm[0]
+                    else:
+                        # Create new company; guard against race or pre-existing record with same normalized_name
+                        cur.execute(
+                            """
+                            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                            VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())
+                            ON CONFLICT (normalized_name) DO NOTHING
+                            """,
+                            [exact_name, normalized_exact, manually_edited, edited_by]
+                        )
+                        # Select by normalized_name to get id regardless of conflict/no-conflict
+                        cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                        company_id = cur.fetchone()[0]
+            else:
+                # For auto-detected names, use normalization for fuzzy matching
+                norm_name = normalize_company_name(data["company_name"])
+                manually_edited = False
+                edited_by = "system_import"
+                
+                cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                                VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
+                cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
+                company_id = cur.fetchone()[0]
 
         cur.execute(
             """INSERT INTO cap_table_rounds (company_id, round_name, valuation, amount_raised, round_date,
