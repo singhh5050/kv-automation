@@ -900,7 +900,7 @@ export default function CompanyDetailPage() {
             onChange={(e) => setActiveTab(e.target.value as any)}
             className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
-            <option value="metrics">💰 Cash Position</option>
+            <option value="metrics">💰 Summary</option>
             <option value="financials">📊 Financials</option>
             <option value="overview">📈 Latest Updates</option>
             <option value="captable">🏦 Cap Table</option>
@@ -921,7 +921,7 @@ export default function CompanyDetailPage() {
               }`}
             >
               <span>💰</span>
-              <span>Cash Position</span>
+              <span>Summary</span>
             </button>
             <button
               onClick={() => setActiveTab('financials')}
@@ -990,7 +990,7 @@ export default function CompanyDetailPage() {
           <div className="w-full">
             {activeTab === 'metrics' && (
               <div className="space-y-4 lg:space-y-0 lg:grid lg:gap-4" style={{ gridTemplateColumns: panelGridColumns }}>
-                {/* 1. Combined Cash Position & History */}
+                {/* 1. Combined Summary & History */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-2">
