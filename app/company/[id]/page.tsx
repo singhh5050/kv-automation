@@ -80,6 +80,13 @@ type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
+  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 0)
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   if (!reports || reports.length === 0) {
     return (
       <div className="bg-gray-50 rounded-lg p-6 h-48 flex items-center justify-center">
@@ -170,8 +177,8 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
         <span className="text-xs text-gray-500">{chartData.length} data points</span>
       </div>
       
-      <ResponsiveContainer width="100%" height="85%">
-        <ComposedChart data={chartData} margin={{ top: 5, right: 15, left: 15, bottom: 15 }}>
+      <ResponsiveContainer width="100%" height="85%" debounce={150}>
+        <ComposedChart key={`chart-${windowWidth}-${chartData.length}`} data={chartData} margin={{ top: 5, right: 15, left: 15, bottom: 15 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis 
             dataKey="date"
@@ -189,6 +196,7 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
             tick={{ dy: 0 }}
             interval="preserveEnd"
             tickLine={false}
+            allowDuplicatedCategory={false}
           />
           <YAxis 
             yAxisId="left"
@@ -280,10 +288,12 @@ export default function CompanyDetailPage() {
   const [latestReportId, setLatestReportId] = useState<number | null>(null)
   
   // Enrichment state
-  const [enrichmentData, setEnrichmentData] = useState<any>(null)
+  const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
   const [loadingEnrichment, setLoadingEnrichment] = useState(false)
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [identifierType, setIdentifierType] = useState('website_url')
+
+  // (Chart remount on resize is handled inside SimpleCashChart)
 
   // Utility functions for formatting
   const formatLargeNumber = (num: number | null | undefined): string => {
@@ -837,11 +847,11 @@ export default function CompanyDetailPage() {
           {/* Main Content - Full Width */}
           <div className="w-full">
             {activeTab === 'metrics' && (
-              <div className="space-y-4 lg:space-y-0" style={{ display: 'grid', gridTemplateColumns: panelGridColumns, gap: '1rem' }}>
+              <div className="space-y-4 lg:space-y-0 lg:grid lg:gap-4" style={{ gridTemplateColumns: panelGridColumns }}>
                 {/* 1. Combined Cash Position & History */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
+                  <div className="flex items-center space-x-1 mb-2">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Cash Position</h3>
                     </div>
@@ -866,8 +876,22 @@ export default function CompanyDetailPage() {
                       onUpdate={loadCompanyData}
                       isManuallyEdited={(latestReport as any)?.manually_edited || false}
                     />
+                    {/* Updated (board deck date) */}
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Updated</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {(latestReport as any)?.report_date ? new Date((latestReport as any).report_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
+                      </p>
+                    </div>
+                    {/* Cash out date */}
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Cash out</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {(latestReport as any)?.cash_out_date ? new Date((latestReport as any).cash_out_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
+                      </p>
+                    </div>
                     {/* Mobile: Chart below metrics */}
-                    <div className="h-64">
+                    <div className="h-48 sm:h-64">
                       <SimpleCashChart reports={company.financial_reports} />
                     </div>
                   </div>
@@ -892,10 +916,24 @@ export default function CompanyDetailPage() {
                         onUpdate={loadCompanyData}
                         isManuallyEdited={(latestReport as any)?.manually_edited || false}
                       />
+                      {/* Updated (board deck date) */}
+                      <div>
+                        <p className="text-sm font-medium text-gray-500 mb-1">Updated</p>
+                        <p className="text-xl font-bold text-gray-900">
+                          {(latestReport as any)?.report_date ? new Date((latestReport as any).report_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
+                        </p>
+                      </div>
+                      {/* Cash out date */}
+                      <div>
+                        <p className="text-sm font-medium text-gray-500 mb-1">Cash out</p>
+                        <p className="text-xl font-bold text-gray-900">
+                          {(latestReport as any)?.cash_out_date ? new Date((latestReport as any).cash_out_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
+                        </p>
+                      </div>
                     </div>
 
                     {/* Chart below metrics */}
-                    <div className="h-64">
+                    <div className="h-48 sm:h-64">
                       <SimpleCashChart reports={company.financial_reports} />
                     </div>
                   </div>
@@ -915,50 +953,35 @@ export default function CompanyDetailPage() {
                         const pctElapsed = Math.min(elapsed / total * 100, 100)
                         
                         const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
-                        const cashOutLabel = new Date(cashOutDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                        const startLabel = new Date(reportDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                        const nowLabel = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                        // labels removed per spec
                         
                         return (
                             <div className="border-t pt-3 mt-2">
-                              <div className="flex items-center justify-between mb-6">
+                              <div className="flex items-center justify-between mb-2">
                                 <h4 className="text-xs font-medium text-gray-900">Runway</h4>
                                 <span className="text-xs text-gray-600">{monthsLeft} months left</span>
                               </div>
-                            <div className="w-full bg-gray-200 rounded-full h-3 relative">
-                              {/* Progress */}
+                            <div className="w-full bg-gray-200 rounded-full h-3">
                               <div 
                                 className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
                                 style={{ width: `${pctElapsed}%` }}
                               />
-                              {/* Now marker */}
-                              <div
-                                className="absolute -top-5 flex flex-col items-center"
-                                style={{ left: `${Math.min(98, Math.max(2, pctElapsed))}%`, transform: 'translateX(-50%)' }}
-                              >
-                                <span className="text-[10px] text-gray-600">Now • {nowLabel}</span>
-                                <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-blue-600 opacity-80" />
-                              </div>
                             </div>
-                            <div className="flex justify-between mt-1">
-                              <span className="text-[10px] text-gray-600">Board deck: {startLabel}</span>
-                              <span className="text-[10px] text-gray-600">Cash out: {cashOutLabel}</span>
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      // Fallback if dates aren't available
-                      return (
-                        <div className="border-t pt-3 mt-2">
-                          <h4 className="text-xs font-medium text-gray-900 mb-2">Runway</h4>
-                          <div className="w-full bg-gray-200 rounded-full h-3">
-                            <div className="bg-gray-400 h-3 rounded-full" style={{ width: '50%' }}></div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
+                           </div>
+                         )
+                       }
+                       
+                       // Fallback if dates aren't available
+                       return (
+                         <div className="border-t pt-3 mt-2">
+                           <h4 className="text-xs font-medium text-gray-900 mb-2">Runway</h4>
+                           <div className="w-full bg-gray-200 rounded-full h-3">
+                             <div className="bg-gray-400 h-3 rounded-full" style={{ width: '50%' }}></div>
+                           </div>
+                         </div>
+                       )
+                     })()}
+                   </div>
                 </div>
 
                 {/* 3. Upcoming Milestones */}
@@ -970,8 +993,8 @@ export default function CompanyDetailPage() {
                   </div>
                   
                   {(latestReport as any)?.next_milestones ? (
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2 rounded-lg border border-blue-100">
-                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-xs" />
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100 min-h-[160px] max-h-[420px] overflow-y-auto">
+                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm leading-7" />
                     </div>
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-lg border-2 border-dashed border-gray-200 text-center">
