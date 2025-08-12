@@ -570,6 +570,35 @@ export default function CompanyDetailPage() {
   const companySector = company.company.sector || latestReport?.sector || 'unknown'
   const sectorLabels = getSectorLabels(companySector)
   
+  // Stage detection based on KV fund names - choose the latest stage
+  const detectCompanyStage = (investors: any[]): string => {
+    const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
+    
+    let hasGrowthStage = false
+    let hasMainStage = false
+    let hasEarlyStage = false
+    
+    for (const investor of kvInvestors) {
+      const name = (investor.investor_name || '').toLowerCase()
+      if (name.includes('opp') || name.includes('excelsior')) {
+        hasGrowthStage = true
+      } else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
+        const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
+        if (romanNumeralPattern.test(name)) {
+          hasMainStage = true
+        }
+      } else if (name.includes('seed')) {
+        hasEarlyStage = true
+      }
+    }
+    if (hasGrowthStage) return 'Growth Stage'
+    if (hasMainStage) return 'Main Stage'
+    if (hasEarlyStage) return 'Early Stage'
+    return 'N/A'
+  }
+
+  const companyStage = company.current_cap_table ? detectCompanyStage(company.current_cap_table.investors) : 'N/A'
+
   const kvStake = company.current_cap_table ? 
     company.current_cap_table.investors
       ?.filter(inv => inv.investor_name.startsWith('KV'))
@@ -707,7 +736,7 @@ export default function CompanyDetailPage() {
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
-              <p className="text-sm font-semibold text-gray-900">N/A</p>
+              <p className="text-sm font-semibold text-gray-900">{companyStage}</p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
