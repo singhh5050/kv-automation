@@ -524,7 +524,6 @@ export default function Home() {
               <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
                 Portfolio Companies
               </h1>
-              <p className="text-gray-600 text-sm sm:text-base">Track and manage your investment portfolio</p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               <button

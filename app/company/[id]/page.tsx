@@ -182,6 +182,13 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
             scale="time"
             stroke="#6b7280"
             fontSize={10}
+            angle={-45}
+            textAnchor="end"
+            height={50}
+            tickMargin={0}
+            tick={{ dy: 0 }}
+            interval="preserveEnd"
+            tickLine={false}
           />
           <YAxis 
             yAxisId="left"
@@ -543,6 +550,11 @@ export default function CompanyDetailPage() {
   const displayName = company.company.name // Use exact name from database
   const latestReport = company.financial_reports[0]
   
+  // Adjustable panel weights (developer-friendly): cash | milestones | team
+  // Edit these numbers to change horizontal proportions; they are treated as fr units
+  const PANEL_WEIGHTS = { cash: 6, milestones: 4, team: 2 }
+  const panelGridColumns = `${PANEL_WEIGHTS.cash}fr ${PANEL_WEIGHTS.milestones}fr ${PANEL_WEIGHTS.team}fr`
+  
   // Get sector from company data or latest report
   const companySector = company.company.sector || latestReport?.sector || 'unknown'
   const sectorLabels = getSectorLabels(companySector)
@@ -825,14 +837,13 @@ export default function CompanyDetailPage() {
           {/* Main Content - Full Width */}
           <div className="w-full">
             {activeTab === 'metrics' && (
-              <div className="space-y-4 lg:grid lg:grid-cols-8 lg:space-y-0 lg:gap-4">
-                {/* 1. Combined Cash Position & History - Takes up 4/8 of width (2x larger) */}
-                <div className="lg:col-span-4 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="space-y-4 lg:space-y-0" style={{ display: 'grid', gridTemplateColumns: panelGridColumns, gap: '1rem' }}>
+                {/* 1. Combined Cash Position & History */}
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Cash Position</h3>
-                      <p className="text-gray-600 text-xs">💡 Click values to edit</p>
                     </div>
                   </div>
                   
@@ -855,24 +866,6 @@ export default function CompanyDetailPage() {
                       onUpdate={loadCompanyData}
                       isManuallyEdited={(latestReport as any)?.manually_edited || false}
                     />
-                    {(() => {
-                      const cashOutDate = (latestReport as any)?.cash_out_date
-                      if (!cashOutDate) return null
-                      const end = new Date(cashOutDate).getTime()
-                      const now = Date.now()
-                      const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
-                      return (
-                        <div className="bg-gray-50 p-3 rounded-md">
-                          <p className="text-xs font-medium text-gray-600">Runway</p>
-                          <p className="text-sm font-bold text-gray-900">{monthsLeft} months</p>
-                        </div>
-                      )
-                    })()}
-                    <div className="bg-gray-50 p-3 rounded-md">
-                      <p className="text-sm text-gray-600">
-                        Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
-                      </p>
-                    </div>
                     {/* Mobile: Chart below metrics */}
                     <div className="h-64">
                       <SimpleCashChart reports={company.financial_reports} />
@@ -881,54 +874,29 @@ export default function CompanyDetailPage() {
 
                   {/* Desktop: Original side-by-side layout */}
                   <div className="hidden sm:block">
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      {/* Metrics - 1/4 width */}
-                      <div className="col-span-1">
-                        <div className="space-y-2">
-                          <EditableMetric
-                            label="Cash on Hand"
-                            value={(latestReport as any)?.cash_on_hand || 'N/A'}
-                            reportId={latestReportId || undefined}
-                            field="cash_on_hand"
-                            onUpdate={loadCompanyData}
-                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                          />
-                          <EditableMetric
-                            label="Monthly Burn"
-                            value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
-                            reportId={latestReportId || undefined}
-                            field="monthly_burn_rate"
-                            onUpdate={loadCompanyData}
-                            isManuallyEdited={(latestReport as any)?.manually_edited || false}
-                          />
-                          {(() => {
-                            const cashOutDate = (latestReport as any)?.cash_out_date
-                            if (!cashOutDate) return null
-                            const end = new Date(cashOutDate).getTime()
-                            const now = Date.now()
-                            const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
-                            return (
-                              <div className="bg-gray-50 p-3 rounded-md">
-                                <p className="text-xs font-medium text-gray-600">Runway</p>
-                                <p className="text-sm font-bold text-gray-900">{monthsLeft} months</p>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                        
-                        <div className="mt-3">
-                          <p className="text-xs text-gray-600 mb-1">
-                            Cash out: {(latestReport as any)?.cash_out_date || 'N/A'}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      {/* Chart - 3/4 width */}
-                      <div className="col-span-3">
-                        <div className="h-64">
-                          <SimpleCashChart reports={company.financial_reports} />
-                        </div>
-                      </div>
+                    {/* Metrics row */}
+                    <div className="flex items-start gap-8 mb-3">
+                      <EditableMetric
+                        label="Cash on Hand"
+                        value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                        reportId={latestReportId || undefined}
+                        field="cash_on_hand"
+                        onUpdate={loadCompanyData}
+                        isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      />
+                      <EditableMetric
+                        label="Monthly Burn"
+                        value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                        reportId={latestReportId || undefined}
+                        field="monthly_burn_rate"
+                        onUpdate={loadCompanyData}
+                        isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      />
+                    </div>
+
+                    {/* Chart below metrics */}
+                    <div className="h-64">
+                      <SimpleCashChart reports={company.financial_reports} />
                     </div>
                   </div>
                   
@@ -947,18 +915,34 @@ export default function CompanyDetailPage() {
                         const pctElapsed = Math.min(elapsed / total * 100, 100)
                         
                         const monthsLeft = Math.max(0, Math.round((end - now) / 1000 / 60 / 60 / 24 / 30))
+                        const cashOutLabel = new Date(cashOutDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                        const startLabel = new Date(reportDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                        const nowLabel = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
                         
                         return (
                             <div className="border-t pt-3 mt-2">
-                              <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center justify-between mb-6">
                                 <h4 className="text-xs font-medium text-gray-900">Runway</h4>
                                 <span className="text-xs text-gray-600">{monthsLeft} months left</span>
                               </div>
-                            <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div className="w-full bg-gray-200 rounded-full h-3 relative">
+                              {/* Progress */}
                               <div 
                                 className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
                                 style={{ width: `${pctElapsed}%` }}
                               />
+                              {/* Now marker */}
+                              <div
+                                className="absolute -top-5 flex flex-col items-center"
+                                style={{ left: `${Math.min(98, Math.max(2, pctElapsed))}%`, transform: 'translateX(-50%)' }}
+                              >
+                                <span className="text-[10px] text-gray-600">Now • {nowLabel}</span>
+                                <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-blue-600 opacity-80" />
+                              </div>
+                            </div>
+                            <div className="flex justify-between mt-1">
+                              <span className="text-[10px] text-gray-600">Board deck: {startLabel}</span>
+                              <span className="text-[10px] text-gray-600">Cash out: {cashOutLabel}</span>
                             </div>
                           </div>
                         )
@@ -977,12 +961,11 @@ export default function CompanyDetailPage() {
                   </div>
                 </div>
 
-                {/* 3. Upcoming Milestones - Takes up 2/8 of width */}
-                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                {/* 3. Upcoming Milestones */}
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-2">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Upcoming Milestones</h3>
-                      <p className="text-gray-600 text-xs">📅 Key targets and deadlines</p>
                     </div>
                   </div>
                   
@@ -999,13 +982,12 @@ export default function CompanyDetailPage() {
                   )}
                 </div>
 
-                {/* 4. Team - Takes up 2/8 of width (smaller) */}
-                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                {/* 4. Team */}
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-1">
                       <div>
                         <h3 className="text-sm font-bold text-gray-900">Team</h3>
-                        <p className="text-gray-600 text-xs">👤 Key executives</p>
                       </div>
                     </div>
                     {!enrichmentData?.enrichment?.extracted && (
@@ -1125,7 +1107,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Financial Overview</h3>
-                      <p className="text-gray-600 text-xs">📈 Comprehensive financial analysis</p>
                     </div>
                   </div>
                   
@@ -1160,7 +1141,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Quick Stats</h3>
-                      <p className="text-gray-600 text-xs">⚡ Key metrics at a glance</p>
                     </div>
                   </div>
                   
@@ -1187,12 +1167,11 @@ export default function CompanyDetailPage() {
                 {/* 1. Key Summary - First and Most Prominent */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                                      <div className="flex items-center space-x-2 mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-900">Key Summary</h3>
-                        <p className="text-gray-600 text-sm">📊 Comprehensive board deck overview</p>
-                      </div>
+                  <div className="flex items-center space-x-1 mb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Key Summary</h3>
                     </div>
+                  </div>
                   
                   {latestReport ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
@@ -1215,9 +1194,8 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                         <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
-                        <p className="text-gray-600 text-xs">📊 Budget analysis and team updates</p>
-                      </div>
                     </div>
+                  </div>
                     
                     {latestReport ? (
                       <div className="grid grid-cols-1 gap-3">
@@ -1263,7 +1241,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Sector Updates</h3>
-                      <p className="text-gray-600 text-xs">🎯 Industry-specific analysis</p>
                     </div>
                   </div>
                   
@@ -1317,7 +1294,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Cap Table</h3>
-                      <p className="text-gray-600 text-xs">💼 Ownership structure and investment details</p>
                     </div>
                   </div>
                   
@@ -1367,7 +1343,6 @@ export default function CompanyDetailPage() {
                                 <div className="flex items-center">
                                   <div className="text-xs font-medium text-amber-800">
                                     Employee Option Pool
-                                    <span className="ml-1 text-amber-600 text-xs">🎯 Options</span>
                                   </div>
                                 </div>
                               </td>
@@ -1408,7 +1383,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Summary</h3>
-                      <p className="text-gray-600 text-xs">⚡ Key ownership metrics</p>
                     </div>
                   </div>
                   
@@ -1456,7 +1430,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Financial Documents</h3>
-                      <p className="text-gray-600 text-xs">📋 Key financial reports and statements</p>
                     </div>
                   </div>
                   
@@ -1507,7 +1480,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Report Stats</h3>
-                      <p className="text-gray-600 text-xs">⚡ Document summary</p>
                     </div>
                   </div>
                   
@@ -1550,7 +1522,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Database Editor</h3>
-                      <p className="text-gray-600 text-xs">⚡ Direct database access and editing tools</p>
                     </div>
                   </div>
                   <UniversalDatabaseEditor 
@@ -1564,7 +1535,6 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Database Stats</h3>
-                      <p className="text-gray-600 text-xs">⚡ System information</p>
                     </div>
                   </div>
                   
