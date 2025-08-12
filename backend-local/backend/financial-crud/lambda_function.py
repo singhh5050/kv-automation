@@ -330,12 +330,7 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
     Expected data format matches the AI extraction output
     """
     
-    # Allow either explicit company_id or a companyName to identify the company
-    has_company_id = bool(data.get('company_id'))
-    if has_company_id:
-        required_fields = ['reportDate', 'reportPeriod', 'filename']
-    else:
-        required_fields = ['companyName', 'reportDate', 'reportPeriod', 'filename']
+    required_fields = ['companyName', 'reportDate', 'reportPeriod', 'filename']
     missing_fields = [field for field in required_fields if not data.get(field)]
     
     if missing_fields:
@@ -352,49 +347,41 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
         
-        # Determine company_id directly if provided; otherwise resolve by name
-        if has_company_id:
-            cursor.execute("SELECT id, name FROM companies WHERE id = %s", [data['company_id']])
-            company_row = cursor.fetchone()
-            if not company_row:
-                cursor.close(); conn.close()
-                return {
-                    'success': False,
-                    'error': f"Company with id {data.get('company_id')} not found"
-                }
-            company_id = company_row[0]
+        # Skip normalization for user-provided names
+        user_provided = data.get('user_provided_name', False)
+        if user_provided:
+            # For user-provided names, use lowercase for case-insensitive matching
+            normalized_name = data['companyName'].lower().strip()
+            manually_edited = True
+            edited_by = "user_provided"
         else:
-            # Skip normalization for user-provided names
-            user_provided = data.get('user_provided_name', False)
-            if user_provided:
-                # For user-provided names, use lowercase for case-insensitive matching
-                normalized_name = data['companyName'].lower().strip()
-                manually_edited = True
-                edited_by = "user_provided"
-            else:
-                # For auto-detected names, use normalization
-                normalized_name = normalize_company_name(data['companyName'])
-                manually_edited = False
-                edited_by = "system_import"
-            
-            # Insert company if it doesn't exist
-            company_insert = """
-                INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (normalized_name) DO NOTHING
-            """
-            cursor.execute(company_insert, [data['companyName'], normalized_name, manually_edited, edited_by])
-            
-            # Get company ID
-            cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
-            company_row = cursor.fetchone()
-            if not company_row:
-                cursor.close(); conn.close()
-                return {
-                    'success': False,
-                    'error': 'Failed to get company ID after insert'
-                }
-            company_id = company_row[0]
+            # For auto-detected names, use normalization
+            normalized_name = normalize_company_name(data['companyName'])
+            manually_edited = False
+            edited_by = "system_import"
+        
+        # Insert company if it doesn't exist
+        company_insert = """
+            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (normalized_name) DO NOTHING
+        """
+        
+        cursor.execute(company_insert, [data['companyName'], normalized_name, manually_edited, edited_by])
+        
+        # Get company ID
+        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
+        company_row = cursor.fetchone()
+        
+        if not company_row:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Failed to get company ID after insert'
+            }
+        
+        company_id = company_row[0]
         
         # Parse report date
         report_date = data['reportDate']
@@ -453,7 +440,7 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
         return {
             'success': True,
             'data': {
-                'company_name': data.get('companyName'),
+                'company_name': data['companyName'],
                 'company_id': company_id,
                 'report_period': data['reportPeriod'],
                 'status': 'saved'

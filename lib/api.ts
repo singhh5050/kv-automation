@@ -53,7 +53,7 @@ async function apiRequest<T = any>(
 /**
  * Extract and analyze PDF content using OpenAI
  */
-export async function extractPdf(pdfData: string, filename: string, companyName?: string, companyId?: number) {
+export async function extractPdf(pdfData: string, filename: string, companyName?: string) {
   const requestBody: any = {
     pdf_data: pdfData,
     filename,
@@ -62,11 +62,6 @@ export async function extractPdf(pdfData: string, filename: string, companyName?
   // Add company name and user_provided_name flag if provided
   if (companyName) {
     requestBody.company_name_override = companyName
-    requestBody.user_provided_name = true
-  }
-  // If we have an explicit companyId, attach it so backend can bypass autodetect
-  if (companyId) {
-    requestBody.company_id = companyId
     requestBody.user_provided_name = true
   }
   
@@ -82,7 +77,7 @@ export async function extractPdf(pdfData: string, filename: string, companyName?
 /**
  * Upload file for processing - converts to base64 and calls PDF analysis
  */
-export async function uploadFile(file: File, companyName?: string, companyId?: number) {
+export async function uploadFile(file: File, companyName?: string) {
   try {
     // Convert file to base64
     const base64Data = await fileToBase64(file)
@@ -91,7 +86,7 @@ export async function uploadFile(file: File, companyName?: string, companyId?: n
     const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/, '')
     
     // Call the PDF analysis Lambda function with optional company name
-    return await extractPdf(cleanBase64, file.name, companyName, companyId)
+    return await extractPdf(cleanBase64, file.name, companyName)
   } catch (error) {
     console.error('File upload error:', error)
     return { error: error instanceof Error ? error.message : 'File upload failed' }
@@ -252,7 +247,7 @@ export async function getCompanyOverview(companyId: string) {
 /**
  * Process cap table XLSX file and extract data
  */
-export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }, companyName?: string, companyId?: number) {
+export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }, companyName?: string) {
   const requestBody: any = {
     operation: 'process_cap_table_xlsx',
     ...xlsxData,
@@ -261,10 +256,6 @@ export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filenam
   // Add company name and user_provided_name flag if provided
   if (companyName) {
     requestBody.company_name_override = companyName
-    requestBody.user_provided_name = true
-  }
-  if (companyId) {
-    requestBody.company_id = companyId
     requestBody.user_provided_name = true
   }
   

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, saveFinancialReport } from '@/lib/api'
 import EditableMetric from '@/components/EditableMetric'
 import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/MarkdownContent'
@@ -18,6 +18,8 @@ import {
   CartesianGrid,
   Legend
 } from 'recharts'
+import FileUpload from '@/components/FileUpload'
+import CapTableUpload from '@/components/CapTableUpload'
 
 // Currency formatting utility
 const formatCurrency = (value: string | number | null | undefined): string => {
@@ -276,6 +278,35 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
   )
 }
 
+// Detect stage from KV fund names (Growth > Main > Early)
+const detectCompanyStageFromInvestors = (investors: any[] | undefined): string => {
+  if (!Array.isArray(investors) || investors.length === 0) return 'N/A'
+  const kvInvestors = investors.filter(inv => typeof inv.investor_name === 'string' && inv.investor_name.startsWith('KV'))
+  if (kvInvestors.length === 0) return 'N/A'
+  let hasGrowth = false
+  let hasMain = false
+  let hasEarly = false
+  for (const inv of kvInvestors) {
+    const name = String(inv.investor_name || '').toLowerCase()
+    if (name.includes('opp') || name.includes('excelsior')) {
+      hasGrowth = true
+      continue
+    }
+    if (name.includes('seed')) {
+      hasEarly = true
+      continue
+    }
+    const roman = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
+    if (roman.test(name)) {
+      hasMain = true
+    }
+  }
+  if (hasGrowth) return 'Growth Stage'
+  if (hasMain) return 'Main Stage'
+  if (hasEarly) return 'Early Stage'
+  return 'N/A'
+}
+
 export default function CompanyDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -293,6 +324,9 @@ export default function CompanyDetailPage() {
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [identifierType, setIdentifierType] = useState('website_url')
   const [activeOverviewSection, setActiveOverviewSection] = useState<'key' | 'sector' | 'details'>('key')
+  const [uploadingPdfs, setUploadingPdfs] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -570,35 +604,6 @@ export default function CompanyDetailPage() {
   const companySector = company.company.sector || latestReport?.sector || 'unknown'
   const sectorLabels = getSectorLabels(companySector)
   
-  // Stage detection based on KV fund names - choose the latest stage
-  const detectCompanyStage = (investors: any[]): string => {
-    const kvInvestors = investors?.filter(inv => inv.investor_name?.startsWith('KV')) || []
-    
-    let hasGrowthStage = false
-    let hasMainStage = false
-    let hasEarlyStage = false
-    
-    for (const investor of kvInvestors) {
-      const name = (investor.investor_name || '').toLowerCase()
-      if (name.includes('opp') || name.includes('excelsior')) {
-        hasGrowthStage = true
-      } else if (!name.includes('opp') && !name.includes('excelsior') && !name.includes('seed')) {
-        const romanNumeralPattern = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
-        if (romanNumeralPattern.test(name)) {
-          hasMainStage = true
-        }
-      } else if (name.includes('seed')) {
-        hasEarlyStage = true
-      }
-    }
-    if (hasGrowthStage) return 'Growth Stage'
-    if (hasMainStage) return 'Main Stage'
-    if (hasEarlyStage) return 'Early Stage'
-    return 'N/A'
-  }
-
-  const companyStage = company.current_cap_table ? detectCompanyStage(company.current_cap_table.investors) : 'N/A'
-
   const kvStake = company.current_cap_table ? 
     company.current_cap_table.investors
       ?.filter(inv => inv.investor_name.startsWith('KV'))
@@ -628,6 +633,102 @@ export default function CompanyDetailPage() {
     return bInvested - aInvested
   }) : [];
 
+  // Upload handlers scoped to this company
+  const handleUploadPdfs = async (files: File[]) => {
+    setUploadingPdfs(true)
+    setUploadError(null)
+    setUploadSuccess(null)
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const file of files) {
+      try {
+        console.log(`Uploading PDF: ${file.name} for company: ${displayName}`)
+        const result = await uploadFile(file, displayName)
+        
+        if (result.error) {
+          console.error('Upload error:', result.error)
+          setUploadError(`Error uploading ${file.name}: ${result.error}`)
+          errorCount++
+          continue
+        }
+        
+        if (result.data && !result.error) {
+          const data = result.data
+          console.log('Upload successful:', data)
+          
+          try {
+            const saveResult = await saveFinancialReport({
+              companyName: displayName, // Force use current company name
+              filename: file.name,
+              reportDate: data.reportDate || new Date().toISOString().split('T')[0],
+              reportPeriod: data.reportPeriod || 'Unknown Period',
+              cashOnHand: data.cashOnHand || 'N/A',
+              monthlyBurnRate: data.monthlyBurnRate || 'N/A',
+              cashOutDate: data.cashOutDate || 'N/A',
+              runway: data.runway || 'N/A',
+              budgetVsActual: data.budgetVsActual || 'N/A',
+              financialSummary: data.financialSummary || 'Financial summary not available',
+              sectorHighlightA: data.sectorHighlightA || 'Sector analysis not available',
+              sectorHighlightB: data.sectorHighlightB || 'Sector analysis not available',
+              keyRisks: data.keyRisks || 'N/A',
+              personnelUpdates: data.personnelUpdates || 'N/A',
+              nextMilestones: data.nextMilestones || 'N/A',
+              sector: data.sector || companySector,
+              user_provided_name: true
+            })
+            
+            if (saveResult.error) {
+              console.error('Failed to save to database:', saveResult.error)
+              setUploadError(`Error saving ${file.name}: ${saveResult.error}`)
+              errorCount++
+            } else {
+              console.log('PDF processed and saved successfully')
+              successCount++
+            }
+          } catch (error) {
+            console.error('Database save error:', error)
+            setUploadError(`Error saving ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+            errorCount++
+          }
+        } else {
+          setUploadError(`Error processing ${file.name}: No data returned`)
+          errorCount++
+        }
+      } catch (error) {
+        console.error('Error uploading file:', error)
+        setUploadError(`Error uploading ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        errorCount++
+      }
+    }
+    
+    setUploadingPdfs(false)
+    
+    // Show success/error messages and refresh data
+    if (successCount > 0) {
+      const successMsg = `✅ Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}!`
+      setUploadSuccess(successMsg)
+      
+      // Clear success message after 4 seconds
+      setTimeout(() => setUploadSuccess(null), 4000)
+      
+      // Clear any error if we had complete success
+      if (errorCount === 0) {
+        setUploadError(null)
+      }
+      
+      // Force refresh the page data
+      await loadCompanyData()
+      
+      console.log(`Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}`)
+    }
+    
+    // Clear error after 6 seconds if there was one
+    if (uploadError) {
+      setTimeout(() => setUploadError(null), 6000)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Compact Header */}
@@ -643,10 +744,25 @@ export default function CompanyDetailPage() {
               </button>
             </div>
             <div className="flex items-center space-x-3">
-              {/* Simplified Enrichment Widget */}
-              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-300 rounded-lg p-3">
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">🚀 Enrich Company Data</h4>
-                <div className="flex flex-col sm:flex-row gap-2">
+              {/* Upload actions – mirror home page UX */}
+              <div className="flex items-center gap-2">
+                <FileUpload onUpload={(files) => handleUploadPdfs(files)} isLoading={uploadingPdfs} forceCompanyName={displayName} />
+                <CapTableUpload onUpload={async (success) => { if (success) await loadCompanyData() }} isLoading={false} forceCompanyName={displayName} />
+              </div>
+              {/* Upload Messages */}
+              {uploadSuccess && (
+                <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-1 rounded">
+                  {uploadSuccess}
+                </div>
+              )}
+              {uploadError && (
+                <div className="bg-red-50 border border-red-200 text-red-800 text-sm px-3 py-1 rounded">
+                  {uploadError}
+                </div>
+              )}
+              {/* Compact Enrichment Widget */}
+              <div className="hidden sm:block bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-300 rounded-lg p-2">
+                <div className="flex items-center gap-2">
                   <select
                     value={identifierType}
                     onChange={(e) => setIdentifierType(e.target.value)}
@@ -662,25 +778,19 @@ export default function CompanyDetailPage() {
                     type="text"
                     value={websiteUrl}
                     onChange={(e) => setWebsiteUrl(e.target.value)}
-                    placeholder={
-                      identifierType === 'website_url' ? 'https://company.com' :
-                      identifierType === 'website_domain' ? 'company.com' :
-                      identifierType === 'linkedin_url' ? 'linkedin.com/company/name' :
-                      identifierType === 'crunchbase_url' ? 'crunchbase.com/organization/name' :
-                      'twitter.com/company'
-                    }
-                    className="flex-1 text-sm border border-purple-200 bg-white rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="https://company.com"
+                    className="w-48 text-sm border border-purple-200 bg-white rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
                     onKeyPress={(e) => e.key === 'Enter' && handleEnrichCompany()}
                   />
                   <button
                     onClick={handleEnrichCompany}
                     disabled={loadingEnrichment || !websiteUrl.trim()}
-                    className="px-4 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center space-x-1"
+                    className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center gap-1"
                   >
                     {loadingEnrichment ? (
                       <>
                         <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                        <span>Enriching...</span>
+                        <span>Enrich</span>
                       </>
                     ) : (
                       <>
@@ -736,7 +846,9 @@ export default function CompanyDetailPage() {
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
-              <p className="text-sm font-semibold text-gray-900">{companyStage}</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {detectCompanyStageFromInvestors(company.current_cap_table?.investors)}
+              </p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
@@ -1506,7 +1618,7 @@ export default function CompanyDetailPage() {
                 {/* 1. Reports Table - Double Width */}
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
+                  <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">Financial Documents</h3>
                     </div>

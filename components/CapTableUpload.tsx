@@ -13,9 +13,10 @@ interface Company {
 interface CapTableUploadProps {
   onUpload: (success: boolean) => void
   isLoading: boolean
+  forceCompanyName?: string
 }
 
-export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadProps) {
+export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }: CapTableUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
@@ -51,9 +52,14 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
     
+    // If a company is forced, bypass the prompt and process immediately
+    if (forceCompanyName && forceCompanyName.trim()) {
+      processFiles(acceptedFiles, forceCompanyName)
+      return
+    }
     setPendingFiles(acceptedFiles)
     setShowNamePrompt(true)
-  }, [])
+  }, [forceCompanyName])
 
   const processFiles = async (files: File[], userCompanyName?: string) => {
     setIsProcessing(true)
@@ -110,6 +116,8 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
     
     setIsProcessing(false)
     onUpload(allSuccess)
+    setShowNamePrompt(false)
+    setPendingFiles([])
   }
 
   const handleSubmit = () => {
@@ -186,7 +194,7 @@ export default function CapTableUpload({ onUpload, isLoading }: CapTableUploadPr
       </div>
 
       {/* Company Name Prompt Modal */}
-      {showNamePrompt && (
+      {(!forceCompanyName || !forceCompanyName.trim()) && showNamePrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md sm:max-w-lg">
             <h3 className="text-lg font-semibold mb-4">Select Company</h3>

@@ -13,9 +13,10 @@ interface Company {
 interface FileUploadProps {
   onUpload: (files: File[], companyName?: string) => void
   isLoading: boolean
+  forceCompanyName?: string
 }
 
-export default function FileUpload({ onUpload, isLoading }: FileUploadProps) {
+export default function FileUpload({ onUpload, isLoading, forceCompanyName }: FileUploadProps) {
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [selectedOption, setSelectedOption] = useState('')
@@ -50,10 +51,15 @@ export default function FileUpload({ onUpload, isLoading }: FileUploadProps) {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
     if (pdfFiles.length > 0) {
+      // If a forceCompanyName is provided, bypass the prompt entirely
+      if (forceCompanyName && forceCompanyName.trim()) {
+        onUpload(pdfFiles, forceCompanyName)
+        return
+      }
       setPendingFiles(pdfFiles)
       setShowNamePrompt(true)
     }
-  }, [])
+  }, [onUpload, forceCompanyName])
 
   const handleSubmit = () => {
     let companyName: string | undefined
@@ -118,7 +124,7 @@ export default function FileUpload({ onUpload, isLoading }: FileUploadProps) {
       </div>
 
       {/* Company Name Prompt Modal */}
-      {showNamePrompt && (
+      {(!forceCompanyName || !forceCompanyName.trim()) && showNamePrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md sm:max-w-lg">
             <h3 className="text-lg font-semibold mb-4">Select Company</h3>

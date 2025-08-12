@@ -133,12 +133,11 @@ def lambda_handler(event, context):
     filename = body.get("filename", "cap_table.xlsx")
     company_name_override = body.get("company_name_override")
     user_provided_name = body.get("user_provided_name", False)
-    company_id = body.get("company_id")  # NEW: Explicit company to attach cap table to
     
     if not xlsx_b64:
         return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Missing xlsx_data"})}
 
-    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name, company_id)
+    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name)
     status = 200 if result["success"] else 500
     return {"statusCode": status, "headers": headers, "body": json.dumps(result)}
 
@@ -149,7 +148,7 @@ def lambda_handler(event, context):
 def process_cap_table_xlsx(xlsx_b64: str, filename: str) -> Dict[str, Any]:
     return process_cap_table_xlsx_with_override(xlsx_b64, filename, None)
 
-def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None, user_provided_name: bool = False, company_id: int | None = None) -> Dict[str, Any]:
+def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_name_override: str = None, user_provided_name: bool = False) -> Dict[str, Any]:
     defensive_fixes = []  # Track what defensive fixes were applied
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
@@ -333,7 +332,6 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         cap_table = {
             "company_name": company_name,
             "user_provided_name": user_provided_name,  # NEW: Flag for user-provided names
-            "company_id": company_id,  # NEW: explicit target id when provided
             "round_data": {
                 "round_name": round_name,
                 "valuation": valuation,
@@ -414,61 +412,50 @@ def save_cap_table_round_internal(data: Dict[str, Any]) -> Dict[str, Any]:
         conn = pg8000.connect(**db_cfg, ssl_context=ctx, timeout=30)
         cur = conn.cursor()
 
-        # If explicit company_id is provided, trust it and skip name resolution
-        explicit_company_id = data.get("company_id")
-        if explicit_company_id:
-            cur.execute("SELECT id FROM companies WHERE id = %s", [explicit_company_id])
-            row = cur.fetchone()
-            if not row:
-                return {"success": False, "error": f"Company with id {explicit_company_id} not found"}
-            company_id = explicit_company_id
+        # Handle user-provided vs auto-detected names differently
+        user_provided = data.get("user_provided_name", False)
+        if user_provided:
+            # For user-provided names, use exact name matching - no normalization
+            exact_name = data["company_name"].strip()
+            normalized_exact = exact_name.lower().strip()
             manually_edited = True
             edited_by = "user_provided"
-        else:
-            # Handle user-provided vs auto-detected names differently
-            user_provided = data.get("user_provided_name", False)
-            if user_provided:
-                # For user-provided names, use exact name matching - no normalization
-                exact_name = data["company_name"].strip()
-                normalized_exact = exact_name.lower().strip()
-                manually_edited = True
-                edited_by = "user_provided"
-                
-                # Prefer exact match by name
-                cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
-                existing = cur.fetchone()
-                
-                if existing:
-                    company_id = existing[0]
-                else:
-                    # Try match by normalized_name to avoid duplicate cards differing only by case/spacing
-                    cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
-                    existing_norm = cur.fetchone()
-                    if existing_norm:
-                        company_id = existing_norm[0]
-                    else:
-                        # Create new company; guard against race or pre-existing record with same normalized_name
-                        cur.execute(
-                            """
-                            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                            VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())
-                            ON CONFLICT (normalized_name) DO NOTHING
-                            """,
-                            [exact_name, normalized_exact, manually_edited, edited_by]
-                        )
-                        # Select by normalized_name to get id regardless of conflict/no-conflict
-                        cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
-                        company_id = cur.fetchone()[0]
+            
+            # Prefer exact match by name
+            cur.execute("SELECT id FROM companies WHERE name = %s", [exact_name])
+            existing = cur.fetchone()
+            
+            if existing:
+                company_id = existing[0]
             else:
-                # For auto-detected names, use normalization for fuzzy matching
-                norm_name = normalize_company_name(data["company_name"])
-                manually_edited = False
-                edited_by = "system_import"
-                
-                cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-                                VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
-                cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
-                company_id = cur.fetchone()[0]
+                # Try match by normalized_name to avoid duplicate cards differing only by case/spacing
+                cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                existing_norm = cur.fetchone()
+                if existing_norm:
+                    company_id = existing_norm[0]
+                else:
+                    # Create new company; guard against race or pre-existing record with same normalized_name
+                    cur.execute(
+                        """
+                        INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                        VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW())
+                        ON CONFLICT (normalized_name) DO NOTHING
+                        """,
+                        [exact_name, normalized_exact, manually_edited, edited_by]
+                    )
+                    # Select by normalized_name to get id regardless of conflict/no-conflict
+                    cur.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_exact])
+                    company_id = cur.fetchone()[0]
+        else:
+            # For auto-detected names, use normalization for fuzzy matching
+            norm_name = normalize_company_name(data["company_name"])
+            manually_edited = False
+            edited_by = "system_import"
+            
+            cur.execute("""INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
+                            VALUES (%s,%s,%s,%s,NOW(),NOW(),NOW()) ON CONFLICT (normalized_name) DO NOTHING""", [data["company_name"], norm_name, manually_edited, edited_by])
+            cur.execute("SELECT id FROM companies WHERE normalized_name=%s", [norm_name])
+            company_id = cur.fetchone()[0]
 
         cur.execute(
             """INSERT INTO cap_table_rounds (company_id, round_name, valuation, amount_raised, round_date,
