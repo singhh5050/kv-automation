@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, saveFinancialReport } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, saveFinancialReport, updateCapTableRound } from '@/lib/api'
 import EditableMetric from '@/components/EditableMetric'
 import UniversalDatabaseEditor from '@/components/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/MarkdownContent'
@@ -1277,9 +1277,9 @@ export default function CompanyDetailPage() {
             )}
 
             {activeTab === 'financials' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ gridTemplateColumns: '2fr 1.4fr 1fr' }}>
-                {/* 1. Financial Overview - Double Width */}
-                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="grid grid-cols-1 gap-4">
+                {/* Financial Overview - Full Width */}
+                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
@@ -1313,43 +1313,6 @@ export default function CompanyDetailPage() {
                   </div>
                 </div>
 
-                {/* 2. Quick Stats */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center space-x-1 mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">Quick Stats</h3>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="bg-blue-50 p-2 rounded border border-blue-100">
-                      <EditableMetric
-                        label="Latest Valuation"
-                        value={company.current_cap_table?.valuation ?? null}
-                        field="valuation"
-                        saveTarget="round"
-                        roundId={company.current_cap_table?.round_id}
-                        onUpdate={loadCompanyData}
-                        inputType="number"
-                      />
-                    </div>
-                    <div className="bg-green-50 p-2 rounded border border-green-100">
-                      <EditableMetric
-                        label="Last Round Raised"
-                        value={company.current_cap_table?.amount_raised ?? null}
-                        field="amount_raised"
-                        saveTarget="round"
-                        roundId={company.current_cap_table?.round_id}
-                        onUpdate={loadCompanyData}
-                        inputType="number"
-                      />
-                    </div>
-                    <div className="bg-purple-50 p-2 rounded border border-purple-100">
-                      <p className="text-xs text-purple-600 font-medium">KV Ownership</p>
-                      <p className="text-sm font-bold text-purple-900">{kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1606,42 +1569,141 @@ export default function CompanyDetailPage() {
                   <div className="space-y-2">
                     <div className="bg-blue-50 p-2 rounded border border-blue-100">
                       <p className="text-xs text-blue-600 font-medium">Latest Valuation</p>
-                      <p className="text-sm font-bold text-blue-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
+                      <EditableMetric
+                        label=""
+                        value={company.current_cap_table?.valuation ?? null}
+                        field="valuation"
+                        editable={true}
+                        inputType="number"
+                        labelClassName="hidden"
+                        valueClassName="text-sm font-bold text-blue-900"
+                        displayFormat="currency"
+                        saveOverride={async (raw) => {
+                          const err = /^\d+(\.\d+)?$/.test(raw.trim()) ? null : 'Enter a raw USD number'
+                          if (err) return err
+                          if (!company.current_cap_table?.round_id) return 'No current round'
+                          const res = await updateCapTableRound(company.current_cap_table.round_id, { valuation: parseFloat(raw) })
+                          return res.error || null
+                        }}
+                        onUpdate={loadCompanyData}
+                      />
                     </div>
                     <div className="bg-green-50 p-2 rounded border border-green-100">
                       <p className="text-xs text-green-600 font-medium">Last Round Raised</p>
-                      <p className="text-sm font-bold text-green-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
+                      <EditableMetric
+                        label=""
+                        value={company.current_cap_table?.amount_raised ?? null}
+                        field="amount_raised"
+                        editable={true}
+                        inputType="number"
+                        labelClassName="hidden"
+                        valueClassName="text-sm font-bold text-green-900"
+                        displayFormat="currency"
+                        saveOverride={async (raw) => {
+                          const err = /^\d+(\.\d+)?$/.test(raw.trim()) ? null : 'Enter a raw USD number'
+                          if (err) return err
+                          if (!company.current_cap_table?.round_id) return 'No current round'
+                          const res = await updateCapTableRound(company.current_cap_table.round_id, { amount_raised: parseFloat(raw) })
+                          return res.error || null
+                        }}
+                        onUpdate={loadCompanyData}
+                      />
                     </div>
                     <div className="bg-purple-50 p-2 rounded border border-purple-100">
                       <p className="text-xs text-purple-600 font-medium">KV Ownership</p>
-                      <p className="text-sm font-bold text-purple-900">{kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}</p>
+                      <EditableMetric
+                        label=""
+                        value={kvStake > 0 ? (kvStake) : 0}
+                        field="kv_stake"
+                        editable={true}
+                        inputType="percent"
+                        labelClassName="hidden"
+                        valueClassName="text-sm font-bold text-purple-900"
+                        displayFormat="percent"
+                        saveOverride={async (raw) => {
+                          // Save as a decimal into cap_table_rounds.pool_utilization placeholder to keep storage (no dependency updates)
+                          const cleaned = raw.trim()
+                          const match = cleaned.match(/^\d+(?:\.\d+)?%?$/)
+                          if (!match) return 'Enter a percentage (e.g., 22.9 or 22.9%)'
+                          const v = cleaned.endsWith('%') ? parseFloat(cleaned.slice(0, -1)) / 100 : parseFloat(cleaned)
+                          if (!company.current_cap_table?.round_id) return 'No current round'
+                          const res = await updateCapTableRound(company.current_cap_table.round_id, { pool_utilization: v })
+                          return res.error || null
+                        }}
+                        onUpdate={loadCompanyData}
+                      />
                     </div>
                     <div className="bg-orange-50 p-2 rounded border border-orange-100">
                       <p className="text-xs text-orange-600 font-medium">Total Investors</p>
-                      <p className="text-sm font-bold text-orange-900">{sortedInvestors.length}</p>
+                      <EditableMetric
+                        label=""
+                        value={sortedInvestors.length}
+                        field="investors_count_override"
+                        editable={true}
+                        inputType="number"
+                        labelClassName="hidden"
+                        valueClassName="text-sm font-bold text-orange-900"
+                        saveOverride={async (raw) => {
+                          const err = /^\d+$/.test(raw.trim()) ? null : 'Enter an integer'
+                          if (err) return err
+                          if (!company.current_cap_table?.round_id) return 'No current round'
+                          // Store in pool_available as a temporary numeric override slot (as requested, ignore dependencies)
+                          const res = await updateCapTableRound(company.current_cap_table.round_id, { pool_available: parseFloat(raw) })
+                          return res.error || null
+                        }}
+                        onUpdate={loadCompanyData}
+                      />
                     </div>
                     {company.current_cap_table?.total_pool_size != null && (
                       <div className="bg-amber-50 p-2 rounded border border-amber-100">
+                        <p className="text-xs text-amber-600 font-medium">Option Pool</p>
                         <EditableMetric
-                          label="Option Pool"
+                          label=""
                           value={company.current_cap_table.total_pool_size}
                           field="total_pool_size"
-                          saveTarget="round"
-                          roundId={company.current_cap_table?.round_id}
-                          onUpdate={loadCompanyData}
+                          editable={true}
                           inputType="percent"
+                          labelClassName="hidden"
+                          valueClassName="text-sm font-bold text-amber-900"
+                          displayFormat="percent"
+                          saveOverride={async (raw) => {
+                            const cleaned = raw.trim()
+                            const match = cleaned.match(/^\d+(?:\.\d+)?%?$/)
+                            if (!match) return 'Enter a percentage (e.g., 8.3 or 8.3%)'
+                            const v = cleaned.endsWith('%') ? parseFloat(cleaned.slice(0, -1)) / 100 : parseFloat(cleaned)
+                            if (!company.current_cap_table?.round_id) return 'No current round'
+                            const res = await updateCapTableRound(company.current_cap_table.round_id, { total_pool_size: v })
+                            return res.error || null
+                          }}
+                          onUpdate={loadCompanyData}
                         />
                         {company.current_cap_table.options_outstanding != null && (
-                          <div className="mt-1">
-                            <EditableMetric
-                              label="Used"
-                              value={company.current_cap_table.options_outstanding}
-                              field="options_outstanding"
-                              saveTarget="round"
-                              roundId={company.current_cap_table?.round_id}
-                              onUpdate={loadCompanyData}
-                              inputType="percent"
-                            />
+                          <div className="text-xs text-amber-700 mt-1">
+                            <div>
+                              Used: <EditableMetric
+                                label=""
+                                value={company.current_cap_table.options_outstanding}
+                                field="options_outstanding"
+                                editable={true}
+                                inputType="percent"
+                                labelClassName="hidden"
+                                valueClassName="inline text-xs text-amber-800 font-medium"
+                                displayFormat="percent"
+                                saveOverride={async (raw) => {
+                                  const cleaned = raw.trim()
+                                  const match = cleaned.match(/^\d+(?:\.\d+)?%?$/)
+                                  if (!match) return 'Enter a percentage (e.g., 4.4 or 4.4%)'
+                                  const v = cleaned.endsWith('%') ? parseFloat(cleaned.slice(0, -1)) / 100 : parseFloat(cleaned)
+                                  if (!company.current_cap_table?.round_id) return 'No current round'
+                                  const res = await updateCapTableRound(company.current_cap_table.round_id, { options_outstanding: v })
+                                  return res.error || null
+                                }}
+                                onUpdate={loadCompanyData}
+                              />
+                            </div>
+                            <div>
+                              Available: {((company.current_cap_table.total_pool_size - company.current_cap_table.options_outstanding) * 100).toFixed(1)}%
+                            </div>
                           </div>
                         )}
                       </div>

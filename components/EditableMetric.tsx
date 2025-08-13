@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { updateFinancialMetrics, updateCapTableRound } from '@/lib/api'
+import { updateFinancialMetrics } from '@/lib/api'
 
 interface EditableMetricProps {
   label: string
@@ -15,8 +15,10 @@ interface EditableMetricProps {
   isManuallyEdited?: boolean
   editable?: boolean
   inputType?: 'number' | 'date' | 'monthYear' | 'percent'
-  saveTarget?: 'report' | 'round'
-  roundId?: number
+  labelClassName?: string
+  valueClassName?: string
+  saveOverride?: (raw: string) => Promise<string | null>
+  displayFormat?: 'currency' | 'percent' | 'raw'
 }
 
 // Default formatters
@@ -63,25 +65,34 @@ export default function EditableMetric({
   isManuallyEdited = false,
   editable = true,
   inputType,
-  saveTarget = 'report',
-  roundId
+  labelClassName,
+  valueClassName,
+  saveOverride,
+  displayFormat
 }: EditableMetricProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [input, setInput] = useState<string>(value == null ? '' : String(value))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isCurrencyField = field === 'cash_on_hand' || field === 'monthly_burn_rate' || ['valuation', 'amount_raised'].includes(field)
+  const isCurrencyField = field === 'cash_on_hand' || field === 'monthly_burn_rate'
   const isStrictDateField = field === 'report_date' || inputType === 'date'
   const isMonthYearField = field === 'cash_out_date' || inputType === 'monthYear'
-  const isPercentField = inputType === 'percent' || ['total_pool_size', 'options_outstanding', 'pool_available', 'pool_utilization'].includes(field)
 
-  const numericValue = isCurrencyField ? parseValue(String(value ?? '')) : 0
+  const numericValue = (() => {
+    if (value == null || value === '') return 0
+    if (typeof value === 'number') return value
+    const parsed = parseFloat(String(value))
+    return isNaN(parsed) ? 0 : parsed
+  })()
 
   const displayValue = (() => {
     if (value == null || value === '' || (isCurrencyField && Number(value) === 0)) return 'N/A'
     if (!isEditing) {
-      if (isCurrencyField) return formatValue(Number(value))
+      // Currency display (e.g., $78.2M)
+      if (displayFormat === 'currency' || isCurrencyField) {
+        return defaultFormatCurrency(Number(value))
+      }
       if (isStrictDateField) {
         try {
           const d = new Date(String(value))
@@ -90,8 +101,14 @@ export default function EditableMetric({
           }
         } catch {}
       }
-      if (isPercentField && typeof value === 'number') {
-        return `${(value * 100).toFixed(1)}%`
+      // Percent display (assume decimals 0-1 or whole percent numbers)
+      if (displayFormat === 'percent' || inputType === 'percent') {
+        const v = typeof value === 'string' && value.trim().endsWith('%')
+          ? parseFloat(value.trim())
+          : Number(value) <= 1.000001
+            ? Number(value) * 100
+            : Number(value)
+        if (!isNaN(v)) return `${v.toFixed(1)}%`
       }
       if (isMonthYearField) return String(value)
     }
@@ -100,7 +117,7 @@ export default function EditableMetric({
 
   const validate = (raw: string): string | null => {
     // Enforce formats per PDF system prompt
-    if (isCurrencyField || inputType === 'number') {
+    if (field === 'cash_on_hand' || field === 'monthly_burn_rate' || inputType === 'number') {
       // raw USD number only, no symbols, commas, or units
       return /^\d+(\.\d+)?$/.test(raw.trim()) ? null : 'Enter a raw USD number (e.g., 3100000)'
     }
@@ -114,11 +131,9 @@ export default function EditableMetric({
       const re = new RegExp(`^${monthNames}\\s+\\d{4}$`)
       return re.test(raw.trim()) ? null : 'Use Month YYYY (e.g., April 2025)'
     }
-    if (isPercentField) {
-      // accept 8.3, 8.3%, or 0.083
-      const t = raw.trim()
-      if (/^\d{1,3}(\.\d+)?%$/.test(t) || /^\d{1,3}(\.\d+)?$/.test(t) || /^0?\.\d+$/.test(t)) return null
-      return 'Enter percent like 8.3, 8.3%, or 0.083'
+    if (inputType === 'percent') {
+      // Accept 8.3 or 8.3% or 0.083
+      return /^\d+(\.\d+)?%?$/.test(raw.trim()) ? null : 'Enter a percentage like 8.3 or 8.3% or decimal 0.083'
     }
     return null
   }
@@ -130,29 +145,35 @@ export default function EditableMetric({
     if (err) return
     setSaving(true)
     try {
-      let payloadValue: any = input
-      if (isCurrencyField || inputType === 'number') {
-        payloadValue = parseFloat(input)
-      }
-      if (isPercentField) {
-        let s = input.trim().replace('%', '')
-        const num = parseFloat(s)
-        // If >= 1 assume percent (e.g., 8.3) else assume decimal (0.083)
-        payloadValue = num >= 1 ? (num / 100) : num
-      }
-      let result
-      if (saveTarget === 'round') {
-        if (!roundId) { setError('Round id missing'); setSaving(false); return }
-        result = await updateCapTableRound(roundId, { [field]: payloadValue })
+      if (saveOverride) {
+        const maybeErr = await saveOverride(input)
+        if (maybeErr) {
+          setError(maybeErr)
+        } else {
+          setIsEditing(false)
+          onUpdate?.()
+        }
       } else {
-        if (!reportId) { setError('Report id missing'); setSaving(false); return }
-        result = await updateFinancialMetrics(reportId, { [field]: payloadValue })
-      }
-      if (result.error) {
-        setError(result.error)
-      } else {
-        setIsEditing(false)
-        onUpdate?.()
+        if (!reportId) {
+          setError('Missing reportId for default save')
+          return
+        }
+        let payloadValue: any = input
+        if (field === 'cash_on_hand' || field === 'monthly_burn_rate' || inputType === 'number') {
+          payloadValue = parseFloat(input)
+        }
+        if (inputType === 'percent') {
+          const raw = input.trim()
+          const numeric = raw.endsWith('%') ? parseFloat(raw.slice(0, -1)) / 100 : parseFloat(raw)
+          payloadValue = numeric
+        }
+        const result = await updateFinancialMetrics(reportId, { [field]: payloadValue })
+        if (result.error) {
+          setError(result.error)
+        } else {
+          setIsEditing(false)
+          onUpdate?.()
+        }
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to save')
@@ -178,7 +199,7 @@ export default function EditableMetric({
   return (
     <div className={className}>
       <div className="flex items-center gap-2 mb-1">
-        <p className="text-sm font-medium text-gray-500">{label}</p>
+        <p className={labelClassName || "text-sm font-medium text-gray-500"}>{label}</p>
         {isManuallyEdited && (
           <span className="text-amber-500 text-xs" title="Manually edited">✏️</span>
         )}
@@ -205,7 +226,7 @@ export default function EditableMetric({
       ) : (
         <button
           onClick={() => { setInput(value == null ? '' : String(value)); setIsEditing(true) }}
-          className="text-left text-xl font-bold text-gray-900 hover:underline"
+          className={`text-left ${valueClassName || 'text-xl font-bold text-gray-900'} hover:underline`}
           title="Click to edit"
         >{displayValue}</button>
       )}
