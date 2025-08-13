@@ -1004,34 +1004,40 @@ export default function CompanyDetailPage() {
                     {/* Mobile: All metrics stacked vertically */}
                     <EditableMetric
                       label="Cash on Hand"
-                      value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                      value={(latestReport as any)?.cash_on_hand ?? null}
                       reportId={latestReportId || undefined}
                       field="cash_on_hand"
                       onUpdate={loadCompanyData}
                       isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      inputType="number"
                     />
                     <EditableMetric
                       label="Monthly Burn"
-                      value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                      value={(latestReport as any)?.monthly_burn_rate ?? null}
                       reportId={latestReportId || undefined}
                       field="monthly_burn_rate"
                       onUpdate={loadCompanyData}
                       isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      inputType="number"
                     />
-                    {/* Updated (board deck date) */}
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Updated</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {(latestReport as any)?.report_date ? new Date((latestReport as any).report_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
-                      </p>
-                    </div>
-                    {/* Cash out date */}
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">Cash out</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {(latestReport as any)?.cash_out_date ? new Date((latestReport as any).cash_out_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
-                      </p>
-                    </div>
+                    <EditableMetric
+                      label="Updated"
+                      value={(latestReport as any)?.report_date ?? null}
+                      reportId={latestReportId || undefined}
+                      field="report_date"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      inputType="date"
+                    />
+                    <EditableMetric
+                      label="Cash out"
+                      value={(latestReport as any)?.cash_out_date ?? null}
+                      reportId={latestReportId || undefined}
+                      field="cash_out_date"
+                      onUpdate={loadCompanyData}
+                      isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                      inputType="monthYear"
+                    />
                     {/* Mobile: Chart below metrics */}
                     <div className="h-48 sm:h-64">
                       <SimpleCashChart reports={company.financial_reports} />
@@ -1044,34 +1050,40 @@ export default function CompanyDetailPage() {
                     <div className="flex items-start gap-8 mb-3">
                       <EditableMetric
                         label="Cash on Hand"
-                        value={(latestReport as any)?.cash_on_hand || 'N/A'}
+                        value={(latestReport as any)?.cash_on_hand ?? null}
                         reportId={latestReportId || undefined}
                         field="cash_on_hand"
                         onUpdate={loadCompanyData}
                         isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                        inputType="number"
                       />
                       <EditableMetric
                         label="Monthly Burn"
-                        value={(latestReport as any)?.monthly_burn_rate || 'N/A'}
+                        value={(latestReport as any)?.monthly_burn_rate ?? null}
                         reportId={latestReportId || undefined}
                         field="monthly_burn_rate"
                         onUpdate={loadCompanyData}
                         isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                        inputType="number"
                       />
-                      {/* Updated (board deck date) */}
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 mb-1">Updated</p>
-                        <p className="text-xl font-bold text-gray-900">
-                          {(latestReport as any)?.report_date ? new Date((latestReport as any).report_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
-                        </p>
-                      </div>
-                      {/* Cash out date */}
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 mb-1">Cash out</p>
-                        <p className="text-xl font-bold text-gray-900">
-                          {(latestReport as any)?.cash_out_date ? new Date((latestReport as any).cash_out_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'N/A'}
-                        </p>
-                      </div>
+                      <EditableMetric
+                        label="Updated"
+                        value={(latestReport as any)?.report_date ?? null}
+                        reportId={latestReportId || undefined}
+                        field="report_date"
+                        onUpdate={loadCompanyData}
+                        isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                        inputType="date"
+                      />
+                      <EditableMetric
+                        label="Cash out"
+                        value={(latestReport as any)?.cash_out_date ?? null}
+                        reportId={latestReportId || undefined}
+                        field="cash_out_date"
+                        onUpdate={loadCompanyData}
+                        isManuallyEdited={(latestReport as any)?.manually_edited || false}
+                        inputType="monthYear"
+                      />
                     </div>
 
                     {/* Chart below metrics */}

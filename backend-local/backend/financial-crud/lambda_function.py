@@ -226,18 +226,68 @@ def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         report_id, company_id = report_row
         
-        # Build dynamic update query
+        # Build dynamic update query with strict validation (match PDF prompt formats)
         set_clauses = []
         params = []
+        validation_errors: List[str] = []
         
         for field, value in updates.items():
             if field in ['cash_on_hand', 'monthly_burn_rate']:
-                set_clauses.append(f"{field} = %s")
-                params.append(float(value) if value is not None else None)
+                # Raw USD numbers only (no symbols/commas/units)
+                if value is None:
+                    set_clauses.append(f"{field} = %s")
+                    params.append(None)
+                else:
+                    if isinstance(value, (int, float)):
+                        set_clauses.append(f"{field} = %s")
+                        params.append(float(value))
+                    else:
+                        val_str = str(value).strip()
+                        if re.fullmatch(r"\d+(\.\d+)?", val_str):
+                            set_clauses.append(f"{field} = %s")
+                            params.append(float(val_str))
+                        else:
+                            validation_errors.append(f"{field} must be a raw USD number (e.g., 3100000)")
             elif field == 'runway':
-                set_clauses.append("runway = %s")
-                params.append(int(value) if value is not None else None)
-            elif field in ['cash_out_date', 'budget_vs_actual', 'financial_summary', 'sector_highlight_a', 'sector_highlight_b', 'key_risks', 'personnel_updates', 'next_milestones', 'sector']:
+                if value is None:
+                    set_clauses.append("runway = %s")
+                    params.append(None)
+                else:
+                    try:
+                        set_clauses.append("runway = %s")
+                        params.append(int(value))
+                    except Exception:
+                        validation_errors.append("runway must be an integer number of months")
+            elif field == 'report_date':
+                # Strict YYYY-MM-DD
+                if value is None:
+                    set_clauses.append("report_date = %s")
+                    params.append(None)
+                else:
+                    val_str = str(value).strip()
+                    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", val_str):
+                        try:
+                            date_obj = datetime.strptime(val_str, '%Y-%m-%d').date()
+                            set_clauses.append("report_date = %s")
+                            params.append(date_obj)
+                        except ValueError:
+                            validation_errors.append("report_date must be a valid date in YYYY-MM-DD format")
+                    else:
+                        validation_errors.append("report_date must use YYYY-MM-DD format (e.g., 2025-05-01)")
+            elif field == 'cash_out_date':
+                # Month YYYY (e.g., April 2025)
+                if value is None:
+                    set_clauses.append("cash_out_date = %s")
+                    params.append(None)
+                else:
+                    val_str = str(value).strip()
+                    month_names = "January|February|March|April|May|June|July|August|September|October|November|December"
+                    if re.fullmatch(rf"(?:{month_names})\s+\d{{4}}", val_str):
+                        set_clauses.append("cash_out_date = %s")
+                        params.append(val_str)
+                    else:
+                        validation_errors.append("cash_out_date must use 'Month YYYY' format (e.g., April 2025)")
+            elif field in ['budget_vs_actual', 'financial_summary', 'sector_highlight_a', 'sector_highlight_b', 'key_risks', 'personnel_updates', 'next_milestones', 'sector']:
                 set_clauses.append(f"{field} = %s")
                 params.append(str(value) if value is not None else None)
         
@@ -247,6 +297,14 @@ def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
             return {
                 'success': False,
                 'error': 'No valid fields to update'
+            }
+
+        if validation_errors:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': '; '.join(validation_errors)
             }
         
         # Add manually_edited flag and timestamp
