@@ -1323,12 +1323,26 @@ export default function CompanyDetailPage() {
                   
                   <div className="space-y-2">
                     <div className="bg-blue-50 p-2 rounded border border-blue-100">
-                      <p className="text-xs text-blue-600 font-medium">Latest Valuation</p>
-                      <p className="text-sm font-bold text-blue-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
+                      <EditableMetric
+                        label="Latest Valuation"
+                        value={company.current_cap_table?.valuation ?? null}
+                        field="valuation"
+                        saveTarget="round"
+                        roundId={company.current_cap_table?.round_id}
+                        onUpdate={loadCompanyData}
+                        inputType="number"
+                      />
                     </div>
                     <div className="bg-green-50 p-2 rounded border border-green-100">
-                      <p className="text-xs text-green-600 font-medium">Last Round Raised</p>
-                      <p className="text-sm font-bold text-green-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
+                      <EditableMetric
+                        label="Last Round Raised"
+                        value={company.current_cap_table?.amount_raised ?? null}
+                        field="amount_raised"
+                        saveTarget="round"
+                        roundId={company.current_cap_table?.round_id}
+                        onUpdate={loadCompanyData}
+                        inputType="number"
+                      />
                     </div>
                     <div className="bg-purple-50 p-2 rounded border border-purple-100">
                       <p className="text-xs text-purple-600 font-medium">KV Ownership</p>
@@ -1606,16 +1620,28 @@ export default function CompanyDetailPage() {
                       <p className="text-xs text-orange-600 font-medium">Total Investors</p>
                       <p className="text-sm font-bold text-orange-900">{sortedInvestors.length}</p>
                     </div>
-                    {company.current_cap_table?.total_pool_size && (
+                    {company.current_cap_table?.total_pool_size != null && (
                       <div className="bg-amber-50 p-2 rounded border border-amber-100">
-                        <p className="text-xs text-amber-600 font-medium">Option Pool</p>
-                        <p className="text-sm font-bold text-amber-900">
-                          {(company.current_cap_table.total_pool_size * 100).toFixed(1)}%
-                        </p>
+                        <EditableMetric
+                          label="Option Pool"
+                          value={company.current_cap_table.total_pool_size}
+                          field="total_pool_size"
+                          saveTarget="round"
+                          roundId={company.current_cap_table?.round_id}
+                          onUpdate={loadCompanyData}
+                          inputType="percent"
+                        />
                         {company.current_cap_table.options_outstanding != null && (
-                          <div className="text-xs text-amber-700 mt-1">
-                            <div>Used: {(company.current_cap_table.options_outstanding * 100).toFixed(1)}%</div>
-                            <div>Available: {((company.current_cap_table.total_pool_size - company.current_cap_table.options_outstanding) * 100).toFixed(1)}%</div>
+                          <div className="mt-1">
+                            <EditableMetric
+                              label="Used"
+                              value={company.current_cap_table.options_outstanding}
+                              field="options_outstanding"
+                              saveTarget="round"
+                              roundId={company.current_cap_table?.round_id}
+                              onUpdate={loadCompanyData}
+                              inputType="percent"
+                            />
                           </div>
                         )}
                       </div>

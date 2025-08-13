@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { updateFinancialMetrics } from '@/lib/api'
+import { updateFinancialMetrics, updateCapTableRound } from '@/lib/api'
 
 interface EditableMetricProps {
   label: string
@@ -14,7 +14,9 @@ interface EditableMetricProps {
   className?: string
   isManuallyEdited?: boolean
   editable?: boolean
-  inputType?: 'number' | 'date' | 'monthYear'
+  inputType?: 'number' | 'date' | 'monthYear' | 'percent'
+  saveTarget?: 'report' | 'round'
+  roundId?: number
 }
 
 // Default formatters
@@ -60,16 +62,19 @@ export default function EditableMetric({
   className = '',
   isManuallyEdited = false,
   editable = true,
-  inputType
+  inputType,
+  saveTarget = 'report',
+  roundId
 }: EditableMetricProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [input, setInput] = useState<string>(value == null ? '' : String(value))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isCurrencyField = field === 'cash_on_hand' || field === 'monthly_burn_rate'
+  const isCurrencyField = field === 'cash_on_hand' || field === 'monthly_burn_rate' || ['valuation', 'amount_raised'].includes(field)
   const isStrictDateField = field === 'report_date' || inputType === 'date'
   const isMonthYearField = field === 'cash_out_date' || inputType === 'monthYear'
+  const isPercentField = inputType === 'percent' || ['total_pool_size', 'options_outstanding', 'pool_available', 'pool_utilization'].includes(field)
 
   const numericValue = isCurrencyField ? parseValue(String(value ?? '')) : 0
 
@@ -85,6 +90,9 @@ export default function EditableMetric({
           }
         } catch {}
       }
+      if (isPercentField && typeof value === 'number') {
+        return `${(value * 100).toFixed(1)}%`
+      }
       if (isMonthYearField) return String(value)
     }
     return String(value)
@@ -92,7 +100,7 @@ export default function EditableMetric({
 
   const validate = (raw: string): string | null => {
     // Enforce formats per PDF system prompt
-    if (field === 'cash_on_hand' || field === 'monthly_burn_rate' || inputType === 'number') {
+    if (isCurrencyField || inputType === 'number') {
       // raw USD number only, no symbols, commas, or units
       return /^\d+(\.\d+)?$/.test(raw.trim()) ? null : 'Enter a raw USD number (e.g., 3100000)'
     }
@@ -106,21 +114,40 @@ export default function EditableMetric({
       const re = new RegExp(`^${monthNames}\\s+\\d{4}$`)
       return re.test(raw.trim()) ? null : 'Use Month YYYY (e.g., April 2025)'
     }
+    if (isPercentField) {
+      // accept 8.3, 8.3%, or 0.083
+      const t = raw.trim()
+      if (/^\d{1,3}(\.\d+)?%$/.test(t) || /^\d{1,3}(\.\d+)?$/.test(t) || /^0?\.\d+$/.test(t)) return null
+      return 'Enter percent like 8.3, 8.3%, or 0.083'
+    }
     return null
   }
 
   const handleSave = async () => {
-    if (!editable || !reportId) return
+    if (!editable) return
     const err = validate(input)
     setError(err)
     if (err) return
     setSaving(true)
     try {
       let payloadValue: any = input
-      if (field === 'cash_on_hand' || field === 'monthly_burn_rate' || inputType === 'number') {
+      if (isCurrencyField || inputType === 'number') {
         payloadValue = parseFloat(input)
       }
-      const result = await updateFinancialMetrics(reportId, { [field]: payloadValue })
+      if (isPercentField) {
+        let s = input.trim().replace('%', '')
+        const num = parseFloat(s)
+        // If >= 1 assume percent (e.g., 8.3) else assume decimal (0.083)
+        payloadValue = num >= 1 ? (num / 100) : num
+      }
+      let result
+      if (saveTarget === 'round') {
+        if (!roundId) { setError('Round id missing'); setSaving(false); return }
+        result = await updateCapTableRound(roundId, { [field]: payloadValue })
+      } else {
+        if (!reportId) { setError('Report id missing'); setSaving(false); return }
+        result = await updateFinancialMetrics(reportId, { [field]: payloadValue })
+      }
       if (result.error) {
         setError(result.error)
       } else {
