@@ -12,6 +12,29 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
   // Handle legacy content that might not be markdown yet
   const processedContent = content || 'N/A'
   
+  // Normalize common non-markdown bullets like "•" that often arrive inline with no newlines
+  const normalizeLegacyBullets = (text: string): string => {
+    if (!text) return text
+    let t = text.replace(/\r\n/g, '\n')
+    // Replace any occurrence of the bullet dot "•" followed by spaces with a markdown list item
+    // Example: "• Item A • Item B" -> "\n- Item A\n- Item B"
+    if (t.includes('•')) {
+      // Insert a newline before every bullet, then convert to hyphen list
+      t = t
+        .replace(/\s*•\s*/g, '\n- ')
+        // Collapse accidental multiple newlines
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    }
+    // Normalize middle-dot separators "·" as soft separators to newlines as well
+    if (t.includes('·')) {
+      t = t.replace(/\s*·\s*/g, '\n')
+    }
+    return t
+  }
+  
+  const markdownText = normalizeLegacyBullets(processedContent)
+  
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown 
@@ -93,7 +116,7 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
           ),
         }}
       >
-        {processedContent}
+        {markdownText}
       </ReactMarkdown>
     </div>
   )
