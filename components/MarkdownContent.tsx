@@ -99,12 +99,12 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
           ),
           // Style headings if any
           h3: ({ children }) => (
-            <h3 className="font-semibold text-gray-900 mb-2 mt-4">
+            <h3 className="font-semibold text-gray-900 mb-2 mt-4 text-sm">
               {children}
             </h3>
           ),
           h4: ({ children }) => (
-            <h4 className="font-medium text-gray-800 mb-2 mt-3">
+            <h4 className="font-medium text-gray-800 mb-2 mt-3 text-sm">
               {children}
             </h4>
           ),

@@ -176,7 +176,7 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
     <div className="bg-gray-50 rounded-lg p-4 h-full overflow-hidden">
       <div className="flex justify-between items-center mb-3">
         <h4 className="font-medium text-gray-900 text-sm">Cash History</h4>
-        <span className="text-xs text-gray-500">{chartData.length} data points</span>
+        <span className="small-text text-gray-500">{chartData.length} data points</span>
       </div>
       
       <ResponsiveContainer width="100%" height="85%" debounce={150}>
@@ -816,7 +816,7 @@ export default function CompanyDetailPage() {
                 <img 
                   src={enrichmentData.enrichment.extracted.logo_url} 
                   alt={`${displayName} logo`}
-                  className="w-10 h-10 rounded-lg object-contain bg-white border border-gray-200 p-1"
+                  className="w-16 h-16 rounded-md object-contain bg-white border border-gray-200 p-1"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none'
                   }}
@@ -824,7 +824,7 @@ export default function CompanyDetailPage() {
               )}
               <div>
                 <h1 className="text-xl font-bold text-gray-900">{displayName} Overview</h1>
-                <p className="text-gray-600 text-sm">
+                <p className="text-gray-700 text-md">
                   {enrichmentData?.enrichment?.extracted?.short_description || 
                    enrichmentData?.enrichment?.extracted?.description || 
                    `Financial performance and key metrics tracking for portfolio company ${displayName}.`}
@@ -835,9 +835,9 @@ export default function CompanyDetailPage() {
           
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-            <div className="p-3 rounded-md bg-gray-50">
+              <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">👤 CEO</p>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-sm font-bold text-gray-900">
                 {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 
                  enrichmentData?.enrichment?.extracted?.ceo?.title || 
                  'Not found'}
@@ -846,36 +846,36 @@ export default function CompanyDetailPage() {
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-sm font-bold text-gray-900">
                 {detectCompanyStageFromInvestors(company.current_cap_table?.investors)}
               </p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">{sectorLabels.icon} Sector</p>
-              <p className="text-sm font-semibold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
+              <p className="text-sm font-bold text-gray-900">{companySector.charAt(0).toUpperCase() + companySector.slice(1)}</p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💰 Valuation</p>
-              <p className="text-sm font-semibold text-gray-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
+              <p className="text-sm font-bold text-gray-900">{formatCurrency(company.current_cap_table?.valuation)}</p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💵 Last Round</p>
-              <p className="text-sm font-semibold text-gray-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
+              <p className="text-sm font-bold text-gray-900">{formatCurrency(company.current_cap_table?.amount_raised)}</p>
             </div>
             
             <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
               <p className="text-xs font-medium text-blue-600 mb-1">🎯 KV Own</p>
-              <p className="text-sm font-semibold text-blue-700">
+              <p className="text-sm font-bold text-blue-700">
                 {kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">💎 KV Funds</p>
-              <p className="text-sm font-semibold text-gray-900 truncate">
+              <p className="text-sm font-bold text-gray-900 truncate">
                 {company.current_cap_table?.investors
                   ?.filter(inv => inv.investor_name.startsWith('KV'))
                   ?.map(inv => inv.investor_name.split(' ')[1] || inv.investor_name) // Show just "VII" instead of "KV VII"
@@ -886,7 +886,7 @@ export default function CompanyDetailPage() {
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📍 Location</p>
-              <p className="text-sm font-semibold text-gray-900 truncate">
+              <p className="text-sm font-bold text-gray-900 truncate">
                 {enrichmentData?.enrichment?.extracted?.location?.city || 'N/A'}
               </p>
             </div>
@@ -914,7 +914,7 @@ export default function CompanyDetailPage() {
           <nav className="flex flex-wrap gap-1">
             <button
               onClick={() => setActiveTab('metrics')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'metrics'
                   ? 'bg-blue-50 text-blue-700 border border-blue-200'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -925,7 +925,7 @@ export default function CompanyDetailPage() {
             </button>
             <button
               onClick={() => setActiveTab('financials')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'financials'
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -936,7 +936,7 @@ export default function CompanyDetailPage() {
             </button>
             <button
               onClick={() => setActiveTab('overview')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'overview'
                   ? 'bg-purple-50 text-purple-700 border border-purple-200'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -947,7 +947,7 @@ export default function CompanyDetailPage() {
             </button>
             <button
               onClick={() => setActiveTab('captable')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'captable'
                   ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -958,7 +958,7 @@ export default function CompanyDetailPage() {
             </button>
             <button
               onClick={() => setActiveTab('reports')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'reports'
                   ? 'bg-teal-50 text-teal-700 border border-teal-200'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -972,7 +972,7 @@ export default function CompanyDetailPage() {
             </button>
             <button
               onClick={() => setActiveTab('database')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 ${
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'database'
                   ? 'bg-gray-100 text-gray-700 border border-gray-300'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -995,7 +995,7 @@ export default function CompanyDetailPage() {
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-2">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Summary</h3>
+                      <h3 className="section-title">Summary</h3>
                     </div>
                   </div>
                   
@@ -1112,8 +1112,8 @@ export default function CompanyDetailPage() {
                         return (
                             <div className="border-t pt-3 mt-2">
                               <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-xs font-medium text-gray-900">Runway</h4>
-                                <span className="text-xs text-gray-600">{monthsLeft} months left</span>
+                                <h4 className="label-text text-gray-900">Runway</h4>
+                                <span className="small-text text-gray-600">{monthsLeft} months left</span>
                               </div>
                             <div className="w-full bg-gray-200 rounded-full h-3">
                               <div 
@@ -1128,7 +1128,7 @@ export default function CompanyDetailPage() {
                        // Fallback if dates aren't available
                        return (
                          <div className="border-t pt-3 mt-2">
-                           <h4 className="text-xs font-medium text-gray-900 mb-2">Runway</h4>
+                           <h4 className="label-text text-gray-900 mb-2">Runway</h4>
                            <div className="w-full bg-gray-200 rounded-full h-3">
                              <div className="bg-gray-400 h-3 rounded-full" style={{ width: '50%' }}></div>
                            </div>
@@ -1142,7 +1142,7 @@ export default function CompanyDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   <div className="flex items-center space-x-1 mb-2">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Upcoming Milestones</h3>
+                      <h3 className="section-title">Upcoming Milestones</h3>
                     </div>
                   </div>
                   
@@ -1153,8 +1153,8 @@ export default function CompanyDetailPage() {
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-lg border-2 border-dashed border-gray-200 text-center">
                       <div className="text-lg mb-1">📋</div>
-                      <p className="text-gray-500 text-xs font-medium mb-1">No milestones data available</p>
-                      <p className="text-gray-400 text-xs">Upload a recent board deck to see upcoming targets</p>
+                      <p className="text-gray-500 small-text font-medium mb-1">No milestones data available</p>
+                      <p className="text-gray-400 small-text">Upload a recent board deck to see upcoming targets</p>
                     </div>
                   )}
                 </div>
@@ -1164,7 +1164,7 @@ export default function CompanyDetailPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-1">
                       <div>
-                        <h3 className="text-sm font-bold text-gray-900">Team</h3>
+                        <h3 className="section-title">Team</h3>
                       </div>
                     </div>
                     {!enrichmentData?.enrichment?.extracted && (
@@ -1283,7 +1283,7 @@ export default function CompanyDetailPage() {
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Financial Overview</h3>
+                      <h3 className="text-md font-bold text-gray-900">Financial Overview</h3>
                     </div>
                   </div>
                   
@@ -1321,9 +1321,9 @@ export default function CompanyDetailPage() {
                  {/* Left vertical nav */}
                  <aside className="lg:col-span-3 bg-white rounded-lg border border-gray-200 p-3 h-max sticky top-4">
                    <nav className="flex lg:flex-col gap-2">
-                     <button
+                      <button
                        onClick={() => setActiveOverviewSection('key')}
-                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                        className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 text-left ${
                          activeOverviewSection === 'key'
                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -1331,9 +1331,9 @@ export default function CompanyDetailPage() {
                      >
                        <span className="flex items-center gap-2"><span>📈</span> <span>Key Updates</span></span>
                      </button>
-                     <button
+                      <button
                        onClick={() => setActiveOverviewSection('sector')}
-                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                        className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 text-left ${
                          activeOverviewSection === 'sector'
                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -1341,9 +1341,9 @@ export default function CompanyDetailPage() {
                      >
                        <span className="flex items-center gap-2"><span>🏷️</span> <span>Sector Updates</span></span>
                      </button>
-                     <button
+                      <button
                        onClick={() => setActiveOverviewSection('details')}
-                       className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-xs transition-all duration-200 text-left ${
+                        className={`flex items-center justify-between w-full px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 text-left ${
                          activeOverviewSection === 'details'
                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -1359,12 +1359,21 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'key' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-sm font-bold text-gray-900">Key Updates</h3>
+                         <h3 className="text-md font-bold text-gray-900">Key Updates</h3>
                        </div>
                        {latestReport ? (
-                         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-                           <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
-                         </div>
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 space-y-3">
+                            <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
+                            {(latestReport as any)?.key_risks && (
+                              <div className="bg-gradient-to-br from-red-50 to-pink-50 p-3 rounded border border-red-100">
+                                <div className="flex items-center space-x-1 mb-2">
+                                  <span className="text-xs">⚠️</span>
+                                  <h4 className="font-semibold text-red-900 text-sm">Key Risks</h4>
+                                </div>
+                                <MarkdownContent content={(latestReport as any).key_risks} className="text-sm leading-7" />
+                              </div>
+                            )}
+                          </div>
                        ) : (
                          <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
                            <div className="text-2xl mb-3">📋</div>
@@ -1378,13 +1387,13 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'sector' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-sm font-bold text-gray-900">Sector Updates</h3>
+                         <h3 className="text-md font-bold text-gray-900">Sector Updates</h3>
                        </div>
                        <div className="space-y-3">
                          <div>
-                           <div className="flex items-center space-x-1 mb-2">
-                             <span className="text-xs">{sectorLabels.icon}</span>
-                             <h4 className="font-semibold text-orange-900 text-xs">{sectorLabels.highlightA}</h4>
+                          <div className="flex items-center space-x-1 mb-2">
+                            <span className="text-xs">{sectorLabels.icon}</span>
+                            <h4 className="font-semibold text-orange-900 text-sm">{sectorLabels.highlightA}</h4>
                            </div>
                            {(latestReport as any)?.sector_highlight_a ? (
                              <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-3 rounded border border-orange-100">
@@ -1399,9 +1408,9 @@ export default function CompanyDetailPage() {
                          </div>
 
                          <div>
-                           <div className="flex items-center space-x-1 mb-2">
-                             <span className="text-xs">🔬</span>
-                             <h4 className="font-semibold text-indigo-900 text-xs">{sectorLabels.highlightB}</h4>
+                            <div className="flex items-center space-x-1 mb-2">
+                              <span className="text-xs">🔬</span>
+                              <h4 className="font-semibold text-indigo-900 text-sm">{sectorLabels.highlightB}</h4>
                            </div>
                            {(latestReport as any)?.sector_highlight_b ? (
                              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded border border-indigo-100">
@@ -1421,37 +1430,29 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'details' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-sm font-bold text-gray-900">Additional Details</h3>
+                         <h3 className="text-md font-bold text-gray-900">Additional Details</h3>
                        </div>
                        {latestReport ? (
                          <div className="grid grid-cols-1 gap-3">
                            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-3 rounded border border-purple-100">
-                             <div className="flex items-center space-x-1 mb-2">
-                               <span className="text-xs">⚖️</span>
-                               <h4 className="font-semibold text-purple-900 text-xs">Budget vs Actual</h4>
+                              <div className="flex items-center space-x-1 mb-2">
+                                <span className="text-xs">⚖️</span>
+                                <h4 className="font-semibold text-purple-900 text-sm">Budget vs Actual</h4>
                              </div>
                              <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm leading-7 text-purple-800" />
                            </div>
                          
                            {(latestReport as any)?.personnel_updates && (
                              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded border border-green-100">
-                               <div className="flex items-center space-x-1 mb-2">
-                                 <span className="text-xs">👥</span>
-                                 <h4 className="font-semibold text-green-900 text-xs">Personnel Updates</h4>
+                                <div className="flex items-center space-x-1 mb-2">
+                                  <span className="text-xs">👥</span>
+                                  <h4 className="font-semibold text-green-900 text-sm">Personnel Updates</h4>
                                </div>
                                <MarkdownContent content={(latestReport as any).personnel_updates} className="text-sm leading-7" />
                              </div>
                            )}
                          
-                           {(latestReport as any)?.key_risks && (
-                             <div className="bg-gradient-to-br from-red-50 to-pink-50 p-3 rounded border border-red-100">
-                               <div className="flex items-center space-x-1 mb-2">
-                                 <span className="text-xs">⚠️</span>
-                                 <h4 className="font-semibold text-red-900 text-xs">Key Risks</h4>
-                               </div>
-                               <MarkdownContent content={(latestReport as any).key_risks} className="text-sm leading-7" />
-                             </div>
-                           )}
+                          {/* Key Risks moved into Key Updates card above */}
                          </div>
                        ) : (
                          <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
@@ -1473,7 +1474,7 @@ export default function CompanyDetailPage() {
                   {/* Header */}
                   <div className="flex items-center space-x-1 mb-3">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Cap Table</h3>
+                      <h3 className="section-title">Cap Table</h3>
                     </div>
                   </div>
                   
@@ -1482,10 +1483,10 @@ export default function CompanyDetailPage() {
                       <table className="min-w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Investor</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Invested</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Round</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FDS Ownership</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Investor</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Total Invested</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Last Round</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">FDS Ownership</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -1495,19 +1496,19 @@ export default function CompanyDetailPage() {
                               <tr key={index} className={isKV ? 'bg-blue-50' : ''}>
                                 <td className="px-2 py-1 whitespace-nowrap">
                                   <div className="flex items-center">
-                                    <div className="text-xs font-medium text-gray-900">
+                                    <div className="body-text font-medium text-gray-900">
                                       {investor.investor_name}
                                       {isKV && <span className="ml-1 text-blue-600 text-xs">🏠 KV</span>}
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-900">
+                                <td className="px-2 py-1 whitespace-nowrap body-text text-gray-900">
                                   {formatCurrency(investor.total_invested)}
                                 </td>
-                                <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-900">
+                                <td className="px-2 py-1 whitespace-nowrap body-text text-gray-900">
                                   {formatCurrency(investor.final_round_investment)}
                                 </td>
-                                <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-900">
+                                <td className="px-2 py-1 whitespace-nowrap body-text text-gray-900">
                                   {investor.final_fds 
                                     ? `${(investor.final_fds * 100).toFixed(1)}%`
                                     : 'N/A'
@@ -1521,18 +1522,18 @@ export default function CompanyDetailPage() {
                             <tr className="bg-amber-50 border-t-2 border-amber-200">
                               <td className="px-2 py-1 whitespace-nowrap">
                                 <div className="flex items-center">
-                                  <div className="text-xs font-medium text-amber-800">
+                                  <div className="body-text font-medium text-amber-800">
                                     Employee Option Pool
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-600">
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-gray-600">
                                 N/A
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-600">
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-gray-600">
                                 N/A
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs text-amber-800 font-medium">
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-amber-800 font-medium">
                                 {(() => {
                                   const totalPool = company.current_cap_table.total_pool_size || 0
                                   const optionsOutstanding = company.current_cap_table.options_outstanding || 0
@@ -1720,7 +1721,7 @@ export default function CompanyDetailPage() {
                   {/* Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <h3 className="text-sm font-bold text-gray-900">Financial Documents</h3>
+                      <h3 className="section-title">Financial Documents</h3>
                     </div>
                   </div>
                   
@@ -1729,27 +1730,27 @@ export default function CompanyDetailPage() {
                       <table className="min-w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Upload Date</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Name</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Type</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Upload Date</th>
+                            <th className="px-2 py-1 text-left label-text text-gray-600 uppercase tracking-wide">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {company.financial_reports.map((report, index: number) => (
                             <tr key={index}>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs font-medium text-gray-900">
+                              <td className="px-2 py-1 whitespace-nowrap body-text font-medium text-gray-900">
                                 {(report as any).file_name}
                               </td>
                               <td className="px-2 py-1 whitespace-nowrap">
-                                <span className="px-1 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
+                                <span className="px-1 py-0.5 small-text bg-blue-100 text-blue-700 rounded">
                                   {(report as any).report_period}
                                 </span>
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs text-gray-900">
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-gray-900">
                                 {(report as any).processed_at ? new Date((report as any).processed_at).toLocaleDateString() : 'N/A'}
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap text-xs text-blue-600 hover:text-blue-700">
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-blue-600 hover:text-blue-700">
                                 <button>View</button>
                               </td>
                             </tr>
@@ -1804,54 +1805,7 @@ export default function CompanyDetailPage() {
 
 
 
-            {/* Database Tab */}
-            {activeTab === 'database' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ gridTemplateColumns: '2fr 1.4fr 1fr' }}>
-                {/* 1. Database Editor - Double Width */}
-                <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">Database Editor</h3>
-                    </div>
-                  </div>
-                  <UniversalDatabaseEditor 
-                    companyId={companyId} 
-                    onUpdate={loadCompanyData}
-                  />
-                </div>
-
-                {/* 2. Database Stats */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center space-x-1 mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">Database Stats</h3>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="bg-blue-50 p-2 rounded border border-blue-100">
-                      <p className="text-xs text-blue-600 font-medium">Company ID</p>
-                      <p className="text-sm font-bold text-blue-900">{companyId}</p>
-                    </div>
-                    <div className="bg-green-50 p-2 rounded border border-green-100">
-                      <p className="text-xs text-green-600 font-medium">Financial Reports</p>
-                      <p className="text-sm font-bold text-green-900">{company.financial_reports.length}</p>
-                    </div>
-                    <div className="bg-purple-50 p-2 rounded border border-purple-100">
-                      <p className="text-xs text-purple-600 font-medium">Cap Table Rounds</p>
-                      <p className="text-sm font-bold text-purple-900">{company.current_cap_table ? '1' : '0'}</p>
-                    </div>
-                    <div className="bg-orange-50 p-2 rounded border border-orange-100">
-                      <p className="text-xs text-orange-600 font-medium">Enrichment Data</p>
-                      <p className="text-sm font-bold text-orange-900">
-                        {enrichmentData?.enrichment?.extracted ? 'Available' : 'None'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Database Tab - header tiles removed per request; keep editor below */}
 
             {/* Enrichment Tab - Temporarily hidden, functionality moved to header */}
             {false && activeTab === 'enrichment' && (
@@ -2435,10 +2389,7 @@ export default function CompanyDetailPage() {
                     </div>
                   </div>
                   
-                  <UniversalDatabaseEditor 
-                    companyId={companyId}
-                    onUpdate={loadCompanyData}
-                  />
+                  <UniversalDatabaseEditor companyId={companyId} onUpdate={loadCompanyData} />
                 </div>
               </div>
             )}

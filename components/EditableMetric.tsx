@@ -200,9 +200,7 @@ export default function EditableMetric({
     <div className={className}>
       <div className="flex items-center gap-2 mb-1">
         <p className={labelClassName || "text-sm font-medium text-gray-500"}>{label}</p>
-        {isManuallyEdited && (
-          <span className="text-amber-500 text-xs" title="Manually edited">✏️</span>
-        )}
+        {/* manual edit badge intentionally hidden in UI; kept in DB editor */}
       </div>
       {isEditing ? (
         <div className="flex items-center gap-2">

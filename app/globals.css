@@ -6,6 +6,23 @@
   html {
     font-family: system-ui, sans-serif;
   }
+
+  /* Typography scale: consistent, compact, legible */
+  :root {
+    /* Compact base to match CEO/Key Executive scale */
+    --font-body: 0.875rem;   /* 14px */
+    --font-label: 0.75rem;   /* 12px (matches CEO labels) */
+    --font-small: 0.6875rem; /* 11px subtle notes */
+    --font-title: 0.9375rem; /* 15px (matches CEO values) */
+    --font-heading: 1rem;    /* 16px section headings */
+  }
+
+  body { font-size: var(--font-body); }
+  p, li { font-size: var(--font-body); line-height: 1.6; }
+  h3, h4 { font-size: var(--font-heading); line-height: 1.45; }
+  .label-text { font-size: var(--font-label); }
+  .tab-text { font-size: var(--font-title); }
+  .small-text { font-size: var(--font-small); }
 }
 
 @layer components {
@@ -16,4 +33,12 @@
   .gradient-bg {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   }
+
+  /* Utility helpers to align across app */
+  .section-title { @apply font-bold text-gray-900; font-size: var(--font-heading); }
+  .metric-value { @apply font-bold; font-size: var(--font-title); }
+  .metric-label { @apply text-gray-500 font-medium; font-size: var(--font-label); }
+  .body-text { font-size: var(--font-body); }
+  .markdown-content p { font-size: var(--font-body); }
+  .markdown-content h3, .markdown-content h4 { font-size: var(--font-heading); }
 } 
