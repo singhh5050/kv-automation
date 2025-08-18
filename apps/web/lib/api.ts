@@ -1,7 +1,6 @@
 /**
  * API client for connecting to the AWS Lambda backend
  */
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 
 // Get backend URL from environment
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL
@@ -95,88 +94,53 @@ export async function uploadFile(file: File, companyName?: string) {
 }
 
 /**
- * NEW: Direct S3 Upload (replaces base64 + API Gateway)
- * Uploads PDF directly to S3, which triggers Lambda via S3 events
+ * Secure S3 Upload via Next.js API Route
+ * Uploads PDF to S3 server-side, which triggers Lambda via S3 events
  */
 export async function uploadToS3(file: File, companyId?: number, companyName?: string) {
   try {
-    console.log(`🚀 Starting direct S3 upload for ${file.name}`)
+    console.log(`🚀 Starting secure S3 upload for ${file.name}`)
     console.log(`📋 Company ID: ${companyId}, Company Name: ${companyName}`)
     
-    // Debug: Check if credentials are available
-    console.log('AWS Access Key available:', !!process.env.NEXT_PUBLIC_AWS_ACCESS_KEY_ID)
-    console.log('AWS Secret Key available:', !!process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY)
-    
-    if (!process.env.NEXT_PUBLIC_AWS_ACCESS_KEY_ID || !process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY) {
-      throw new Error('AWS credentials not found in environment variables')
-    }
-    
-    // Initialize S3 client with credentials from environment
-    const s3Client = new S3Client({
-      region: 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.NEXT_PUBLIC_AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY!,
-      },
-    })
-    
-    // Create S3 key with company_id for automatic extraction
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    let s3Key: string
-    
+    // Create FormData for server-side upload
+    const formData = new FormData()
+    formData.append('file', file)
     if (companyId) {
-      s3Key = `company-${companyId}/${timestamp}-${file.name}`
-    } else {
-      // Fallback: use temp folder if no company_id
-      s3Key = `temp/${timestamp}-${file.name}`
-    }
-    
-    console.log(`📁 S3 key: ${s3Key}`)
-    
-    // Prepare metadata for Lambda processing
-    const metadata: Record<string, string> = {}
-    if (companyId) {
-      metadata['company-id'] = companyId.toString()
+      formData.append('companyId', companyId.toString())
     }
     if (companyName) {
-      metadata['company-name'] = companyName
+      formData.append('companyName', companyName)
     }
     
-    // Convert file to ArrayBuffer for S3 upload
-    const fileBuffer = await file.arrayBuffer()
+    console.log(`📤 Sending to server-side API route...`)
     
-    // Upload to S3
-    const command = new PutObjectCommand({
-      Bucket: 'kv-board-decks-prod',
-      Key: s3Key,
-      Body: fileBuffer,
-      ContentType: 'application/pdf',
-      Metadata: metadata,
+    // Upload via secure server-side API route
+    const response = await fetch('/api/upload-s3', {
+      method: 'POST',
+      body: formData,
     })
     
-    console.log(`📤 Uploading to S3...`)
-    console.log(`📊 File size: ${file.size} bytes`)
-    console.log(`🎯 Target bucket: kv-board-decks-prod`)
-    console.log(`📁 Target key: ${s3Key}`)
+    const result = await response.json()
     
-    const result = await s3Client.send(command)
-    console.log(`✅ S3 upload successful!`, result)
-    console.log(`🆔 Upload ETag: ${result.ETag}`)
+    if (!response.ok) {
+      throw new Error(result.error || `HTTP error! status: ${response.status}`)
+    }
+    
+    console.log(`✅ Secure S3 upload successful!`, result)
     
     return {
       data: {
-        success: true,
-        s3Key,
-        bucket: 'kv-board-decks-prod',
-        message: 'PDF uploaded successfully. Processing will begin automatically.',
-        processingNote: 'Results will appear in the database shortly.'
+        success: result.success,
+        s3Key: result.s3Key,
+        bucket: result.bucket,
+        message: result.message,
+        processingNote: result.processingNote
       }
     }
     
   } catch (error) {
-    console.error('❌ S3 upload error:', error)
+    console.error('❌ Secure S3 upload error:', error)
     console.error('❌ Error type:', error?.constructor?.name)
-    console.error('❌ Error details:', JSON.stringify(error, null, 2))
     
     return { 
       error: error instanceof Error ? error.message : 'S3 upload failed',
