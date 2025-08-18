@@ -732,7 +732,7 @@ For each field, provide evidence with compact structured format: {"page": intege
                 "companyName": {"type": ["string", "null"], "maxLength": 200},
                 "reportDate": {"type": ["string", "null"], "format": "date"},
                 "reportPeriod": {"type": ["string", "null"], "maxLength": 50},
-                "sector": {"type": ["string", "null"], "enum": ["healthcare", "consumer", "enterprise", "manufacturing", None]},
+                "sector": {"type": ["string", "null"], "enum": ["healthcare", "consumer", "enterprise", "manufacturing"]},
                 "cashOnHand": {"type": ["number", "null"]},
                 "monthlyBurnRate": {"type": ["number", "null"]},
                 "cashOutDate": {"type": ["string", "null"], "maxLength": 40},
@@ -818,18 +818,20 @@ For each field, provide evidence with compact structured format: {"page": intege
         # Defensive JSON parsing with fallback extraction
         def extract_json(s: str) -> dict:
             """Extract JSON from potentially malformed response"""
-            # Strip code fences/BOM/smart quotes
             s = s.strip().replace('\ufeff', '')
             if s.startswith('```'):
-                s = s.strip('`')  # crude but effective for fences
-            s = s.replace('"', '"').replace('"', '"').replace("'", "'")
-            # Grab the largest {...} block
-            start = s.find('{')
-            end = s.rfind('}')
+                # strip leading/trailing fences only
+                s = s.split('```', 1)[-1]
+                if '```' in s:
+                    s = s.rsplit('```', 1)[0]
+            # normalize curly quotes/apostrophes to standard ASCII
+            s = s.replace('\u201c', '"').replace('\u201d', '"')  # left/right double quotes
+            s = s.replace('\u2018', "'").replace('\u2019', "'")  # left/right single quotes  
+            s = s.replace('`', "'")
+            start, end = s.find('{'), s.rfind('}')
             if start == -1 or end == -1 or end <= start:
                 raise ValueError("No JSON object found")
-            chunk = s[start:end+1]
-            return json.loads(chunk)
+            return json.loads(s[start:end+1])
         
         # Parse and validate the JSON with fallback
         import json
@@ -850,6 +852,18 @@ For each field, provide evidence with compact structured format: {"page": intege
                 print(f"📄 Raw response preview: {raw_response[:500]}...")
                 # Save debug info for postmortem
                 print(f"🐛 Full response length: {len(raw_response)} characters")
+                
+                # Save raw response to S3 for debugging
+                try:
+                    import boto3, time
+                    dbg_bucket = os.environ.get('S3_DEBUG_BUCKET')
+                    if dbg_bucket:
+                        key = f"debug/gpt5_raw/{int(time.time())}-{filename}.txt"
+                        boto3.client('s3').put_object(Bucket=dbg_bucket, Key=key, Body=raw_response.encode('utf-8'))
+                        print(f"🪵 Saved raw response to s3://{dbg_bucket}/{key}")
+                except Exception as _:
+                    pass
+                    
                 raise e
         
         # This block is now in finally clause below
@@ -878,7 +892,7 @@ For each field, provide evidence with compact structured format: {"page": intege
     finally:
         # Clean up - delete the file from OpenAI (only if we uploaded one)
         try:
-            if file_response and client:
+            if file_response and getattr(file_response, "id", None) and client:
                 print("🗑️ Cleaning up uploaded file...")
                 client.files.delete(file_response.id)
                 print("✅ File deleted successfully!")
@@ -969,6 +983,12 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             except (ValueError, TypeError):
                 return None
         
+        # Handle evidence field for database storage
+        evidence_value = analysis_result.get('evidence')
+        if not isinstance(evidence_value, (dict, list, type(None))):
+            evidence_value = None
+        # Evidence column is JSONB, so pass dict/list directly
+        
         # Prepare data array (same order as financial-crud)
         report_data = [
             company_id,
@@ -989,7 +1009,7 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             analysis_result.get('nextMilestones'),
             False,  # manually_edited
             "s3_gpt5_import",  # edited_by - distinguish from API Gateway imports
-            analysis_result.get('evidence')  # NEW: evidence field with page citations
+            evidence_value  # NEW: evidence field with page citations (JSONB)
         ]
         
         cursor.execute(report_insert, report_data)
