@@ -796,14 +796,14 @@ For each field, provide evidence with compact structured format: {"page": intege
             ]
         
         response = client.responses.create(
-            model="gpt-5",
+            model=os.getenv("OPENAI_MODEL", "gpt-5"),
             input=[{
                 "role": "user",
                 "content": content
             }],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
+            text={
+                "format": {
+                    "type": "json_schema",
                     "name": "financial_kpis_with_evidence",
                     "schema": schema,
                     "strict": True
