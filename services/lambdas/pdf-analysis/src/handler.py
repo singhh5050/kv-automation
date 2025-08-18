@@ -104,10 +104,12 @@ def handle_s3_event(event, context):
                 print(f"✅ Added company_id {company_id} to analysis result")
             
             # Store results in database with evidence
+            stored = False
             if company_id:
                 try:
                     print("💾 Storing analysis results in database...")
                     store_result_in_db(analysis_result, company_id)
+                    stored = True
                     print("✅ Analysis results stored successfully")
                 except Exception as db_error:
                     print(f"❌ Database storage failed: {str(db_error)}")
@@ -115,7 +117,7 @@ def handle_s3_event(event, context):
             else:
                 print("⚠️ Skipping database storage - no company_id available")
             
-            print(f"🎉 Successfully processed {filename}")
+            print(f"{'🎉' if stored else '⚠️'} Processed {filename}{'' if stored else ' (DB write failed)'}")
             
         return {
             'statusCode': 200,
@@ -309,7 +311,7 @@ def normalize_analysis_for_db(d: dict) -> dict:
             d[k] = str(d[k])
 
     # Force numeric fields to None or number
-    for k in ['cashOnHand','monthlyBurnRate','runway']:
+    for k in ['cashOnHand','monthlyBurnRate']:
         v = d[k]
         if isinstance(v, (int, float)) or v is None:
             continue
@@ -318,6 +320,15 @@ def normalize_analysis_for_db(d: dict) -> dict:
             d[k] = float(str(v).replace(',', '').replace('$','').lower().replace('m','e6').replace('k','e3'))
         except Exception:
             d[k] = None
+    
+    # Force runway to integer (DB column is INTEGER)
+    v = d.get('runway')
+    if v is not None:
+        try:
+            from decimal import Decimal, ROUND_HALF_UP
+            d['runway'] = int(Decimal(str(v)).to_integral_value(rounding=ROUND_HALF_UP))
+        except Exception:
+            d['runway'] = None
 
     return d
 
@@ -651,93 +662,50 @@ def create_fallback_response(filename, text, error_msg):
     return normalize_analysis_for_db(fallback_result)
 
 
-def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_only: bool = False, company_name_override: str = None, user_provided_name: bool = False):
+def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_only: bool = False,
+                                    company_name_override: str = None, user_provided_name: bool = False):
     """
-    New GPT-5 + Responses API + Files API with evidence tracking
-    Based on our successful test implementation
+    GPT-5 (and later) via Responses API with Structured Outputs (json_schema) and file inputs.
     """
-    import os  # Explicit import to avoid scoping issues
-    
-    # Check for API key
+    import os, json as _json, traceback
+
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         print("OPENAI_API_KEY not configured")
         return create_fallback_response(filename, "PDF content", "OpenAI API key not configured")
-    
-    # Initialize variables for cleanup
+
     file_response = None
     tmp_path = None
     client = None
-    
+
     try:
-        # Import and initialize OpenAI client
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
-        
+
         print(f"🤖 Starting GPT-5 analysis of {filename} ({len(pdf_bytes)} bytes)")
-        
-        # Handle text-only vs PDF input
+
+        # --- Prepare inputs (either text-only or uploaded PDF) ---
         if is_text_only:
-            print("📝 Processing text-only input (legacy API Gateway path)")
-            # For text-only, we'll send the text directly without file upload
-            text_content = pdf_bytes.decode('utf-8')
+            text_content = pdf_bytes.decode("utf-8", errors="ignore")
+            print("📝 Processing text-only input")
         else:
             print("📤 Uploading PDF to OpenAI Files API...")
             import tempfile
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 tmp.write(pdf_bytes)
                 tmp_path = tmp.name
-            
-            with open(tmp_path, 'rb') as f:
-                file_response = client.files.create(
-                    file=f,
-                    purpose="user_data"
-                )
-            
-            print(f"✅ File uploaded successfully! File ID: {file_response.id}")
+            with open(tmp_path, "rb") as f:
+                file_response = client.files.create(file=f, purpose="user_data")
+            print(f"✅ File uploaded: {file_response.id}")
             text_content = None
-        
-        # Updated system prompt with strict JSON requirements
-        system_prompt = """Return ONLY one JSON object that validates the provided JSON Schema.
-Do NOT include code fences or any text outside the JSON.
-All string values must escape quotes correctly.
 
-You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
+        # --- Instructions + JSON Schema ---
+        system_prompt = (
+            "Return ONLY one JSON object that validates the provided JSON Schema. "
+            "No code fences; no prose outside the JSON. Escape quotes correctly. "
+            "You are an expert financial analyst for VC board decks. Numeric fields must be raw numbers."
+        )
 
-CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
-
-## SECTOR DETECTION
-First, determine the company's primary sector from these categories:
-- **healthcare**: Biotech, pharma, medical devices, digital health platforms
-- **consumer**: D2C, marketplaces, consumer services, insurance brokerages  
-- **enterprise**: B2B SaaS, platforms, workforce management, business tools
-- **manufacturing**: Hardware, industrial equipment, energy systems, robotics
-
-## SECTOR-SPECIFIC ANALYSIS
-Based on the detected sector, provide detailed analysis for these two areas:
-
-### Healthcare
-- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions, enrollment rates, adverse events, primary/secondary endpoints, regulatory submissions, trial site performance
-- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape, manufacturing optimization, formulation improvements, patent applications, IND/NDA preparation, pipeline expansion
-
-### Consumer  
-- **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates, churn analysis, customer lifetime value, acquisition channels, pricing optimization, cohort analysis
-- **sectorHighlightB** ("Growth Efficiency Initiatives"): Market expansion, AI-driven productivity, channel optimization, operational improvements, automation initiatives, cost reduction programs, geographic expansion, product development velocity, team scaling
-
-### Enterprise
-- **sectorHighlightA** ("Product Roadmap & Adoption"): Feature launches, usage metrics, customer engagement, platform development, product velocity, feature adoption rates, customer feedback integration, technical debt management, scalability improvements
-- **sectorHighlightB** ("Go-to-Market Performance"): Sales pipeline, bookings by region, partnership channels, customer success metrics, sales efficiency, market penetration, competitive wins/losses, channel performance, customer expansion rates
-
-### Manufacturing
-- **sectorHighlightA** ("Operational Performance"): Units produced/shipped, manufacturing efficiency, quality metrics, capacity utilization, yield improvements, cost per unit, production bottlenecks, quality control results, equipment performance
-- **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals, supply chain optimization, vendor performance, logistics improvements, customer delivery metrics, regulatory compliance
-
-EXTRACT ONLY these fields with evidence citations: companyName, reportDate, reportPeriod, sector, cashOnHand, monthlyBurnRate, cashOutDate, runway, budgetVsActual, financialSummary, sectorHighlightA, sectorHighlightB, keyRisks, personnelUpdates, nextMilestones.
-
-For each field, provide evidence with compact structured format: {"page": integer, "quote": "short quote with escaped quotes"}. If not explicitly present, return null.
-"""
-        
-        # Fixed JSON schema with length limits and proper evidence structure
         schema = {
             "type": "object",
             "additionalProperties": False,
@@ -749,7 +717,7 @@ For each field, provide evidence with compact structured format: {"page": intege
                 "cashOnHand": {"type": ["number", "null"]},
                 "monthlyBurnRate": {"type": ["number", "null"]},
                 "cashOutDate": {"type": ["string", "null"], "maxLength": 40},
-                "runway": {"type": ["number", "null"]},
+                "runway": {"type": ["integer", "null"]},
                 "budgetVsActual": {"type": ["string", "null"], "maxLength": 2000},
                 "financialSummary": {"type": ["string", "null"], "maxLength": 2000},
                 "sectorHighlightA": {"type": ["string", "null"], "maxLength": 1500},
@@ -761,166 +729,155 @@ For each field, provide evidence with compact structured format: {"page": intege
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "companyName": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "reportDate": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "reportPeriod": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "sector": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "cashOnHand": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "monthlyBurnRate": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "cashOutDate": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "runway": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
-                        "budgetVsActual": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "financialSummary": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "sectorHighlightA": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "sectorHighlightB": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "keyRisks": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "personnelUpdates": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
-                        "nextMilestones": {"type": ["object", "null"], "additionalProperties": False, "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]}
+                        "companyName": {"type": ["object", "null"], "additionalProperties": False,
+                                        "properties": {"page": {"type": ["integer", "null"]},
+                                                       "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                        "required": ["page", "quote"]},
+                        "reportDate": {"type": ["object", "null"], "additionalProperties": False,
+                                       "properties": {"page": {"type": ["integer", "null"]},
+                                                      "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                       "required": ["page", "quote"]},
+                        "reportPeriod": {"type": ["object", "null"], "additionalProperties": False,
+                                         "properties": {"page": {"type": ["integer", "null"]},
+                                                        "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                         "required": ["page", "quote"]},
+                        "sector": {"type": ["object", "null"], "additionalProperties": False,
+                                   "properties": {"page": {"type": ["integer", "null"]},
+                                                  "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                   "required": ["page", "quote"]},
+                        "cashOnHand": {"type": ["object", "null"], "additionalProperties": False,
+                                       "properties": {"page": {"type": ["integer", "null"]},
+                                                      "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                       "required": ["page", "quote"]},
+                        "monthlyBurnRate": {"type": ["object", "null"], "additionalProperties": False,
+                                            "properties": {"page": {"type": ["integer", "null"]},
+                                                           "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                            "required": ["page", "quote"]},
+                        "cashOutDate": {"type": ["object", "null"], "additionalProperties": False,
+                                        "properties": {"page": {"type": ["integer", "null"]},
+                                                       "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                        "required": ["page", "quote"]},
+                        "runway": {"type": ["object", "null"], "additionalProperties": False,
+                                   "properties": {"page": {"type": ["integer", "null"]},
+                                                  "quote": {"type": ["string", "null"], "maxLength": 120}},
+                                   "required": ["page", "quote"]},
+                        "budgetVsActual": {"type": ["object", "null"], "additionalProperties": False,
+                                           "properties": {"page": {"type": ["integer", "null"]},
+                                                          "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                           "required": ["page", "quote"]},
+                        "financialSummary": {"type": ["object", "null"], "additionalProperties": False,
+                                             "properties": {"page": {"type": ["integer", "null"]},
+                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                             "required": ["page", "quote"]},
+                        "sectorHighlightA": {"type": ["object", "null"], "additionalProperties": False,
+                                             "properties": {"page": {"type": ["integer", "null"]},
+                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                             "required": ["page", "quote"]},
+                        "sectorHighlightB": {"type": ["object", "null"], "additionalProperties": False,
+                                             "properties": {"page": {"type": ["integer", "null"]},
+                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                             "required": ["page", "quote"]},
+                        "keyRisks": {"type": ["object", "null"], "additionalProperties": False,
+                                     "properties": {"page": {"type": ["integer", "null"]},
+                                                    "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                     "required": ["page", "quote"]},
+                        "personnelUpdates": {"type": ["object", "null"], "additionalProperties": False,
+                                             "properties": {"page": {"type": ["integer", "null"]},
+                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                             "required": ["page", "quote"]},
+                        "nextMilestones": {"type": ["object", "null"], "additionalProperties": False,
+                                           "properties": {"page": {"type": ["integer", "null"]},
+                                                          "quote": {"type": ["string", "null"], "maxLength": 200}},
+                                           "required": ["page", "quote"]}
                     },
-                    "required": ["companyName", "reportDate", "reportPeriod", "sector", "cashOnHand", "monthlyBurnRate", "cashOutDate", "runway", "budgetVsActual", "financialSummary", "sectorHighlightA", "sectorHighlightB", "keyRisks", "personnelUpdates", "nextMilestones"]
+                    "required": ["companyName","reportDate","reportPeriod","sector","cashOnHand","monthlyBurnRate","cashOutDate","runway","budgetVsActual","financialSummary","sectorHighlightA","sectorHighlightB","keyRisks","personnelUpdates","nextMilestones"]
                 }
             },
-            "required": ["companyName", "reportDate", "reportPeriod", "sector", "cashOnHand", "monthlyBurnRate", "cashOutDate", "runway", "budgetVsActual", "financialSummary", "sectorHighlightA", "sectorHighlightB", "keyRisks", "personnelUpdates", "nextMilestones", "evidence"]
+            "required": ["companyName","reportDate","reportPeriod","sector","cashOnHand","monthlyBurnRate","cashOutDate","runway","budgetVsActual","financialSummary","sectorHighlightA","sectorHighlightB","keyRisks","personnelUpdates","nextMilestones","evidence"]
         }
-        
-        # Use GPT-5 Responses API with structured output (proven working!)
-        print("🚀 Processing with GPT-5 Responses API...")
-        
-        # Build content based on input type
+
+        structured_format = {
+            "type": "json_schema",
+            "name": "financial_kpis_with_evidence",
+            "schema": schema,
+            "strict": True
+        }
+
+        # --- Build single-user message: first part is instructions, then data/file ---
+        content_parts = [{"type": "input_text", "text": system_prompt}]
         if is_text_only:
-            # Text-only input (legacy API Gateway path)
-            content = [
-                {
-                    "type": "input_text",
-                    "text": f"{system_prompt}\n\nCOMPANY DATA TO ANALYZE:\n{text_content}"
-                }
-            ]
+            content_parts.append({"type": "input_text", "text": f"ANALYZE THIS TEXT (from {filename}):\n\n{text_content}"})
         else:
-            # PDF file input (new S3 path)
-            content = [
-                {
-                    "type": "input_text",
-                    "text": system_prompt
-                },
-                {
-                    "type": "input_file", 
-                    "file_id": file_response.id
-                }
-            ]
-        
+            content_parts.append({"type": "input_text", "text": "Analyze the attached PDF for the required fields using the schema."})
+            content_parts.append({"type": "input_file", "file_id": file_response.id})
+
+        print("🚀 Calling Responses API with Structured Outputs...")
         response = client.responses.create(
             model=os.getenv("OPENAI_MODEL", "gpt-5"),
-            input=[{
-                "role": "user",
-                "content": content
-            }],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "financial_kpis_with_evidence",
-                    "schema": schema,
-                    "strict": True
-                }
-            },
-            temperature=0,
+            input=[{"role": "user", "content": content_parts}],
+            text={"format": structured_format},
             max_output_tokens=12000
         )
-        
-        raw_response = response.output_text
-        
-        # Defensive JSON parsing with fallback extraction
-        def extract_json(s: str) -> dict:
-            """Extract JSON from potentially malformed response"""
-            s = s.strip().replace('\ufeff', '')
-            if s.startswith('```'):
-                # strip leading/trailing fences only
-                s = s.split('```', 1)[-1]
-                if '```' in s:
-                    s = s.rsplit('```', 1)[0]
-            # normalize curly quotes/apostrophes to standard ASCII
-            s = s.replace('\u201c', '"').replace('\u201d', '"')  # left/right double quotes
-            s = s.replace('\u2018', "'").replace('\u2019', "'")  # left/right single quotes  
-            s = s.replace('`', "'")
+
+        raw = response.output_text or ""
+        if not raw.strip():
+            raise ValueError("Empty output_text from model")
+
+        # --- Parse JSON (with tiny fallback extractor) ---
+        def _extract_json(s: str) -> dict:
+            s = (s or "").strip().replace('\ufeff', '')
+            # strip triple-fence blocks if present
+            if s.startswith("```"):
+                s = s.split("```", 1)[-1]
+                if "```" in s:
+                    s = s.rsplit("```", 1)[0]
+            # normalize smart quotes
+            s = (s.replace('“','"').replace('”','"')
+                   .replace('’',"'").replace('`', "'"))
             start, end = s.find('{'), s.rfind('}')
             if start == -1 or end == -1 or end <= start:
                 raise ValueError("No JSON object found")
-            return json.loads(s[start:end+1])
-        
-        # Parse and validate the JSON with fallback
-        import json
+            return _json.loads(s[start:end+1])
+
         try:
-            data = json.loads(raw_response)  # should already be strict JSON
-            print("✅ Valid JSON received from GPT-5")
-            print(f"📊 Company: {data.get('companyName', 'Unknown')}")
-            print(f"💰 Cash: ${data.get('cashOnHand', 0)/1000000:.1f}M" if data.get('cashOnHand') else "💰 Cash: Not specified")
-        except json.JSONDecodeError as e:
-            print(f"❌ Primary JSON parsing failed: {e}")
-            print(f"🔄 Attempting fallback extraction...")
-            try:
-                data = extract_json(raw_response)
-                print("✅ Fallback extraction successful")
-                print(f"📊 Company: {data.get('companyName', 'Unknown')}")
-            except Exception as fallback_error:
-                print(f"❌ Fallback extraction also failed: {fallback_error}")
-                print(f"📄 Raw response preview: {raw_response[:500]}...")
-                # Save debug info for postmortem
-                print(f"🐛 Full response length: {len(raw_response)} characters")
-                
-                # Save raw response to S3 for debugging
-                try:
-                    import boto3, time
-                    dbg_bucket = os.environ.get('S3_DEBUG_BUCKET')
-                    if dbg_bucket:
-                        key = f"debug/gpt5_raw/{int(time.time())}-{filename}.txt"
-                        boto3.client('s3').put_object(Bucket=dbg_bucket, Key=key, Body=raw_response.encode('utf-8'))
-                        print(f"🪵 Saved raw response to s3://{dbg_bucket}/{key}")
-                except Exception as _:
-                    pass
-                    
-                raise e
-        
-        # This block is now in finally clause below
-        
-        # Add filename for database storage
-        data['filename'] = filename
-        
-        # Handle company name override (legacy API Gateway behavior)
+            data = _json.loads(raw)
+            print("✅ Valid JSON from model")
+        except Exception as e:
+            print(f"❌ JSON parse failed: {e}; preview: {raw[:300]}")
+            data = _extract_json(raw)
+            print("✅ Fallback JSON extraction succeeded")
+
+        # Attach filename & override company name (if flagged as user-provided)
+        data["filename"] = filename
         if company_name_override and user_provided_name:
-            print(f"🏢 Using provided company name: {company_name_override}")
-            data['companyName'] = company_name_override
-        
-        # Normalize for database compatibility
-        normalized_data = normalize_analysis_for_db(data)
-        
-        print(f"🎉 GPT-5 analysis completed successfully for {filename}")
-        return normalized_data
-        
+            data["companyName"] = company_name_override
+
+        normalized = normalize_analysis_for_db(data)
+        print(f"🎉 Completed analysis for {filename}")
+        return normalized
+
     except Exception as e:
-        error_msg = f"GPT-5 analysis failed: {str(e)}"
-        print(error_msg)
+        err = f"GPT-5 analysis failed: {str(e)}"
+        print(err)
         print(f"Full traceback: {traceback.format_exc()}")
-        # No fallback - raise the error to get clear feedback
-        raise Exception(f"GPT-5 analysis failed: {str(e)}")
-    
+        raise Exception(err)
     finally:
-        # Clean up - delete the file from OpenAI (only if we uploaded one)
+        # Remote file cleanup
         try:
             if file_response and getattr(file_response, "id", None) and client:
-                print("🗑️ Cleaning up uploaded file...")
+                print("🗑️ Deleting uploaded file from OpenAI storage...")
                 client.files.delete(file_response.id)
-                print("✅ File deleted successfully!")
+                print("✅ File deleted")
         except Exception as cleanup_error:
             print(f"⚠️ File cleanup failed: {cleanup_error}")
-        
-        # Clean up local temp file (only if we created one)
+        # Local temp cleanup
         try:
-            if tmp_path:
-                import os
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-                    print("🗑️ Local temp file cleaned up")
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+                print("🗑️ Local temp file cleaned up")
         except Exception as cleanup_error:
             print(f"⚠️ Local file cleanup failed: {cleanup_error}")
+
 
 
 def store_result_in_db(analysis_result: dict, company_id: int):
@@ -992,7 +949,9 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             if value is None or value == '':
                 return None
             try:
-                return float(value)
+                # Round to nearest whole month for INTEGER column
+                from decimal import Decimal, ROUND_HALF_UP
+                return int(Decimal(str(value)).to_integral_value(rounding=ROUND_HALF_UP))
             except (ValueError, TypeError):
                 return None
         
@@ -1024,6 +983,11 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             "s3_gpt5_import",  # edited_by - distinguish from API Gateway imports
             evidence_value  # NEW: evidence field with page citations (JSONB)
         ]
+        
+        # Debug parameter mapping (remove after confirming fix)
+        print("🔍 Database parameters being inserted:")
+        for i, v in enumerate(report_data, 1):
+            print(f"  ${i}: {type(v).__name__} -> {v!r}")
         
         cursor.execute(report_insert, report_data)
         conn.commit()
