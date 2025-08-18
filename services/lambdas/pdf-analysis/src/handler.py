@@ -651,6 +651,11 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
         print("OPENAI_API_KEY not configured")
         return create_fallback_response(filename, "PDF content", "OpenAI API key not configured")
     
+    # Initialize variables for cleanup
+    file_response = None
+    tmp_path = None
+    client = None
+    
     try:
         # Import and initialize OpenAI client
         from openai import OpenAI
@@ -662,8 +667,6 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
         if is_text_only:
             print("📝 Processing text-only input (legacy API Gateway path)")
             # For text-only, we'll send the text directly without file upload
-            file_response = None
-            tmp_path = None
             text_content = pdf_bytes.decode('utf-8')
         else:
             print("📤 Uploading PDF to OpenAI Files API...")
@@ -681,8 +684,12 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             print(f"✅ File uploaded successfully! File ID: {file_response.id}")
             text_content = None
         
-        # Your excellent existing system prompt (preserved!)
-        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
+        # Updated system prompt with strict JSON requirements
+        system_prompt = """Return ONLY one JSON object that validates the provided JSON Schema.
+Do NOT include code fences or any text outside the JSON.
+All string values must escape quotes correctly.
+
+You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
 
 CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
@@ -714,48 +721,48 @@ Based on the detected sector, provide detailed analysis for these two areas:
 
 EXTRACT ONLY these fields with evidence citations: companyName, reportDate, reportPeriod, sector, cashOnHand, monthlyBurnRate, cashOutDate, runway, budgetVsActual, financialSummary, sectorHighlightA, sectorHighlightB, keyRisks, personnelUpdates, nextMilestones.
 
-For each field, provide evidence with exact quotes and page numbers where found. If not explicitly present, return null.
+For each field, provide evidence with compact structured format: {"page": integer, "quote": "short quote with escaped quotes"}. If not explicitly present, return null.
 """
         
-        # Define structured JSON schema (proven working from our test)
+        # Fixed JSON schema with length limits and proper evidence structure
         schema = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "companyName": {"type": ["string", "null"]},
+                "companyName": {"type": ["string", "null"], "maxLength": 200},
                 "reportDate": {"type": ["string", "null"], "format": "date"},
-                "reportPeriod": {"type": ["string", "null"]},
-                "sector": {"type": ["string", "null"]},
+                "reportPeriod": {"type": ["string", "null"], "maxLength": 50},
+                "sector": {"type": ["string", "null"], "enum": ["healthcare", "consumer", "enterprise", "manufacturing", None]},
                 "cashOnHand": {"type": ["number", "null"]},
                 "monthlyBurnRate": {"type": ["number", "null"]},
-                "cashOutDate": {"type": ["string", "null"]},
+                "cashOutDate": {"type": ["string", "null"], "maxLength": 40},
                 "runway": {"type": ["number", "null"]},
-                "budgetVsActual": {"type": ["string", "null"]},
-                "financialSummary": {"type": ["string", "null"]},
-                "sectorHighlightA": {"type": ["string", "null"]},
-                "sectorHighlightB": {"type": ["string", "null"]},
-                "keyRisks": {"type": ["string", "null"]},
-                "personnelUpdates": {"type": ["string", "null"]},
-                "nextMilestones": {"type": ["string", "null"]},
+                "budgetVsActual": {"type": ["string", "null"], "maxLength": 2000},
+                "financialSummary": {"type": ["string", "null"], "maxLength": 2000},
+                "sectorHighlightA": {"type": ["string", "null"], "maxLength": 1500},
+                "sectorHighlightB": {"type": ["string", "null"], "maxLength": 1500},
+                "keyRisks": {"type": ["string", "null"], "maxLength": 800},
+                "personnelUpdates": {"type": ["string", "null"], "maxLength": 800},
+                "nextMilestones": {"type": ["string", "null"], "maxLength": 800},
                 "evidence": {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "companyName": {"type": ["string", "null"]},
-                        "reportDate": {"type": ["string", "null"]},
-                        "reportPeriod": {"type": ["string", "null"]},
-                        "sector": {"type": ["string", "null"]},
-                        "cashOnHand": {"type": ["string", "null"]},
-                        "monthlyBurnRate": {"type": ["string", "null"]},
-                        "cashOutDate": {"type": ["string", "null"]},
-                        "runway": {"type": ["string", "null"]},
-                        "budgetVsActual": {"type": ["string", "null"]},
-                        "financialSummary": {"type": ["string", "null"]},
-                        "sectorHighlightA": {"type": ["string", "null"]},
-                        "sectorHighlightB": {"type": ["string", "null"]},
-                        "keyRisks": {"type": ["string", "null"]},
-                        "personnelUpdates": {"type": ["string", "null"]},
-                        "nextMilestones": {"type": ["string", "null"]}
+                        "companyName": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "reportDate": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "reportPeriod": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "sector": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "cashOnHand": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "monthlyBurnRate": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "cashOutDate": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "runway": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 120}}, "required": ["page", "quote"]},
+                        "budgetVsActual": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "financialSummary": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "sectorHighlightA": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "sectorHighlightB": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "keyRisks": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "personnelUpdates": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]},
+                        "nextMilestones": {"type": ["object", "null"], "properties": {"page": {"type": ["integer", "null"]}, "quote": {"type": ["string", "null"], "maxLength": 200}}, "required": ["page", "quote"]}
                     },
                     "required": ["companyName", "reportDate", "reportPeriod", "sector", "cashOnHand", "monthlyBurnRate", "cashOutDate", "runway", "budgetVsActual", "financialSummary", "sectorHighlightA", "sectorHighlightB", "keyRisks", "personnelUpdates", "nextMilestones"]
                 }
@@ -794,41 +801,58 @@ For each field, provide evidence with exact quotes and page numbers where found.
                 "role": "user",
                 "content": content
             }],
-            text={
-                "format": {
-                    "type": "json_schema",
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
                     "name": "financial_kpis_with_evidence",
-                    "strict": True,
-                    "schema": schema
+                    "schema": schema,
+                    "strict": True
                 }
             },
-            max_output_tokens=4000
+            temperature=0,
+            max_output_tokens=12000
         )
         
-        response_content = response.output_text
+        raw_response = response.output_text
         
-        # Parse and validate the JSON
+        # Defensive JSON parsing with fallback extraction
+        def extract_json(s: str) -> dict:
+            """Extract JSON from potentially malformed response"""
+            # Strip code fences/BOM/smart quotes
+            s = s.strip().replace('\ufeff', '')
+            if s.startswith('```'):
+                s = s.strip('`')  # crude but effective for fences
+            s = s.replace('"', '"').replace('"', '"').replace("'", "'")
+            # Grab the largest {...} block
+            start = s.find('{')
+            end = s.rfind('}')
+            if start == -1 or end == -1 or end <= start:
+                raise ValueError("No JSON object found")
+            chunk = s[start:end+1]
+            return json.loads(chunk)
+        
+        # Parse and validate the JSON with fallback
         import json
         try:
-            data = json.loads(response_content)
+            data = json.loads(raw_response)  # should already be strict JSON
             print("✅ Valid JSON received from GPT-5")
             print(f"📊 Company: {data.get('companyName', 'Unknown')}")
             print(f"💰 Cash: ${data.get('cashOnHand', 0)/1000000:.1f}M" if data.get('cashOnHand') else "💰 Cash: Not specified")
         except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing failed: {e}")
-            raise e
+            print(f"❌ Primary JSON parsing failed: {e}")
+            print(f"🔄 Attempting fallback extraction...")
+            try:
+                data = extract_json(raw_response)
+                print("✅ Fallback extraction successful")
+                print(f"📊 Company: {data.get('companyName', 'Unknown')}")
+            except Exception as fallback_error:
+                print(f"❌ Fallback extraction also failed: {fallback_error}")
+                print(f"📄 Raw response preview: {raw_response[:500]}...")
+                # Save debug info for postmortem
+                print(f"🐛 Full response length: {len(raw_response)} characters")
+                raise e
         
-        # Clean up - delete the file from OpenAI (only if we uploaded one)
-        if file_response:
-            print("🗑️ Cleaning up uploaded file...")
-            client.files.delete(file_response.id)
-            print("✅ File deleted successfully!")
-        
-        # Clean up local temp file (only if we created one)
-        if tmp_path:
-            import os
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        # This block is now in finally clause below
         
         # Add filename for database storage
         data['filename'] = filename
@@ -850,6 +874,26 @@ For each field, provide evidence with exact quotes and page numbers where found.
         print(f"Full traceback: {traceback.format_exc()}")
         # No fallback - raise the error to get clear feedback
         raise Exception(f"GPT-5 analysis failed: {str(e)}")
+    
+    finally:
+        # Clean up - delete the file from OpenAI (only if we uploaded one)
+        try:
+            if file_response and client:
+                print("🗑️ Cleaning up uploaded file...")
+                client.files.delete(file_response.id)
+                print("✅ File deleted successfully!")
+        except Exception as cleanup_error:
+            print(f"⚠️ File cleanup failed: {cleanup_error}")
+        
+        # Clean up local temp file (only if we created one)
+        try:
+            if tmp_path:
+                import os
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    print("🗑️ Local temp file cleaned up")
+        except Exception as cleanup_error:
+            print(f"⚠️ Local file cleanup failed: {cleanup_error}")
 
 
 def store_result_in_db(analysis_result: dict, company_id: int):

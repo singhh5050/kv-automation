@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       metadata['company-name'] = companyName
     }
     
-    // Convert file to ArrayBuffer for S3 upload
-    const fileBuffer = await file.arrayBuffer()
+    // Convert file to Uint8Array for S3 upload
+    const fileBuffer = new Uint8Array(await file.arrayBuffer())
     
     // Upload to S3
     const command = new PutObjectCommand({
