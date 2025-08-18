@@ -20,10 +20,23 @@ def lambda_handler(event, context):
     # Log the incoming event for debugging
     print(f"Lambda invoked with event: {json.dumps(event)[:500]}...")
     
-    # Detect event type: S3 event vs API Gateway
+    # Enhanced event type detection
     if 'Records' in event and event['Records'][0].get('eventSource') == 'aws:s3':
         print("🔄 Processing S3 event (new architecture)")
         return handle_s3_event(event, context)
+    elif 'requestContext' in event and 'elb' in event['requestContext']:
+        print("⚠️  WARNING: Received ELB event - S3 trigger not configured!")
+        print(f"🔍 Event source: {event.get('requestContext', {})}")
+        print("💡 Configure S3 bucket notification to trigger this Lambda on .pdf uploads")
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps({
+                'error': 'S3 trigger not configured',
+                'message': 'Configure S3 bucket notification to trigger this Lambda',
+                'received_event_type': 'ELB'
+            })
+        }
     else:
         print("📡 Processing API Gateway event (legacy architecture)")
         return handle_api_gateway_event(event, context)
