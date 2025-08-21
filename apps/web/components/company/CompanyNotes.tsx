@@ -29,8 +29,8 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
     try {
       setLoading(true)
       const response = await getCompanyNotes(companyId)
-      if (response.success) {
-        setNotes(response.data || [])
+      if (response.data && !response.error) {
+        setNotes(response.data.data || [])
       } else {
         setError(response.error || 'Failed to load notes')
       }
@@ -52,8 +52,8 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
         content: newNoteContent.trim()
       })
 
-      if (response.success) {
-        setNotes([response.data, ...notes])
+      if (response.data && !response.error) {
+        setNotes([response.data.data, ...notes])
         setNewNoteSubject('')
         setNewNoteContent('')
         setShowNewNoteForm(false)
@@ -71,7 +71,7 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
   const handleUpdateNote = async (noteId: number, updates: { subject?: string; content?: string }) => {
     try {
       const response = await updateCompanyNote(noteId, updates)
-      if (response.success) {
+      if (response.data && !response.error) {
         setNotes(notes.map(note => 
           note.id === noteId ? { ...note, ...updates } : note
         ))
@@ -90,7 +90,7 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
 
     try {
       const response = await deleteCompanyNote(noteId)
-      if (response.success) {
+      if (response.data && !response.error) {
         setNotes(notes.filter(note => note.id !== noteId))
       } else {
         setError(response.error || 'Failed to delete note')
