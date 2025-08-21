@@ -51,6 +51,17 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
+    
+    // Validate file sizes (5GB limit for direct S3 uploads)
+    const maxSize = 5 * 1024 * 1024 * 1024 // 5GB in bytes
+    const oversizedFiles = pdfFiles.filter(file => file.size > maxSize)
+    
+    if (oversizedFiles.length > 0) {
+      const oversizedNames = oversizedFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join(', ')
+      alert(`File(s) too large: ${oversizedNames}. Maximum size is 5GB for direct S3 uploads. Please compress or split the file(s) if they exceed this limit.`)
+      return
+    }
+    
     if (pdfFiles.length > 0) {
       // If a forceCompanyName is provided, bypass the prompt entirely
       if (forceCompanyName && forceCompanyName.trim()) {
@@ -60,7 +71,7 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
       setPendingFiles(pdfFiles)
       setShowNamePrompt(true)
     }
-  }, [onUpload, forceCompanyName])
+  }, [onUpload, forceCompanyName, forceCompanyId])
 
   const handleSubmit = () => {
     let companyName: string | undefined

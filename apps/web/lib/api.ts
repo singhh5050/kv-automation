@@ -94,57 +94,82 @@ export async function uploadFile(file: File, companyName?: string) {
 }
 
 /**
- * Secure S3 Upload via Next.js API Route
- * Uploads PDF to S3 server-side, which triggers Lambda via S3 events
+ * Direct S3 Upload via Presigned URLs
+ * Browser uploads directly to S3, bypassing server size limits (supports up to 5GB)
  */
 export async function uploadToS3(file: File, companyId?: number, companyName?: string) {
   try {
-    console.log(`🚀 Starting secure S3 upload for ${file.name}`)
+    console.log(`🚀 Starting direct S3 upload for ${file.name}`)
     console.log(`📋 Company ID: ${companyId}, Company Name: ${companyName}`)
+    console.log(`📊 File size: ${(file.size / 1024 / 1024).toFixed(2)}MB`)
     
-    // Create FormData for server-side upload
-    const formData = new FormData()
-    formData.append('file', file)
-    if (companyId) {
-      formData.append('companyId', companyId.toString())
-    }
-    if (companyName) {
-      formData.append('companyName', companyName)
-    }
-    
-    console.log(`📤 Sending to server-side API route...`)
-    
-    // Upload via secure server-side API route
-    const response = await fetch('/api/upload-s3', {
+    // Step 1: Get presigned URL from our API
+    console.log(`🔗 Requesting presigned URL...`)
+    const presignResponse = await fetch('/api/presign-s3', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type || 'application/pdf',
+        companyId,
+        companyName,
+      }),
     })
     
-    const result = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(result.error || `HTTP error! status: ${response.status}`)
+    if (!presignResponse.ok) {
+      const presignError = await presignResponse.json()
+      throw new Error(presignError.error || `Failed to get presigned URL: ${presignResponse.status}`)
     }
     
-    console.log(`✅ Secure S3 upload successful!`, result)
+    const presignData = await presignResponse.json()
+    console.log(`✅ Presigned URL obtained for key: ${presignData.s3Key}`)
+    
+    // Step 2: Upload directly to S3 using presigned URL
+    console.log(`📤 Uploading directly to S3...`)
+    const uploadResponse = await fetch(presignData.presignedUrl, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/pdf',
+      },
+    })
+    
+    if (!uploadResponse.ok) {
+      // S3 errors are typically not JSON, but plain text
+      let errorMessage = `S3 upload failed (${uploadResponse.status})`
+      try {
+        const errorText = await uploadResponse.text()
+        errorMessage += `: ${errorText.slice(0, 200)}`
+      } catch {
+        // If we can't read the error text, use the status
+      }
+      throw new Error(errorMessage)
+    }
+    
+    console.log(`✅ Direct S3 upload successful!`)
+    console.log(`🆔 S3 ETag: ${uploadResponse.headers.get('ETag')}`)
     
     return {
       data: {
-        success: result.success,
-        s3Key: result.s3Key,
-        bucket: result.bucket,
-        message: result.message,
-        processingNote: result.processingNote
+        success: true,
+        s3Key: presignData.s3Key,
+        bucket: presignData.bucket,
+        message: 'PDF uploaded successfully to S3. Processing will begin automatically.',
+        processingNote: 'Results will appear in the database shortly.',
+        etag: uploadResponse.headers.get('ETag'),
+        uploadMethod: 'direct-s3'
       }
     }
     
   } catch (error) {
-    console.error('❌ Secure S3 upload error:', error)
+    console.error('❌ Direct S3 upload error:', error)
     console.error('❌ Error type:', error?.constructor?.name)
     
     return { 
       error: error instanceof Error ? error.message : 'S3 upload failed',
-      fallbackSuggestion: 'Try the legacy upload method if this persists.',
+      fallbackSuggestion: 'Try refreshing and uploading again. Contact support if the issue persists.',
       errorDetails: error
     }
   }

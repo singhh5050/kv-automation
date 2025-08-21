@@ -4,5 +4,16 @@
     "outputDirectory": "apps/web/.next",
     "installCommand": "npm install && cd apps/web && npm install",
     "devCommand": "cd apps/web && npm run dev",
-    "ignoreCommand": "git diff --quiet HEAD^ HEAD apps/web/"
+    "ignoreCommand": "git diff --quiet HEAD^ HEAD apps/web/",
+    "functions": {
+      "apps/web/app/api/upload-s3/route.ts": {
+        "maxDuration": 30
+      },
+      "apps/web/app/api/presign-s3/route.ts": {
+        "maxDuration": 10
+      }
+    },
+    "env": {
+      "AWS_REGION": "us-east-1"
+    }
   } 
