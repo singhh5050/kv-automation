@@ -6,6 +6,7 @@ import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, 
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
+import CompanyNotes from '@/components/company/CompanyNotes'
 import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
 import {
   ResponsiveContainer,
@@ -78,7 +79,7 @@ const getSectorLabels = (sector: string = 'unknown') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment'
+type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -938,6 +939,7 @@ export default function CompanyDetailPage() {
             <option value="captable">🏦 Cap Table</option>
             <option value="reports">📄 Financial Reports ({company.financial_reports.length})</option>
             <option value="database">🗄️ Database</option>
+            <option value="notes">📝 Notes</option>
           </select>
         </div>
 
@@ -1012,6 +1014,17 @@ export default function CompanyDetailPage() {
             >
               <span>🗄️</span>
               <span>Database</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('notes')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'notes'
+                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>📝</span>
+              <span>Notes</span>
             </button>
           </nav>
         </div>
@@ -2422,6 +2435,15 @@ export default function CompanyDetailPage() {
                   </div>
                   
                   <UniversalDatabaseEditor companyId={companyId} onUpdate={loadCompanyData} />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'notes' && (
+              <div className="space-y-4">
+                {/* Notes Section */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                  <CompanyNotes companyId={companyId} />
                 </div>
               </div>
             )}

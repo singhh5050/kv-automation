@@ -118,6 +118,36 @@ def create_database_schema(conn):
             print(f"⚠️ Error adding evidence field: {e}")
             raise e
 
+    # ---- SAFE: Add company_notes table if it doesn't exist ------------
+    print("🔧 Creating company_notes table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_notes (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            subject VARCHAR(255) NOT NULL,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100),
+            updated_by VARCHAR(100)
+        );
+        """)
+        print("✅ Company notes table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_notes_company_id ON company_notes(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_notes_created_at ON company_notes(created_at DESC);
+        """)
+        print("✅ Company notes table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating company_notes table: {e}")
+        raise e
+
     # ---- COMMENTED OUT: Table recreation (safe mode) -----------------
     # cursor.execute("""
     # CREATE TABLE companies (
@@ -166,13 +196,14 @@ def create_database_schema(conn):
     # ALL TABLE CREATION AND INDEXES COMMENTED OUT IN SAFE MODE
     # (Rest of the table creation code is commented out for safety)
     
-    print("🎉 Evidence field migration completed successfully")
+    print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table safely",
-        "operation": "add_evidence_field",
-        "affected_tables": ["financial_reports"],
-        "new_columns": ["evidence JSONB"]
+        "message": "Evidence field added to financial_reports table and company_notes table created safely",
+        "operation": "add_evidence_field_and_notes_table",
+        "affected_tables": ["financial_reports", "company_notes"],
+        "new_columns": ["evidence JSONB"],
+        "new_tables": ["company_notes"]
     }
 
 

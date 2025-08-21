@@ -92,6 +92,14 @@ def lambda_handler(event, context):
         result = delete_company(db_config, body.get("company_id"))
     elif operation == "get_company_names":
         result = get_company_names(db_config)
+    elif operation == "get_company_notes":
+        result = get_company_notes(db_config, body.get("company_id"))
+    elif operation == "create_company_note":
+        result = create_company_note(db_config, body)
+    elif operation == "update_company_note":
+        result = update_company_note(db_config, body)
+    elif operation == "delete_company_note":
+        result = delete_company_note(db_config, body.get("note_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -2304,4 +2312,238 @@ def get_company_names(db_config: Dict) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to get company names: {str(e)}'
+        }
+
+# ────────────────────────────────────────────────────────────
+# COMPANY NOTES OPERATIONS
+# ────────────────────────────────────────────────────────────
+
+def get_company_notes(db_config: Dict, company_id: str) -> Dict[str, Any]:
+    """
+    Get all notes for a specific company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, company_id, subject, content, created_at, updated_at, created_by, updated_by
+            FROM company_notes 
+            WHERE company_id = %s
+            ORDER BY created_at DESC
+        """, [company_id])
+        
+        notes = _cursor_to_dict(cursor)
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': notes
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get company notes: {str(e)}'
+        }
+
+def create_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Create a new note for a company
+    """
+    company_id = data.get('company_id')
+    subject = data.get('subject')
+    content = data.get('content', '')
+    created_by = data.get('created_by', 'system')
+    
+    if not company_id or not subject:
+        return {
+            'success': False,
+            'error': 'company_id and subject are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO company_notes (company_id, subject, content, created_by, updated_by)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, created_at
+        """, [company_id, subject, content, created_by, created_by])
+        
+        result = cursor.fetchone()
+        note_id = result[0]
+        created_at = result[1]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'id': note_id,
+                'company_id': company_id,
+                'subject': subject,
+                'content': content,
+                'created_at': created_at.isoformat() if created_at else None,
+                'created_by': created_by
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to create company note: {str(e)}'
+        }
+
+def update_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update an existing company note
+    """
+    note_id = data.get('note_id')
+    updates = data.get('updates', {})
+    updated_by = data.get('updated_by', 'system')
+    
+    if not note_id or not updates:
+        return {
+            'success': False,
+            'error': 'note_id and updates are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Build dynamic update query
+        set_clauses = []
+        values = []
+        
+        if 'subject' in updates:
+            set_clauses.append('subject = %s')
+            values.append(updates['subject'])
+        
+        if 'content' in updates:
+            set_clauses.append('content = %s')
+            values.append(updates['content'])
+        
+        set_clauses.append('updated_by = %s')
+        values.append(updated_by)
+        
+        set_clauses.append('updated_at = CURRENT_TIMESTAMP')
+        
+        values.append(note_id)
+        
+        query = f"""
+            UPDATE company_notes 
+            SET {', '.join(set_clauses)}
+            WHERE id = %s
+            RETURNING id, company_id, subject, content, created_at, updated_at, created_by, updated_by
+        """
+        
+        cursor.execute(query, values)
+        result = cursor.fetchone()
+        
+        if not result:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Note not found'
+            }
+        
+        note_data = {
+            'id': result[0],
+            'company_id': result[1],
+            'subject': result[2],
+            'content': result[3],
+            'created_at': result[4].isoformat() if result[4] else None,
+            'updated_at': result[5].isoformat() if result[5] else None,
+            'created_by': result[6],
+            'updated_by': result[7]
+        }
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': note_data
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to update company note: {str(e)}'
+        }
+
+def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
+    """
+    Delete a company note
+    """
+    if not note_id:
+        return {
+            'success': False,
+            'error': 'note_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM company_notes 
+            WHERE id = %s
+            RETURNING id
+        """, [note_id])
+        
+        result = cursor.fetchone()
+        
+        if not result:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Note not found'
+            }
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {'deleted_id': result[0]}
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete company note: {str(e)}'
         } 

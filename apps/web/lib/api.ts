@@ -519,4 +519,74 @@ export async function getCompanyNames() {
       operation: 'get_company_names',
     }),
   })
+}
+
+// ────────────────────────────────────────────────────────────
+// COMPANY NOTES API FUNCTIONS
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Get all notes for a specific company
+ */
+export async function getCompanyNotes(companyId: string) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_company_notes',
+      company_id: companyId,
+    }),
+  })
+}
+
+/**
+ * Create a new note for a company
+ */
+export async function createCompanyNote(companyId: string, noteData: { subject: string; content: string }) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'create_company_note',
+      company_id: companyId,
+      ...noteData,
+    }),
+  })
+}
+
+/**
+ * Update an existing company note
+ */
+export async function updateCompanyNote(noteId: number, updates: { subject?: string; content?: string }) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'update_company_note',
+      note_id: noteId,
+      updates,
+    }),
+  })
+}
+
+/**
+ * Delete a company note
+ */
+export async function deleteCompanyNote(noteId: number) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'delete_company_note',
+      note_id: noteId,
+    }),
+  })
 } 
