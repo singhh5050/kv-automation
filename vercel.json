@@ -5,8 +5,7 @@
     "installCommand": "npm install && cd apps/web && npm install",
     "devCommand": "cd apps/web && npm run dev",
     "ignoreCommand": "git diff --quiet HEAD^ HEAD apps/web/",
-
     "env": {
       "AWS_REGION": "us-east-1"
     }
-  } 
+}
