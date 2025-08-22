@@ -8,6 +8,7 @@ import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
+import { detectCompanyStage } from '@/lib/stageDetection'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -279,34 +280,7 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
   )
 }
 
-// Detect stage from KV fund names (Growth > Main > Early)
-const detectCompanyStageFromInvestors = (investors: any[] | undefined): string => {
-  if (!Array.isArray(investors) || investors.length === 0) return 'N/A'
-  const kvInvestors = investors.filter(inv => typeof inv.investor_name === 'string' && inv.investor_name.startsWith('KV'))
-  if (kvInvestors.length === 0) return 'N/A'
-  let hasGrowth = false
-  let hasMain = false
-  let hasEarly = false
-  for (const inv of kvInvestors) {
-    const name = String(inv.investor_name || '').toLowerCase()
-    if (name.includes('opp') || name.includes('excelsior')) {
-      hasGrowth = true
-      continue
-    }
-    if (name.includes('seed')) {
-      hasEarly = true
-      continue
-    }
-    const roman = /kv\s+(i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3}|xiv|xv)(\s|$)/i
-    if (roman.test(name)) {
-      hasMain = true
-    }
-  }
-  if (hasGrowth) return 'Growth Stage'
-  if (hasMain) return 'Main Stage'
-  if (hasEarly) return 'Early Stage'
-  return 'N/A'
-}
+
 
 export default function CompanyDetailPage() {
   const params = useParams()
@@ -880,7 +854,7 @@ export default function CompanyDetailPage() {
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
               <p className="text-sm font-bold text-gray-900">
-                {detectCompanyStageFromInvestors(company.current_cap_table?.investors)}
+                {detectCompanyStage(company.current_cap_table?.investors)}
               </p>
             </div>
             
@@ -911,7 +885,7 @@ export default function CompanyDetailPage() {
               <p className="text-sm font-bold text-gray-900 truncate">
                 {company.current_cap_table?.investors
                   ?.filter(inv => inv.investor_name.startsWith('KV'))
-                  ?.map(inv => inv.investor_name.split(' ')[1] || inv.investor_name) // Show just "VII" instead of "KV VII"
+                  ?.map(inv => inv.investor_name.replace(/^KV\s*/i, '').trim()) // Remove "KV " prefix but keep full fund name
                   ?.join(', ') || 'N/A'
                 }
               </p>
