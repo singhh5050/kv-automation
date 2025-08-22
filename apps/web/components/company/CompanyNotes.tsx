@@ -1,8 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { CompanyNote } from '@/types'
 import { getCompanyNotes, createCompanyNote, updateCompanyNote, deleteCompanyNote } from '@/lib/api'
+
+// Import markdown editor CSS
+import '@uiw/react-md-editor/markdown-editor.css'
+import '@uiw/react-markdown-preview/markdown.css'
+
+// Dynamically import markdown editor to avoid SSR issues
+const MDEditor = dynamic(() => import('@uiw/react-md-editor'), { ssr: false })
+const MarkdownPreview = dynamic(() => import('@uiw/react-markdown-preview'), { ssr: false })
 
 interface CompanyNotesProps {
   companyId: string
@@ -134,7 +143,10 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">Company Notes</h2>
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Company Notes</h2>
+          <p className="text-sm text-gray-500 mt-1">✨ Full markdown support with checkboxes</p>
+        </div>
         <button
           onClick={() => setShowNewNoteForm(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -176,15 +188,23 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Content
+              Content (Markdown supported)
             </label>
-            <textarea
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              placeholder="Note content..."
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+            <div className="border border-gray-300 rounded-md overflow-hidden">
+              <MDEditor
+                value={newNoteContent}
+                onChange={(val) => setNewNoteContent(val || '')}
+                preview="edit"
+                height={200}
+                data-color-mode="light"
+                textareaProps={{
+                  placeholder: "Write your note in markdown...\n\n✨ Examples:\n- [ ] Unchecked task\n- [x] Completed task\n**Bold text**\n*Italic text*\n\n### Heading\n\n- Bullet point"
+                }}
+              />
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              💡 <strong>Tip:</strong> Use <code>- [ ]</code> for checkboxes, <code>**bold**</code>, <code>*italic*</code>, and more!
+            </div>
           </div>
 
           <div className="flex space-x-2">
@@ -214,7 +234,11 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
         <div className="text-center py-8">
           <div className="text-gray-400 text-4xl mb-2">📝</div>
           <p className="text-gray-500 text-lg">No notes yet</p>
-          <p className="text-gray-400 text-sm">Add your first note to get started</p>
+          <p className="text-gray-400 text-sm">Add your first note with markdown support!</p>
+          <div className="mt-4 text-xs text-gray-400 max-w-md mx-auto">
+            <p className="mb-1">✨ <strong>Features:</strong></p>
+            <p>✅ Checkboxes • <strong>Bold</strong> • <em>Italic</em> • Headings • Lists • Links</p>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -247,8 +271,12 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
                   </div>
                   
                   {note.content && (
-                    <div className="text-gray-700 text-sm mb-3 whitespace-pre-wrap">
-                      {note.content}
+                    <div className="text-gray-700 text-sm mb-3">
+                      <MarkdownPreview
+                        source={note.content}
+                        style={{ backgroundColor: 'transparent', padding: 0 }}
+                        data-color-mode="light"
+                      />
                     </div>
                   )}
                   
@@ -304,12 +332,18 @@ function EditNoteForm({
         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
       />
       
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={4}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-      />
+      <div className="border border-gray-300 rounded-md overflow-hidden">
+        <MDEditor
+          value={content}
+          onChange={(val) => setContent(val || '')}
+          preview="edit"
+          height={150}
+          data-color-mode="light"
+          textareaProps={{
+            placeholder: "Edit your note with markdown support..."
+          }}
+        />
+      </div>
       
       <div className="flex space-x-2">
         <button
