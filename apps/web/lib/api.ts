@@ -219,6 +219,22 @@ export async function getCompanies() {
 }
 
 /**
+ * Get optimized portfolio summary (for homepage cards)
+ * Returns only essential fields instead of full company overviews
+ */
+export async function getPortfolioSummary() {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_portfolio_summary',
+    }),
+  })
+}
+
+/**
  * Get reports for a specific company
  */
 export async function getCompanyReports(companyId: string) {

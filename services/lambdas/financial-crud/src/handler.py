@@ -92,6 +92,8 @@ def lambda_handler(event, context):
         result = delete_company(db_config, body.get("company_id"))
     elif operation == "get_company_names":
         result = get_company_names(db_config)
+    elif operation == "get_portfolio_summary":
+        result = get_portfolio_summary(db_config)
     elif operation == "get_company_notes":
         result = get_company_notes(db_config, body.get("company_id"))
     elif operation == "create_company_note":
@@ -2312,6 +2314,127 @@ def get_company_names(db_config: Dict) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to get company names: {str(e)}'
+        }
+
+def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
+    """
+    Get optimized portfolio summary with only the fields needed for company cards.
+    Single query instead of N+1 pattern - much more efficient.
+    """
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Single optimized query for all portfolio data
+        query = """
+            WITH latest_reports AS (
+                SELECT DISTINCT ON (company_id) 
+                    company_id,
+                    cash_out_date,
+                    sector,
+                    processed_at
+                FROM financial_reports 
+                ORDER BY company_id, report_date DESC, processed_at DESC
+            ),
+            kv_data AS (
+                SELECT 
+                    c.id as company_id,
+                    ctr.valuation,
+                    -- Calculate total KV ownership (sum all KV-related funds)
+                    COALESCE(SUM(
+                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)' 
+                        THEN cti.final_fds ELSE 0 END
+                    ), 0) as kv_ownership,
+                    -- Calculate total KV investment amount
+                    COALESCE(SUM(
+                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)' 
+                        THEN cti.total_invested ELSE 0 END
+                    ), 0) as kv_investment,
+                    -- Collect KV fund names for display
+                    string_agg(
+                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
+                        THEN cti.investor_name ELSE NULL END, 
+                        ', ' ORDER BY cti.total_invested DESC
+                    ) as kv_funds,
+                    -- Determine investment stage based on fund priority (Growth > Main > Early)
+                    CASE 
+                        WHEN MAX(CASE WHEN cti.investor_name ~* '.*(Opp|Excelsior).*' THEN 3 ELSE 0 END) = 3 THEN 'Growth Stage'
+                        WHEN MAX(CASE WHEN cti.investor_name ~* '^KV [IVX]+$' THEN 2 ELSE 0 END) = 2 THEN 'Main Stage'
+                        WHEN MAX(CASE WHEN cti.investor_name ~* '.*Seed.*' THEN 1 ELSE 0 END) = 1 THEN 'Early Stage'
+                        ELSE 'Unknown'
+                    END as investment_stage
+                FROM companies c
+                LEFT JOIN cap_table_current ctc ON c.id = ctc.company_id
+                LEFT JOIN cap_table_rounds ctr ON ctc.cap_table_round_id = ctr.id
+                LEFT JOIN cap_table_investors cti ON ctr.id = cti.cap_table_round_id
+                GROUP BY c.id, ctr.valuation
+            ),
+            report_counts AS (
+                SELECT 
+                    company_id,
+                    COUNT(*) as total_reports
+                FROM financial_reports
+                GROUP BY company_id
+            )
+            SELECT 
+                c.id,
+                c.name,
+                COALESCE(lr.sector, 'healthcare') as sector,
+                lr.cash_out_date,
+                COALESCE(rc.total_reports, 0) as total_reports,
+                kd.valuation,
+                kd.kv_ownership,
+                kd.kv_investment,
+                kd.kv_funds,
+                kd.investment_stage,
+                -- Get company logo from enrichment data
+                ce.extracted_data->>'logo_url' as company_logo
+            FROM companies c
+            LEFT JOIN latest_reports lr ON c.id = lr.company_id
+            LEFT JOIN kv_data kd ON c.id = kd.company_id
+            LEFT JOIN report_counts rc ON c.id = rc.company_id
+            LEFT JOIN company_enrichments ce ON c.id = ce.company_id
+            ORDER BY c.name ASC
+        """
+        
+        cursor.execute(query)
+        
+        # Format results for frontend
+        companies = []
+        for row in cursor.fetchall():
+            companies.append({
+                'id': row[0],
+                'name': row[1],
+                'sector': row[2],
+                'cash_out_date': row[3],
+                'total_reports': row[4],
+                'valuation': float(row[5]) if row[5] is not None else None,
+                'kv_ownership': float(row[6]) if row[6] is not None else None,
+                'kv_investment': float(row[7]) if row[7] is not None else None,
+                'kv_funds': row[8],
+                'investment_stage': row[9],
+                'company_logo': row[10]
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'companies': companies,
+                'total_count': len(companies)
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get portfolio summary: {str(e)}'
         }
 
 # ────────────────────────────────────────────────────────────

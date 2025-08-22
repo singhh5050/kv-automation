@@ -5,12 +5,13 @@ import React, { useState, useEffect } from 'react'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
 import CompanyCard from '@/components/company/CompanyCard'
-import { FinancialReport, Company, CompanyOverview, CapTableData } from '@/types'
+import { FinancialReport, Company, CompanyOverview, CapTableData, PortfolioSummary } from '@/types'
 import { 
   uploadFile, 
   uploadToS3,
   saveFinancialReport, 
   getCompanies, 
+  getPortfolioSummary,
   getCompanyOverview,
   getCompanyEnrichment,
   healthCheck,
@@ -22,118 +23,39 @@ import { detectCompanyStage } from '@/lib/stageDetection'
 
 
 
-// No coalescing - return companies exactly as they are in database
-const coalesceCompanies = (companies: Company[]): Company[] => {
-  console.log(`📋 Showing all companies as-is: ${companies.length} companies`)
-  return companies
-}
-
-// Convert database company format to frontend format using new overview API
-const convertDatabaseToFrontend = async (dbCompanies: any[]): Promise<Company[]> => {
-  const companies: Company[] = []
+// Convert portfolio summary to frontend Company format  
+const convertPortfolioSummaryToFrontend = (portfolioData: any[]): Company[] => {
+  console.log('🔄 Converting portfolio summary for', portfolioData.length, 'companies')
   
-  console.log('🔄 Starting conversion of', dbCompanies.length, 'companies')
-  
-  for (const dbCompany of dbCompanies) {
-    try {
-      console.log('🏢 Processing company:', dbCompany.name, 'ID:', dbCompany.id)
-      
-      // Get complete overview for this company
-      const overviewResult = await getCompanyOverview(dbCompany.id.toString())
-      console.log('📊 Overview result for', dbCompany.name, ':', overviewResult)
-      
-      if (overviewResult.data && !overviewResult.error) {
-        const overview: CompanyOverview = overviewResult.data.data
-        console.log('📄 Found overview for', dbCompany.name, ':', overview)
-        
-        // Convert financial reports to frontend format
-        const reports: FinancialReport[] = overview.financial_reports.map((report: any) => ({
-          id: report.id.toString(),
-          fileName: report.file_name || 'Unknown File',
-          reportDate: report.report_date || new Date().toISOString().split('T')[0],
-          reportPeriod: report.report_period || 'Unknown Period',
-          cashOnHand: report.cash_on_hand || 'N/A',
-          monthlyBurnRate: report.monthly_burn_rate || 'N/A',
-          cashOutDate: report.cash_out_date || 'N/A',
-          runway: report.runway || 'N/A',
-          budgetVsActual: report.budget_vs_actual || 'N/A',
-          financialSummary: report.financial_summary || 'Financial summary not available',
-          sectorHighlightA: report.sector_highlight_a || 'Sector analysis not available',
-          sectorHighlightB: report.sector_highlight_b || 'Sector analysis not available',
-          keyRisks: report.key_risks || 'N/A',
-          personnelUpdates: report.personnel_updates || 'N/A',
-          nextMilestones: report.next_milestones || 'N/A',
-          sector: report.sector || 'unknown',
-          uploadDate: report.processed_at ? new Date(report.processed_at).toLocaleDateString() : new Date().toLocaleDateString(),
-        }))
-
-        // Sort reports by date (newest first)
-        reports.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
-
-        // Transform cap table data to match frontend interface (remove kv_stake and is_kv)
-        let capTable: CapTableData | null = null
-        if (overview.current_cap_table) {
-          const ct = overview.current_cap_table
-          capTable = {
-            round_id: ct.round_id,
-            round_name: ct.round_name || 'Current',
-            valuation: ct.valuation,
-            amount_raised: ct.amount_raised,
-            round_date: ct.round_date,
-            total_pool_size: ct.total_pool_size,
-            pool_available: ct.pool_available,
-            pool_utilization: ct.pool_utilization,
-            options_outstanding: ct.options_outstanding,
-            investors: (ct.investors || []).map((inv: any) => ({
-              investor_name: inv.investor_name,
-              total_invested: inv.total_invested,
-              final_fds: inv.final_fds,
-              final_round_investment: inv.final_round_investment
-            }))
-          }
-        }
-
-        // Detect company stage from cap table
-        const companyStage = capTable ? detectCompanyStage(capTable.investors) : 'Unknown'
-        
-        companies.push({
-          id: dbCompany.id.toString(),
-          name: dbCompany.name,
-          sector: overview.company.sector || (reports[0]?.sector) || 'unknown',
-          stage: companyStage,
-          reports: reports,
-          latestReport: reports[0] || null,
-          capTable: capTable
-        })
-        
-        console.log('✅ Successfully converted company:', dbCompany.name, 'with', reports.length, 'reports and cap table:', !!overview.current_cap_table)
-      } else {
-        // Check if error is due to missing cap_table_current table
-        const isCapTableError = overviewResult.error && overviewResult.error.includes('cap_table_current')
-        if (isCapTableError) {
-          console.info('ℹ️ Company has no cap table data (table not initialized):', dbCompany.name)
-        } else {
-          console.warn('⚠️ No overview found for company:', dbCompany.name, 'Error:', overviewResult.error)
-        }
-        
-        // Create basic company without data
-        companies.push({
-          id: dbCompany.id.toString(),
-          name: dbCompany.name,
-          sector: dbCompany.sector || 'unknown',
-          stage: 'Unknown',
-          reports: [],
-          latestReport: null,
-          capTable: null
-        })
-      }
-    } catch (error) {
-      console.error(`💥 Error loading overview for company ${dbCompany.name}:`, error)
+  return portfolioData.map((company: any) => ({
+    id: company.id.toString(),
+    name: company.name,
+    sector: company.sector || 'unknown',
+    stage: company.investment_stage || 'Unknown',
+    reports: [], // We don't need full reports for portfolio view
+    latestReport: null, // Will be populated if needed when user clicks on company
+    capTable: company.valuation ? {
+      round_id: null,
+      round_name: 'Current',
+      valuation: company.valuation,
+      amount_raised: null,
+      round_date: null,
+      total_pool_size: null,
+      pool_available: null,
+      pool_utilization: null,
+      options_outstanding: null,
+      investors: [] // Will be populated if needed when user clicks on company
+    } : null,
+    // Portfolio summary specific fields
+    portfolioSummary: {
+      cash_out_date: company.cash_out_date,
+      total_reports: company.total_reports,
+      kv_ownership: company.kv_ownership,
+      kv_investment: company.kv_investment,
+      kv_funds: company.kv_funds,
+      company_logo: company.company_logo
     }
-  }
-  
-  console.log('🎯 Conversion complete. Total companies:', companies.length)
-  return coalesceCompanies(companies)
+  }))
 }
 
 export default function Home() {
@@ -235,21 +157,21 @@ export default function Home() {
 
     setIsLoading(true)
     try {
-      console.log('🔄 Loading companies from database...')
-      const result = await getCompanies()
-      console.log('📊 Raw database result:', result)
+      console.log('🔄 Loading portfolio summary from database...')
+      const result = await getPortfolioSummary()
+      console.log('📊 Portfolio summary result:', result)
       
       if (result.data && !result.error) {
-        const dbCompanies = result.data.data?.companies || []
-        console.log('🏢 Database companies:', dbCompanies)
-        console.log('📈 Number of companies found:', dbCompanies.length)
+        const portfolioCompanies = result.data.data?.companies || []
+        console.log('🏢 Portfolio companies:', portfolioCompanies)
+        console.log('📈 Number of companies found:', portfolioCompanies.length)
         
-        if (dbCompanies.length === 0) {
+        if (portfolioCompanies.length === 0) {
           console.log('⚠️ No companies found in database')
           setCompanies([])
         } else {
-          console.log('🔄 Converting database format to frontend format...')
-          const frontendCompanies = await convertDatabaseToFrontend(dbCompanies)
+          console.log('🔄 Converting portfolio summary to frontend format...')
+          const frontendCompanies = convertPortfolioSummaryToFrontend(portfolioCompanies)
           console.log('✅ Converted companies:', frontendCompanies)
           console.log('📊 Number of frontend companies:', frontendCompanies.length)
           setCompanies(frontendCompanies)
@@ -257,15 +179,16 @@ export default function Home() {
           // Cache the loaded data
           companiesCache.set(frontendCompanies)
           
-          // Load enrichment data for companies
+          // Load enrichment data for companies (if needed)
+          // Note: Portfolio summary already includes logos, so this may not be needed
           loadEnrichmentData(frontendCompanies)
         }
       } else {
-        console.error('❌ Error loading companies:', result.error)
+        console.error('❌ Error loading portfolio summary:', result.error)
         setErrorMessage(`Failed to load companies: ${result.error}`)
       }
     } catch (error) {
-      console.error('💥 Exception loading companies:', error)
+      console.error('💥 Exception loading portfolio summary:', error)
       setErrorMessage(`Failed to load companies: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)

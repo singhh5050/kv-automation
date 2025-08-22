@@ -103,15 +103,22 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
 
   const formatDate = (dateString: string) => {
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      const date = new Date(dateString)
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        return null // Return null for invalid dates instead of showing them
+      }
+      
+      return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'America/Los_Angeles' // Pacific Time
       })
     } catch {
-      return dateString
+      return null // Return null for any formatting errors
     }
   }
 
@@ -246,9 +253,11 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
                   )}
                   
                   <div className="text-xs text-gray-500">
-                    Created {formatDate(note.created_at)}
-                    {note.updated_at !== note.created_at && (
-                      <span> • Updated {formatDate(note.updated_at)}</span>
+                    {formatDate(note.created_at) && (
+                      <span>Created {formatDate(note.created_at)}</span>
+                    )}
+                    {note.updated_at !== note.created_at && formatDate(note.updated_at) && (
+                      <span>{formatDate(note.created_at) ? ' • ' : ''}Updated {formatDate(note.updated_at)}</span>
                     )}
                   </div>
                 </div>

@@ -86,26 +86,33 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
   console.log(`CompanyCard for ${company.name} - enrichmentData:`, enrichmentData)
   
   const latestReport = company.latestReport;
-  const reportCount = company.reports.length;
+  const reportCount = company.portfolioSummary?.total_reports ?? company.reports.length;
   const hasCapTable = !!company.capTable;
   
-  // Get cash out date from latest report
-  const cashOutDateInfo = formatCashOutDate(latestReport?.cashOutDate);
+  // Use portfolio summary cash out date if available, otherwise fall back to latest report
+  const cashOutDate = company.portfolioSummary?.cash_out_date ?? latestReport?.cashOutDate;
+  const cashOutDateInfo = formatCashOutDate(cashOutDate);
 
   // Get clean display name
   const displayName = company.name; // Use exact name from database
 
-  // Dynamically find KV funds and calculate total stake and investment
-  const kvInvestors = company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV')) || [];
-  const kvStake = kvInvestors.reduce((total, investor) => total + (investor.final_fds || 0), 0);
-  const kvTotalInvestment = kvInvestors.reduce((total, investor) => total + (investor.total_invested || 0), 0);
-  // Display-friendly fund names: remove leading "KV " to avoid repetition with the "KV Funds" label
-  const kvFundNames = kvInvestors
-    .map(investor => investor.investor_name.replace(/^KV\s*/i, '').trim())
-    .join(', ');
+  // Use portfolio summary data if available, otherwise fall back to cap table calculation
+  const kvStake = company.portfolioSummary?.kv_ownership ?? 
+    (company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV'))
+      .reduce((total, investor) => total + (investor.final_fds || 0), 0) || 0);
   
-  // Detect company stage based on KV fund names
-  const companyStage = hasCapTable ? detectCompanyStage(company.capTable!.investors) : 'Unknown';
+  const kvTotalInvestment = company.portfolioSummary?.kv_investment ?? 
+    (company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV'))
+      .reduce((total, investor) => total + (investor.total_invested || 0), 0) || 0);
+  
+  // Use optimized fund names from portfolio summary if available
+  const kvFundNames = company.portfolioSummary?.kv_funds ?? 
+    (company.capTable?.investors?.filter(investor => investor.investor_name.startsWith('KV'))
+      .map(investor => investor.investor_name.replace(/^KV\s*/i, '').trim())
+      .join(', '));
+  
+  // Use optimized stage from portfolio summary if available
+  const companyStage = company.stage ?? (hasCapTable ? detectCompanyStage(company.capTable!.investors) : 'Unknown');
 
   const handleClick = () => {
     if (onClick) {
@@ -165,9 +172,9 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
       <div className="mb-2">
         <div className="flex items-start space-x-2">
           <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0 shadow-sm">
-            {enrichmentData?.enrichment?.extracted?.logo_url ? (
+            {(company.portfolioSummary?.company_logo || enrichmentData?.enrichment?.extracted?.logo_url) ? (
               <img 
-                src={enrichmentData.enrichment.extracted.logo_url} 
+                src={company.portfolioSummary?.company_logo || enrichmentData.enrichment.extracted.logo_url} 
                 alt={`${displayName} logo`}
                 className="w-8 h-8 rounded object-contain bg-white border border-gray-200 p-0.5"
                 onError={(e) => {
@@ -182,7 +189,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
             ) : null}
             <div 
               className={`w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center ${
-                enrichmentData?.enrichment?.extracted?.logo_url ? 'hidden' : 'flex'
+                (company.portfolioSummary?.company_logo || enrichmentData?.enrichment?.extracted?.logo_url) ? 'hidden' : 'flex'
               }`}
             >
               <span className="text-white font-bold text-sm">

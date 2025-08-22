@@ -26,7 +26,7 @@ export interface FinancialReport {
   }
 
   export interface CapTableData {
-    round_id: number
+    round_id: number | null
     round_name: string
     valuation: number | null
     amount_raised: number | null
@@ -45,6 +45,15 @@ export interface FinancialReport {
       .reduce((total, investor) => total + (investor.final_fds || 0), 0)
   }
 
+  export interface PortfolioSummary {
+    cash_out_date: string | null
+    total_reports: number
+    kv_ownership: number | null
+    kv_investment: number | null
+    kv_funds: string | null
+    company_logo: string | null
+  }
+
   export interface Company {
     id: string
     name: string
@@ -54,6 +63,7 @@ export interface FinancialReport {
     reports: FinancialReport[]
     latestReport: FinancialReport | null
     capTable?: CapTableData | null
+    portfolioSummary?: PortfolioSummary  // Optimized data for portfolio view
   }
 
   export interface CompanyNote {
