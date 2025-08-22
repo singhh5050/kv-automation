@@ -2403,9 +2403,15 @@ def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
         
         cursor.execute(query)
         
+        # Debug: log the query results
+        raw_results = cursor.fetchall()
+        print(f"📊 Portfolio summary query returned {len(raw_results)} companies")
+        if raw_results:
+            print(f"📋 Sample row: {raw_results[0]}")
+        
         # Format results for frontend
         companies = []
-        for row in cursor.fetchall():
+        for row in raw_results:
             companies.append({
                 'id': row[0],
                 'name': row[1],

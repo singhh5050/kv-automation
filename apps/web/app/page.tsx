@@ -171,8 +171,10 @@ export default function Home() {
           setCompanies([])
         } else {
           console.log('🔄 Converting portfolio summary to frontend format...')
+          console.log('📊 Sample portfolio company data:', portfolioCompanies[0])
           const frontendCompanies = convertPortfolioSummaryToFrontend(portfolioCompanies)
           console.log('✅ Converted companies:', frontendCompanies)
+          console.log('📊 Sample frontend company:', frontendCompanies[0])
           console.log('📊 Number of frontend companies:', frontendCompanies.length)
           setCompanies(frontendCompanies)
           
