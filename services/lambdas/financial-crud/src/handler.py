@@ -102,6 +102,8 @@ def lambda_handler(event, context):
         result = update_company_note(db_config, body)
     elif operation == "delete_company_note":
         result = delete_company_note(db_config, body.get("note_id"))
+    elif operation == "delete_financial_report":
+        result = delete_financial_report(db_config, body.get("report_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -2675,4 +2677,81 @@ def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to delete company note: {str(e)}'
+        }
+
+def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
+    """
+    Delete a financial report by ID
+    """
+    if not report_id:
+        return {
+            'success': False,
+            'error': 'report_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Get report details before deletion for confirmation
+        cursor.execute("""
+            SELECT id, company_id, file_name, report_date
+            FROM financial_reports 
+            WHERE id = %s
+        """, [report_id])
+        
+        report_data = cursor.fetchone()
+        
+        if not report_data:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Financial report not found'
+            }
+        
+        report_id_confirmed = report_data[0]
+        company_id = report_data[1]
+        file_name = report_data[2]
+        report_date = report_data[3]
+        
+        # Delete the financial report
+        cursor.execute("""
+            DELETE FROM financial_reports 
+            WHERE id = %s
+        """, [report_id])
+        
+        deleted_count = cursor.rowcount
+        
+        if deleted_count == 0:
+            cursor.close()
+            conn.close()
+            return {
+                'success': False,
+                'error': 'Failed to delete financial report'
+            }
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'deleted_report_id': report_id_confirmed,
+                'company_id': company_id,
+                'file_name': file_name,
+                'report_date': report_date.isoformat() if report_date else None,
+                'message': f'Successfully deleted financial report: {file_name}'
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete financial report: {str(e)}'
         } 

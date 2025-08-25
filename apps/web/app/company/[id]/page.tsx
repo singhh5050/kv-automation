@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport } from '@/lib/api'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
@@ -307,6 +307,11 @@ export default function CompanyDetailPage() {
   const [kpiAnalysisLoading, setKpiAnalysisLoading] = useState(false)
   const [kpiAnalysisResult, setKpiAnalysisResult] = useState<string | null>(null)
   const [kpiAnalysisError, setKpiAnalysisError] = useState<string | null>(null)
+
+  // Delete financial report state
+  const [deletingReportId, setDeletingReportId] = useState<number | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [reportToDelete, setReportToDelete] = useState<any>(null)
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -777,6 +782,51 @@ export default function CompanyDetailPage() {
     } finally {
       setKpiAnalysisLoading(false)
     }
+  }
+
+  // Handle delete financial report
+  const handleDeleteReport = (report: any) => {
+    setReportToDelete(report)
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDeleteReport = async () => {
+    if (!reportToDelete) return
+
+    setDeletingReportId(reportToDelete.id)
+    
+    try {
+      console.log(`🗑️ Deleting financial report: ${reportToDelete.file_name}`)
+      
+      const result = await deleteFinancialReport(reportToDelete.id)
+      
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      
+      console.log('✅ Financial report deleted successfully')
+      
+      // Refresh company data to remove the deleted report from UI
+      await loadCompanyData()
+      
+      // Clear success message after 3 seconds
+      setUploadSuccess(`Successfully deleted ${reportToDelete.file_name}`)
+      setTimeout(() => setUploadSuccess(null), 3000)
+      
+    } catch (error) {
+      console.error('❌ Delete failed:', error)
+      setUploadError(error instanceof Error ? error.message : 'Failed to delete report')
+      setTimeout(() => setUploadError(null), 5000)
+    } finally {
+      setDeletingReportId(null)
+      setShowDeleteConfirm(false)
+      setReportToDelete(null)
+    }
+  }
+
+  const cancelDeleteReport = () => {
+    setShowDeleteConfirm(false)
+    setReportToDelete(null)
   }
 
   return (
@@ -1872,8 +1922,14 @@ export default function CompanyDetailPage() {
                               <td className="px-2 py-1 whitespace-nowrap body-text text-gray-900">
                                 {(report as any).processed_at ? new Date((report as any).processed_at).toLocaleDateString() : 'N/A'}
                               </td>
-                              <td className="px-2 py-1 whitespace-nowrap body-text text-blue-600 hover:text-blue-700">
-                                <button>View</button>
+                              <td className="px-2 py-1 whitespace-nowrap body-text text-right">
+                                <button
+                                  onClick={() => handleDeleteReport(report)}
+                                  disabled={deletingReportId === (report as any).id}
+                                  className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed text-sm"
+                                >
+                                  {deletingReportId === (report as any).id ? 'Deleting...' : 'Delete'}
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -2527,6 +2583,37 @@ export default function CompanyDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && reportToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Delete Financial Report
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete <strong>{reportToDelete.file_name}</strong>? 
+              This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelDeleteReport}
+                disabled={deletingReportId === reportToDelete.id}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteReport}
+                disabled={deletingReportId === reportToDelete.id}
+                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingReportId === reportToDelete.id ? 'Deleting...' : 'Delete Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 

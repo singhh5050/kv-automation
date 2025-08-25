@@ -640,4 +640,36 @@ export async function deleteCompanyNote(noteId: number) {
       note_id: noteId,
     }),
   })
+}
+
+/**
+ * Delete a financial report
+ */
+export async function deleteFinancialReport(reportId: number) {
+  try {
+    console.log(`🗑️ Deleting financial report ${reportId}`)
+    
+    const response = await fetch('/api/delete-financial-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        reportId: reportId
+      }),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Delete failed: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log('✅ Financial report deleted successfully')
+    
+    return { data: result }
+  } catch (error) {
+    console.error('❌ Delete financial report error:', error)
+    return { error: error instanceof Error ? error.message : 'Delete failed' }
+  }
 } 
