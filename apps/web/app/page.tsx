@@ -431,8 +431,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
+      {/* Page Header */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
             <div>
@@ -473,7 +473,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Filters */}
       <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
