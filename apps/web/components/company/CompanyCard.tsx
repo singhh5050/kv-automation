@@ -323,7 +323,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
           <div className="flex items-center space-x-1.5">
             <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></div>
             <span className="text-xs font-medium text-gray-600">
-              {latestReport ? `${reportCount} report${reportCount !== 1 ? 's' : ''}` : 'No reports'}
+              {reportCount > 0 ? `${reportCount} report${reportCount !== 1 ? 's' : ''}` : 'No reports'}
             </span>
           </div>
           <button 
