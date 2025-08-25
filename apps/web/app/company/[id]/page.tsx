@@ -744,7 +744,7 @@ export default function CompanyDetailPage() {
     }
 
     // Detect company stage
-    const companyStage = detectCompanyStage(company.capTable?.investors || [])
+    const companyStage = detectCompanyStage(company.current_cap_table?.investors || [])
     
     if (companyStage === 'Unknown') {
       setKpiAnalysisError('Cannot determine company stage. Please ensure cap table data is available.')
@@ -1353,9 +1353,9 @@ export default function CompanyDetailPage() {
                       <h3 className="text-md font-bold text-gray-900">Financial Overview</h3>
                     </div>
                     <div className="flex items-center space-x-2">
-                      {company?.capTable?.investors && detectCompanyStage(company.capTable.investors) !== 'Unknown' && (
+                      {company?.current_cap_table?.investors && detectCompanyStage(company.current_cap_table.investors) !== 'Unknown' && (
                         <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {detectCompanyStage(company.capTable.investors)}
+                          {detectCompanyStage(company.current_cap_table.investors)}
                         </span>
                       )}
                       <button
@@ -1413,7 +1413,7 @@ export default function CompanyDetailPage() {
                       </p>
                       {!company?.company?.id ? (
                         <p className="text-red-600 text-xs">Company data loading...</p>
-                      ) : company?.capTable?.investors && detectCompanyStage(company.capTable.investors) === 'Unknown' ? (
+                      ) : company?.current_cap_table?.investors && detectCompanyStage(company.current_cap_table.investors) === 'Unknown' ? (
                         <p className="text-amber-600 text-xs">Stage detection requires cap table data with KV fund investments.</p>
                       ) : (
                         <div className="flex justify-center space-x-4 text-xs text-blue-600">
