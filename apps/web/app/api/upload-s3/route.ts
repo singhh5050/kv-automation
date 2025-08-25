@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { auth } from '@clerk/nextjs/server'
 
 // Server-side S3 upload API route
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const { userId } = await auth()
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Please sign in to upload files' },
+        { status: 401 }
+      )
+    }
+    
     console.log('🚀 Server-side S3 upload initiated')
+    console.log('👤 Authenticated user:', userId)
     
     // Parse form data
     const formData = await request.formData()

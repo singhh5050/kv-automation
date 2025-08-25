@@ -2,6 +2,7 @@
 
 // Trigger Vercel deployment - Database Editor fixes applied
 import React, { useState, useEffect } from 'react'
+import { useUser, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
 import CompanyCard from '@/components/company/CompanyCard'
@@ -59,6 +60,7 @@ const convertPortfolioSummaryToFrontend = (portfolioData: any[]): Company[] => {
 }
 
 export default function Home() {
+  const { isSignedIn, user, isLoaded } = useUser()
   const [companies, setCompanies] = useState<Company[]>([])
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
   const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
@@ -76,11 +78,13 @@ export default function Home() {
     search: ''
   })
 
-  // Load companies from cache or database on mount
+  // Load companies from cache or database only when user is authenticated
   useEffect(() => {
-    loadCompaniesWithCache()
-    checkBackendHealth()
-  }, [])
+    if (isLoaded && isSignedIn) {
+      loadCompaniesWithCache()
+      checkBackendHealth()
+    }
+  }, [isLoaded, isSignedIn])
 
   // Apply filters whenever companies or filters change
   useEffect(() => {
@@ -429,8 +433,63 @@ export default function Home() {
     }
   }
 
+  // Show loading state while authentication is being determined
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <SignedOut>
+        {/* Header for unauthenticated users */}
+        <header className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-4">
+              <h1 className="text-xl font-bold text-gray-900">
+                PDF Finance Summarizer
+              </h1>
+              <div className="flex items-center space-x-4">
+                <SignInButton mode="modal">
+                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                    Sign In
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button className="bg-gray-100 hover:bg-gray-200 text-gray-900 px-4 py-2 rounded-md text-sm font-medium border border-gray-300 transition-colors">
+                    Sign Up
+                  </button>
+                </SignUpButton>
+              </div>
+            </div>
+          </div>
+        </header>
+        
+        {/* Landing page for unauthenticated users */}
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="max-w-md mx-auto text-center p-8">
+            <div className="text-6xl mb-6">📊</div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Portfolio Management Platform
+            </h1>
+            <p className="text-gray-600 mb-8">
+              Securely manage your portfolio companies, upload financial reports, and track performance metrics.
+            </p>
+            <p className="text-sm text-gray-500">
+              Please sign in to access your portfolio dashboard.
+            </p>
+          </div>
+        </div>
+      </SignedOut>
+
+      <SignedIn>
+        {/* Protected content for authenticated users */}
       {/* Page Header */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -469,6 +528,11 @@ export default function Home() {
               <div className={`${showUploads ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto`}>
                 <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
                 <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
+              </div>
+              
+              {/* User Profile - positioned to the right of all buttons */}
+              <div className="flex items-center ml-2 sm:ml-4">
+                <UserButton />
               </div>
             </div>
           </div>
@@ -710,14 +774,15 @@ export default function Home() {
         )}
       </main>
 
-      {/* Developer Tools Toggle */}
-      <button
-        onClick={() => setShowDebugPanel(!showDebugPanel)}
-        className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 bg-gray-800 text-white p-2 sm:p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors text-sm sm:text-base"
-        title="Developer Tools"
-      >
-        🛠️
-      </button>
+        {/* Developer Tools Toggle */}
+        <button
+          onClick={() => setShowDebugPanel(!showDebugPanel)}
+          className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 bg-gray-800 text-white p-2 sm:p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors text-sm sm:text-base"
+          title="Developer Tools"
+        >
+          🛠️
+        </button>
+      </SignedIn>
     </div>
   )
 }

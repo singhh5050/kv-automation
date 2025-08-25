@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { auth } from '@clerk/nextjs/server'
 
 // Generate presigned URLs for direct browser-to-S3 uploads
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const { userId } = await auth()
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Please sign in to upload files' },
+        { status: 401 }
+      )
+    }
+    
     console.log('🔗 Generating presigned URL for direct S3 upload')
+    console.log('👤 Authenticated user:', userId)
     
     const body = await request.json()
     const { fileName, fileType, companyId, companyName } = body
