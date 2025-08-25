@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs } from '@/lib/api'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
@@ -302,6 +302,11 @@ export default function CompanyDetailPage() {
   const [uploadingPdfs, setUploadingPdfs] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+
+  // KPI Analysis state
+  const [kpiAnalysisLoading, setKpiAnalysisLoading] = useState(false)
+  const [kpiAnalysisResult, setKpiAnalysisResult] = useState<string | null>(null)
+  const [kpiAnalysisError, setKpiAnalysisError] = useState<string | null>(null)
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -728,6 +733,49 @@ export default function CompanyDetailPage() {
     // Clear error after 6 seconds if there was one
     if (uploadError) {
       setTimeout(() => setUploadError(null), 6000)
+    }
+  }
+
+  // KPI Analysis handler
+  const handleKpiAnalysis = async () => {
+    if (!company?.company?.id) {
+      setKpiAnalysisError('Company ID not available')
+      return
+    }
+
+    // Detect company stage
+    const companyStage = detectCompanyStage(company.capTable?.investors || [])
+    
+    if (companyStage === 'Unknown') {
+      setKpiAnalysisError('Cannot determine company stage. Please ensure cap table data is available.')
+      return
+    }
+
+    setKpiAnalysisLoading(true)
+    setKpiAnalysisError(null)
+    setKpiAnalysisResult(null)
+
+    try {
+      console.log(`🔍 Starting KPI analysis for ${displayName} (${companyStage})`)
+      
+      const result = await analyzeCompanyKPIs(company.company.id, companyStage)
+      
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      
+      if (result.data?.success && result.data?.analysis) {
+        setKpiAnalysisResult(result.data.analysis)
+        console.log('✅ KPI analysis completed successfully')
+      } else {
+        throw new Error(result.data?.error || 'Analysis failed without error message')
+      }
+      
+    } catch (error) {
+      console.error('❌ KPI analysis failed:', error)
+      setKpiAnalysisError(error instanceof Error ? error.message : 'Analysis failed')
+    } finally {
+      setKpiAnalysisLoading(false)
     }
   }
 
@@ -1300,36 +1348,91 @@ export default function CompanyDetailPage() {
                 {/* Financial Overview - Full Width */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
+                  <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="text-md font-bold text-gray-900">Financial Overview</h3>
                     </div>
+                    <div className="flex items-center space-x-2">
+                      {company?.capTable?.investors && detectCompanyStage(company.capTable.investors) !== 'Unknown' && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          {detectCompanyStage(company.capTable.investors)}
+                        </span>
+                      )}
+                      <button
+                        onClick={handleKpiAnalysis}
+                        disabled={kpiAnalysisLoading || !company?.company?.id}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          kpiAnalysisLoading || !company?.company?.id
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-md hover:shadow-lg'
+                        }`}
+                      >
+                        {kpiAnalysisLoading ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            <span>Analyzing KPIs...</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <span>📊</span>
+                            <span>Analyze KPI Trends</span>
+                          </div>
+                        )}
+                      </button>
+                    </div>
                   </div>
                   
-                  <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200 p-4 rounded-lg text-center">
-                    <div className="w-12 h-12 bg-gradient-to-br from-amber-100 to-yellow-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                      <span className="text-xl">🚧</span>
-                    </div>
-                    <h4 className="text-sm font-bold text-amber-800 mb-2">Work in Progress</h4>
-                    <p className="text-amber-700 text-xs leading-relaxed">
-                      This comprehensive financials section is currently under development. 
-                      It will include detailed financial statements, cash flow analysis, and advanced metrics.
-                    </p>
-                    <div className="mt-4 flex justify-center space-x-4 text-xs text-amber-600">
-                      <div className="flex items-center space-x-1">
-                        <span>📊</span>
-                        <span>P&L Statements</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span>💧</span>
-                        <span>Cash Flow</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span>📈</span>
-                        <span>Advanced Metrics</span>
+                  {/* KPI Analysis Results */}
+                  {kpiAnalysisError && (
+                    <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-red-500">❌</span>
+                        <div>
+                          <h4 className="text-sm font-bold text-red-800">Analysis Failed</h4>
+                          <p className="text-red-700 text-xs mt-1">{kpiAnalysisError}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  
+                  {kpiAnalysisResult ? (
+                    <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+                      <div className="prose prose-sm max-w-none">
+                        <MarkdownContent content={kpiAnalysisResult} />
+                      </div>
+                    </div>
+                  ) : !kpiAnalysisLoading && !kpiAnalysisError && (
+                    <div className="bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 p-4 rounded-lg text-center">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                        <span className="text-xl">📊</span>
+                      </div>
+                      <h4 className="text-sm font-bold text-blue-800 mb-2">KPI Trend Analysis</h4>
+                      <p className="text-blue-700 text-xs leading-relaxed mb-4">
+                        Analyze trends across your most recent board deck presentations. 
+                        Our AI will extract and track KPIs specific to your sector and stage.
+                      </p>
+                      {!company?.company?.id ? (
+                        <p className="text-red-600 text-xs">Company data loading...</p>
+                      ) : company?.capTable?.investors && detectCompanyStage(company.capTable.investors) === 'Unknown' ? (
+                        <p className="text-amber-600 text-xs">Stage detection requires cap table data with KV fund investments.</p>
+                      ) : (
+                        <div className="flex justify-center space-x-4 text-xs text-blue-600">
+                          <div className="flex items-center space-x-1">
+                            <span>📈</span>
+                            <span>Trend Analysis</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <span>🎯</span>
+                            <span>Stage-Specific KPIs</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <span>🤖</span>
+                            <span>AI Insights</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
               </div>

@@ -372,6 +372,41 @@ export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filenam
 export async function getCompetitiveLandscape(financialData: any) {
   // This would need to be implemented as a separate Lambda function if needed
   return { error: 'Competitive landscape analysis not yet implemented in Lambda backend' }
+}
+
+/**
+ * Multi-PDF KPI Analysis
+ * Analyzes the 4 most recent PDFs for a company to extract KPIs based on sector and stage
+ */
+export async function analyzeCompanyKPIs(companyId: number, stage: string) {
+  try {
+    console.log(`🔍 Starting KPI analysis for company ${companyId}, stage: ${stage}`)
+    
+    // Direct Lambda invocation for KPI analysis
+    const response = await fetch('/api/analyze-kpis', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+        stage: stage
+      }),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `KPI analysis failed: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log('✅ KPI analysis completed successfully')
+    
+    return { data: result }
+  } catch (error) {
+    console.error('❌ KPI analysis error:', error)
+    return { error: error instanceof Error ? error.message : 'KPI analysis failed' }
+  }
 } 
 
 /**

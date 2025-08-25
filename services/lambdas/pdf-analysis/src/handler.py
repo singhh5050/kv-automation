@@ -14,7 +14,7 @@ sys.path.insert(0, '/opt/python')
 def lambda_handler(event, context):
     """
     Lambda function for PDF extraction and OpenAI analysis
-    Supports both S3 events (new) and API Gateway requests (legacy)
+    Supports both S3 events (new), API Gateway requests (legacy), and KPI analysis requests
     """
     
     # Log the incoming event for debugging
@@ -37,9 +37,75 @@ def lambda_handler(event, context):
                 'received_event_type': 'ELB'
             })
         }
+    elif event.get('action') == 'analyze_kpis':
+        print("📊 Processing KPI analysis request")
+        return handle_kpi_analysis_request(event, context)
     else:
         print("📡 Processing API Gateway event (legacy architecture)")
         return handle_api_gateway_event(event, context)
+
+
+def handle_kpi_analysis_request(event, context):
+    """
+    Handle KPI analysis requests for multiple PDFs
+    """
+    # CORS headers for all responses
+    cors_headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        # Extract parameters from event
+        company_id = event.get('company_id')
+        stage = event.get('stage')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        if not stage:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'stage is required (Early Stage, Main Stage, or Growth Stage)'})
+            }
+        
+        print(f"🔍 KPI analysis requested for company {company_id}, stage: {stage}")
+        
+        # Perform the analysis
+        result = analyze_recent_pdfs_for_kpis(company_id, stage)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result)
+            }
+        else:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps(result)
+            }
+            
+    except Exception as e:
+        print(f"❌ KPI analysis request failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': False,
+                'error': f'KPI analysis failed: {str(e)}'
+            })
+        }
 
 
 def handle_s3_event(event, context):
@@ -199,34 +265,8 @@ def handle_api_gateway_event(event, context):
             pdf_bytes = base64.b64decode(pdf_base64)
             print(f"Decoded PDF, size: {len(pdf_bytes)} bytes")
         
-        # Extract text and tables from PDF (all pages)
-        texts, tables = extract_text_and_tables(pdf_bytes, filename)
-
-        # flatten prose
-        prose = "\n\n".join(p["text"] for p in texts)
-
-        # flatten tables into a simple text block
-        table_str = ""
-        for t in tables:
-            table_str += f"Table on page {t['page']}:\n"
-            for row in t["rows"]:
-                table_str += "\t".join((cell or "") for cell in row) + "\n"
-            table_str += "\n"
-
-        extracted_text = prose + "\n\n" + table_str
-        
-        if not extracted_text:
-            return {
-                'statusCode': 400,
-                'headers': cors_headers,
-                'body': json.dumps({'error': 'Failed to extract text from PDF'})
-            }
-        
-        print(f"Extracted text length: {len(extracted_text)} characters")
-        
-        # Analyze with GPT-5 Responses API (unified behavior)
-        text_bytes = extracted_text.encode('utf-8')
-        analysis_result = analyze_with_gpt5_responses_api(text_bytes, filename, is_text_only=True, company_name_override=company_name_override, user_provided_name=user_provided_name)
+        # Analyze with GPT-5 Responses API (direct PDF upload)
+        analysis_result = analyze_with_gpt5_responses_api(pdf_bytes, filename, is_text_only=False, company_name_override=company_name_override, user_provided_name=user_provided_name)
         
         return {
             'statusCode': 200,
@@ -245,50 +285,7 @@ def handle_api_gateway_event(event, context):
         }
 
 
-def extract_text_and_tables(pdf_bytes: bytes, filename: str):
-    """Return (texts, tables) where:
-       - texts: list of {'page':N, 'text':"..."} for non‑table prose
-       - tables: list of {'page':N, 'rows':[[...],[...],...]} for every detected table
-    """
-    import pdfplumber, tempfile, os
 
-    # write PDF to disk
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp.write(pdf_bytes)
-        path = tmp.name
-
-    texts, tables = [], []
-    try:
-        with pdfplumber.open(path) as pdf:
-            for pg_no, page in enumerate(pdf.pages, start=1):
-                # 1) detect tables once
-                table_settings = {
-                    "vertical_strategy": "lines",
-                    "horizontal_strategy": "lines",
-                    "intersection_tolerance": 3
-                }
-                table_objs = list(page.find_tables(table_settings))
-                for tbl in table_objs:
-                    rows = tbl.extract()
-                    tables.append({"page": pg_no, "rows": rows})
-
-                # 2) mask out those table bboxes, then extract the rest
-                bboxes = [tbl.bbox for tbl in table_objs]
-
-                non_table_page = page.filter(
-                    lambda obj: obj["object_type"] != "char" or not any(
-                        x0 <= obj["x0"] <= x1 and top <= obj["top"] <= bottom
-                        for (x0, top, x1, bottom) in bboxes
-                    )
-                )
-                non_table_text = non_table_page.extract_text() or ""
-
-                texts.append({"page": pg_no, "text": non_table_text})
-    finally:
-        if os.path.exists(path):
-            os.unlink(path)
-
-    return texts, tables
 
 
 def normalize_analysis_for_db(d: dict) -> dict:
@@ -556,6 +553,361 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
         except Exception as cleanup_error:
             print(f"⚠️ Local file cleanup failed: {cleanup_error}")
 
+
+
+def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
+    """
+    Analyze the 4 most recent PDFs for a company to extract KPIs based on sector and stage
+    
+    Args:
+        company_id: Database company ID
+        stage: Company stage from frontend ('Growth Stage', 'Main Stage', 'Early Stage')
+    
+    Returns:
+        Dict with KPI analysis results
+    """
+    import ssl
+    
+    try:
+        print(f"🔍 Starting multi-PDF KPI analysis for company {company_id}, stage: {stage}")
+        
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get 4 most recent financial reports with their S3 keys
+        query = """
+            SELECT fr.id, fr.file_name, fr.report_date, fr.report_period, fr.sector,
+                   fr.cash_on_hand, fr.monthly_burn_rate, fr.runway,
+                   c.name as company_name
+            FROM financial_reports fr
+            JOIN companies c ON fr.company_id = c.id
+            WHERE fr.company_id = %s AND fr.file_name IS NOT NULL
+            ORDER BY fr.report_date DESC, fr.processed_at DESC
+            LIMIT 4
+        """
+        
+        cursor.execute(query, [company_id])
+        reports = cursor.fetchall()
+        
+        if len(reports) < 2:
+            return {
+                'success': False,
+                'error': f'Need at least 2 reports for trend analysis, found {len(reports)}'
+            }
+        
+        print(f"📊 Found {len(reports)} reports for analysis")
+        
+        # Extract company info and sector from first report
+        company_name = reports[0][8]
+        sector = reports[0][4] or 'healthcare'
+        
+        print(f"🏢 Company: {company_name}")
+        print(f"🎯 Sector: {sector}")
+        print(f"📈 Stage: {stage}")
+        
+        # Download PDFs from S3
+        import boto3
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
+        
+        pdf_contents = []
+        report_metadata = []
+        
+        for report in reports:
+            report_id, file_name, report_date, report_period = report[0], report[1], report[2], report[3]
+            
+            # Construct S3 key - try both with and without company prefix
+            possible_keys = [
+                f"company-{company_id}/{file_name}",
+                file_name
+            ]
+            
+            pdf_bytes = None
+            actual_key = None
+            
+            for s3_key in possible_keys:
+                try:
+                    print(f"📥 Attempting to download: s3://{bucket_name}/{s3_key}")
+                    pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
+                    pdf_bytes = pdf_object['Body'].read()
+                    actual_key = s3_key
+                    print(f"✅ Downloaded {len(pdf_bytes)} bytes from {s3_key}")
+                    break
+                except Exception as e:
+                    print(f"❌ Failed to download {s3_key}: {str(e)}")
+                    continue
+            
+            if pdf_bytes:
+                # Store PDF bytes directly for upload to OpenAI
+                pdf_contents.append({
+                    'report_id': report_id,
+                    'file_name': file_name,
+                    'report_date': str(report_date),
+                    'report_period': report_period,
+                    'pdf_bytes': pdf_bytes,
+                    's3_key': actual_key
+                })
+                
+                report_metadata.append({
+                    'report_id': report_id,
+                    'file_name': file_name,
+                    'report_date': str(report_date),
+                    'report_period': report_period
+                })
+            else:
+                print(f"⚠️ Could not download PDF for report {report_id}: {file_name}")
+        
+        cursor.close()
+        conn.close()
+        
+        if len(pdf_contents) < 2:
+            return {
+                'success': False,
+                'error': f'Could only retrieve {len(pdf_contents)} PDFs from S3'
+            }
+        
+        print(f"📋 Successfully retrieved {len(pdf_contents)} PDFs for analysis")
+        
+        # Perform multi-PDF KPI analysis - returns markdown
+        markdown_analysis = analyze_multi_pdf_kpis(pdf_contents, company_name, sector, stage)
+        
+        return {
+            'success': True,
+            'company_id': company_id,
+            'company_name': company_name,
+            'sector': sector,
+            'stage': stage,
+            'reports_analyzed': report_metadata,
+            'analysis': markdown_analysis
+        }
+        
+    except Exception as e:
+        print(f"❌ Multi-PDF KPI analysis failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return {
+            'success': False,
+            'error': f'Multi-PDF KPI analysis failed: {str(e)}'
+        }
+
+
+def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, stage: str) -> str:
+    """
+    Use OpenAI to analyze multiple PDFs and extract KPIs based on sector and stage
+    Returns detailed markdown analysis
+    """
+    import os, tempfile
+    
+    # Check for API key
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        raise Exception("OpenAI API key not configured")
+    
+    uploaded_files = []
+    tmp_paths = []
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        print(f"🤖 Starting OpenAI multi-PDF KPI analysis...")
+        print(f"📁 Uploading {len(pdf_contents)} PDFs to OpenAI...")
+        
+        # Upload all PDFs to OpenAI
+        for pdf_data in pdf_contents:
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(pdf_data['pdf_bytes'])
+                tmp_path = tmp.name
+                tmp_paths.append(tmp_path)
+            
+            # Upload to OpenAI
+            with open(tmp_path, "rb") as f:
+                file_response = client.files.create(file=f, purpose="user_data")
+                uploaded_files.append({
+                    'file_id': file_response.id,
+                    'file_name': pdf_data['file_name'],
+                    'report_period': pdf_data['report_period'],
+                    'report_date': pdf_data['report_date']
+                })
+                print(f"✅ Uploaded {pdf_data['file_name']}: {file_response.id}")
+        
+        # Define KPI requirements based on sector and stage
+        kpi_requirements = get_kpi_requirements(sector, stage)
+        
+        # Create the analysis prompt for markdown output
+        system_prompt = f"""You are an expert financial analyst specializing in board deck analysis for venture capital portfolio companies.
+
+You will analyze {len(pdf_contents)} board deck PDFs from {company_name} (a {sector} company in {stage}) to extract and track key performance indicators over time.
+
+## COMPANY CONTEXT
+- **Company**: {company_name}
+- **Sector**: {sector}
+- **Stage**: {stage}
+- **Reports to analyze**: {len(pdf_contents)}
+
+## KPI REQUIREMENTS FOR THIS ANALYSIS
+Based on the sector and stage, focus on these KPIs:
+
+{kpi_requirements}
+
+## ANALYSIS INSTRUCTIONS
+1. **Temporal Analysis**: Track how each KPI has changed across the time periods
+2. **Trend Identification**: Identify improving, declining, or stable trends  
+3. **Context Understanding**: Explain the business context behind changes
+4. **Stage-Appropriate Focus**: Emphasize the KPIs most relevant to this stage
+
+## OUTPUT FORMAT
+Return a detailed markdown analysis with:
+- Executive summary with key trends
+- KPI trend analysis with tables and bullet points
+- Strategic insights and recommendations
+- Data quality observations
+
+Use headers, tables, bullet points, and emphasis for readability."""
+
+        # Build content parts for Responses API
+        content_parts = [{"type": "input_text", "text": system_prompt}]
+        
+        # Add instruction text
+        file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
+        
+        content_parts.append({
+            "type": "input_text", 
+            "text": f"""Analyze these {len(uploaded_files)} board deck reports for {company_name} and provide a comprehensive KPI trend analysis:
+
+**Files to analyze:**
+{file_list}
+
+Focus on the KPIs specified for {sector} companies in {stage}, and provide detailed markdown analysis with trends, insights, and recommendations."""
+        })
+        
+        # Add all uploaded PDF files
+        for file_info in uploaded_files:
+            content_parts.append({
+                "type": "input_file",
+                "file_id": file_info['file_id']
+            })
+        
+        print("🚀 Calling Responses API for multi-PDF KPI analysis...")
+        
+        response = client.responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            input=[{"role": "user", "content": content_parts}],
+            max_output_tokens=6000
+        )
+        
+        markdown_analysis = response.output_text or ""
+        
+        if not markdown_analysis.strip():
+            raise ValueError("Empty output from OpenAI model")
+        
+        print(f"✅ Received {len(markdown_analysis)} characters of markdown analysis")
+        return markdown_analysis
+        
+    except Exception as e:
+        print(f"❌ OpenAI KPI analysis failed: {str(e)}")
+        raise e
+    finally:
+        # Cleanup uploaded files from OpenAI
+        for file_info in uploaded_files:
+            try:
+                client.files.delete(file_info['file_id'])
+                print(f"🗑️ Deleted {file_info['file_name']} from OpenAI storage")
+            except Exception as cleanup_error:
+                print(f"⚠️ File cleanup failed for {file_info['file_name']}: {cleanup_error}")
+        
+        # Cleanup local temp files
+        for tmp_path in tmp_paths:
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except Exception as cleanup_error:
+                print(f"⚠️ Local file cleanup failed: {cleanup_error}")
+
+
+def get_kpi_requirements(sector: str, stage: str) -> str:
+    """
+    Get KPI requirements based on sector and stage
+    """
+    # Normalize stage input from frontend
+    stage_map = {
+        'Growth Stage': 'growth_stage',
+        'Main Stage': 'main', 
+        'Early Stage': 'early_stage'
+    }
+    
+    normalized_stage = stage_map.get(stage, 'main')
+    
+    # Normalize sector input
+    sector_map = {
+        'healthcare': 'Healthcare',
+        'consumer': 'Consumer',
+        'enterprise': 'Enterprise', 
+        'manufacturing': 'Sustainability/Manufacturing/Robotics'
+    }
+    
+    normalized_sector = sector_map.get(sector.lower(), 'Healthcare')
+    
+    # KPI requirements from user specification
+    kpi_matrix = {
+        "Sustainability/Manufacturing/Robotics": {
+            "early_stage": ["Pilots timeline", "Capacity"],
+            "main": ["Revenue", "Bookings", "Unit economics", "Gross margin (GM)", "EBITDA", "Pipeline", "Pipeline coverage ratio", "Regulatory timelines", "Production capacity", "Cost per unit"],
+            "growth_stage": ["Revenue", "Bookings", "Unit economics", "Gross margin (GM)", "EBITDA", "Pipeline", "Pipeline coverage ratio", "Regulatory timelines", "Production capacity", "Cost per unit"]
+        },
+        "Consumer": {
+            "early_stage": ["Revenue", "Gross margin", "Contribution margin", "Opex", "EBITDA", "CPA", "LTV", "CAC", "LTV:CAC ratio", "User growth", "DAU/MAU", "Retention", "Churn", "ARPU"],
+            "main": ["Revenue", "Gross margin", "Contribution margin", "Opex", "EBITDA", "CPA", "LTV", "CAC", "LTV:CAC ratio", "User growth", "DAU/MAU", "Retention", "Churn", "ARPU"],
+            "growth_stage": ["Revenue", "Gross margin", "Contribution margin", "Opex", "EBITDA", "CPA", "LTV", "CAC", "LTV:CAC ratio", "User growth", "DAU/MAU", "Retention", "Churn", "ARPU"]
+        },
+        "Enterprise": {
+            "early_stage": ["ARR/MRR", "Sales pipeline"],
+            "main": ["ARR/MRR", "Growth", "Retention", "Gross margin", "Contribution margin", "ACV", "Key clients"],
+            "growth_stage": ["ARR/MRR", "Growth", "Retention", "Gross margin", "Contribution margin", "ACV", "Key clients"]
+        },
+        "Healthcare": {
+            "early_stage": ["Timelines: enrollment progress", "Treatment progress", "(Interim) data readout", "IND", "IDE"],
+            "main": ["Timelines: enrollment progress", "Treatment progress", "(Interim) data readout", "IND", "IDE", "Commercial pilots"],
+            "growth_stage": ["Revenue", "Growth margin", "Partnerships", "FDA approval timeline"]
+        },
+        "All": {
+            "early_stage": ["Headcount", "Monthly burn", "Cash on hand", "Runway (months of funding left)", "All financial metrics against plan + forward projections"],
+            "main": ["Headcount", "Monthly burn", "Cash on hand", "Runway (months of funding left)", "All financial metrics against plan + forward projections", "(Rarely) revenue"],
+            "growth_stage": ["Headcount", "Monthly burn", "Cash on hand", "Runway (months of funding left)", "All financial metrics against plan"]
+        }
+    }
+    
+    # Get sector-specific KPIs
+    sector_kpis = kpi_matrix.get(normalized_sector, {}).get(normalized_stage, [])
+    
+    # Always include universal KPIs
+    universal_kpis = kpi_matrix["All"].get(normalized_stage, [])
+    
+    # Combine and deduplicate
+    all_kpis = list(set(sector_kpis + universal_kpis))
+    
+    requirements_text = f"""
+**Sector-Specific KPIs for {normalized_sector} - {stage}:**
+{chr(10).join(f"- {kpi}" for kpi in sector_kpis)}
+
+**Universal KPIs for {stage}:**
+{chr(10).join(f"- {kpi}" for kpi in universal_kpis)}
+
+**FOCUS**: Prioritize these {len(all_kpis)} KPIs, but also extract any other relevant financial or operational metrics you find.
+"""
+    
+    return requirements_text
 
 
 def store_result_in_db(analysis_result: dict, company_id: int):
