@@ -3,6 +3,7 @@ import os
 import pg8000
 import ssl          # left in case you later supply a custom CA
 import re          # for regex matching
+import boto3
 from datetime import datetime, date
 from typing import Dict, Any, List
 
@@ -2681,7 +2682,7 @@ def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
 
 def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
     """
-    Delete a financial report by ID
+    Delete a financial report by ID from both database and S3
     """
     if not report_id:
         return {
@@ -2719,7 +2720,7 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         file_name = report_data[2]
         report_date = report_data[3]
         
-        # Delete the financial report
+        # Delete the financial report from database
         cursor.execute("""
             DELETE FROM financial_reports 
             WHERE id = %s
@@ -2732,12 +2733,35 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
             conn.close()
             return {
                 'success': False,
-                'error': 'Failed to delete financial report'
+                'error': 'Failed to delete financial report from database'
             }
         
+        # Commit database deletion first
         conn.commit()
         cursor.close()
         conn.close()
+        
+        # Now delete the S3 file
+        s3_deleted = False
+        s3_error = None
+        
+        try:
+            # Initialize S3 client
+            s3_client = boto3.client('s3')
+            bucket_name = 'kv-board-decks-prod'
+            
+            # Delete the file from S3
+            s3_client.delete_object(
+                Bucket=bucket_name,
+                Key=file_name
+            )
+            s3_deleted = True
+            print(f"✅ Successfully deleted S3 file: {file_name}")
+            
+        except Exception as s3_exception:
+            s3_error = str(s3_exception)
+            print(f"⚠️ Failed to delete S3 file {file_name}: {s3_error}")
+            # Don't fail the entire operation if S3 deletion fails
         
         return {
             'success': True,
@@ -2746,7 +2770,11 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
                 'company_id': company_id,
                 'file_name': file_name,
                 'report_date': report_date.isoformat() if report_date else None,
-                'message': f'Successfully deleted financial report: {file_name}'
+                'database_deleted': True,
+                's3_deleted': s3_deleted,
+                's3_error': s3_error,
+                'message': f'Successfully deleted financial report: {file_name}' + 
+                          (f' (S3: {s3_error})' if s3_error else ' (Database + S3)')
             }
         }
         

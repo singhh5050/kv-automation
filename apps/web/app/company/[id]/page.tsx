@@ -312,6 +312,7 @@ export default function CompanyDetailPage() {
   const [deletingReportId, setDeletingReportId] = useState<number | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [reportToDelete, setReportToDelete] = useState<any>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -808,6 +809,9 @@ export default function CompanyDetailPage() {
       
       // Refresh company data to remove the deleted report from UI
       await loadCompanyData()
+      
+      // Force refresh of database editor by updating refresh key
+      setRefreshKey(prev => prev + 1)
       
       // Clear success message after 3 seconds
       setUploadSuccess(`Successfully deleted ${reportToDelete.file_name}`)
@@ -2567,7 +2571,7 @@ export default function CompanyDetailPage() {
                     </div>
                   </div>
                   
-                  <UniversalDatabaseEditor companyId={companyId} onUpdate={loadCompanyData} />
+                  <UniversalDatabaseEditor companyId={companyId} onUpdate={loadCompanyData} refreshKey={refreshKey} />
                 </div>
               </div>
             )}

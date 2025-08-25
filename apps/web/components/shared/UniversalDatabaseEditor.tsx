@@ -23,9 +23,10 @@ interface DatabaseRecord {
 interface UniversalDatabaseEditorProps {
   companyId: string
   onUpdate?: () => void
+  refreshKey?: number
 }
 
-export default function UniversalDatabaseEditor({ companyId, onUpdate }: UniversalDatabaseEditorProps) {
+export default function UniversalDatabaseEditor({ companyId, onUpdate, refreshKey }: UniversalDatabaseEditorProps) {
   const [allData, setAllData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +53,13 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate }: Univers
   useEffect(() => {
     loadAllData()
   }, [companyId, loadAllData])
+
+  // Refresh when refreshKey changes (triggered by external deletions)
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      loadAllData()
+    }
+  }, [refreshKey, loadAllData])
 
   const handleEdit = (table: string, recordId: number, field: string, currentValue: any) => {
     setEditingCell({ table, recordId, field })
