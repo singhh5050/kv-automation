@@ -375,7 +375,7 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
+        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
 
 CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
@@ -442,7 +442,7 @@ ALL text fields must use **Markdown formatting** for better readability:
 **IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including financial performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
 
 ## WRITING STYLE
-Write analysis in the style of an executive summary for board members:
+Write comprehensive analysis in the style of an objective executive summary for board members:
 - Use markdown formatting: **bold** for metrics, *italics* for emphasis
 - Include specific percentages, dollar amounts, and timeline references
 - Focus on narrative developments, personnel changes, strategic decisions, and risk factors
@@ -499,14 +499,14 @@ EXAMPLES:
 - If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
 - If document shows "18 month runway" → runway: 18
 
-CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. Return valid JSON without code blocks."""
+CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. Return valid JSON without code blocks. Be detailed and helpful."""
 
         # Add the user prompt with document analysis instructions
         user_prompt = f"""Analyze this financial document and return valid JSON WITH STORY CONTEXT:
 
 Filename: {filename}
 
-IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use emojis for milestone status, and connect dots between different data points. No code blocks, only raw markdown.
+IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use emojis for milestone status, and connect dots between different data points with detailed and readable analysis. No code blocks, only raw markdown.
 
 Return ONLY valid JSON in the exact format specified in the system prompt."""
 
@@ -659,14 +659,15 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
         for report in reports:
             report_id, file_name, report_date, report_period = report[0], report[1], report[2], report[3]
             
-            # Construct S3 key - try both with and without company prefix
+            # Search for files that end with the original filename (to handle timestamp prefixes)
+            pdf_bytes = None
+            actual_key = None
+            
+            # First try exact matches
             possible_keys = [
                 f"company-{company_id}/{file_name}",
                 file_name
             ]
-            
-            pdf_bytes = None
-            actual_key = None
             
             for s3_key in possible_keys:
                 try:
@@ -679,6 +680,59 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
                 except Exception as e:
                     print(f"❌ Failed to download {s3_key}: {str(e)}")
                     continue
+            
+            # If exact match failed, search for files ending with the original filename
+            if not pdf_bytes:
+                try:
+                    print(f"🔍 Searching for files ending with: {file_name}")
+                    
+                    # List objects in the company folder
+                    prefix = f"company-{company_id}/"
+                    response = s3_client.list_objects_v2(
+                        Bucket=bucket_name,
+                        Prefix=prefix,
+                        MaxKeys=1000
+                    )
+                    
+                    if 'Contents' in response:
+                        for obj in response['Contents']:
+                            key = obj['Key']
+                            if key.endswith(file_name):
+                                try:
+                                    print(f"📥 Found matching file: {key}")
+                                    pdf_object = s3_client.get_object(Bucket=bucket_name, Key=key)
+                                    pdf_bytes = pdf_object['Body'].read()
+                                    actual_key = key
+                                    print(f"✅ Downloaded {len(pdf_bytes)} bytes from {key}")
+                                    break
+                                except Exception as e:
+                                    print(f"❌ Failed to download {key}: {str(e)}")
+                                    continue
+                    
+                    # If not found in company folder, search root bucket
+                    if not pdf_bytes:
+                        response = s3_client.list_objects_v2(
+                            Bucket=bucket_name,
+                            MaxKeys=1000
+                        )
+                        
+                        if 'Contents' in response:
+                            for obj in response['Contents']:
+                                key = obj['Key']
+                                if key.endswith(file_name):
+                                    try:
+                                        print(f"📥 Found matching file in root: {key}")
+                                        pdf_object = s3_client.get_object(Bucket=bucket_name, Key=key)
+                                        pdf_bytes = pdf_object['Body'].read()
+                                        actual_key = key
+                                        print(f"✅ Downloaded {len(pdf_bytes)} bytes from {key}")
+                                        break
+                                    except Exception as e:
+                                        print(f"❌ Failed to download {key}: {str(e)}")
+                                        continue
+                                        
+                except Exception as e:
+                    print(f"❌ Error searching for files ending with {file_name}: {str(e)}")
             
             if pdf_bytes:
                 # Store PDF bytes directly for upload to OpenAI
@@ -823,7 +877,7 @@ Do not omit metrics if data exists.
 
 ## OUTPUT FORMAT (include all sections)
 1. 📊 **Executive Summary** – 3–4 key quantified highlights, trajectory, inflection points
-2. 📈 **KPI Trend Analysis** – Per KPI: Current value, trend indicators, metrics, table, context, implications
+2. 📈 **Per KPI Analysis** – Per KPI: Current value, trend indicators, metrics, table, context, implications
 3. 🎯 **Strategic Insights** – Benchmarks, sustainability, recommendations
 4. ⚠️ **Data Quality Notes** – Missing data, inconsistencies, confidence levels
 

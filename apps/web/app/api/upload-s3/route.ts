@@ -99,8 +99,9 @@ export async function POST(request: NextRequest) {
       s3Key,
       bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks-prod',
       message: 'PDF uploaded successfully. Processing will begin automatically.',
-      processingNote: 'Results will appear in the database shortly.',
-      etag: result.ETag
+      processingNote: 'Financial data extraction and analysis will complete within 2-3 minutes. Results will appear in the company dashboard once processing is complete.',
+      etag: result.ETag,
+      estimatedProcessingTime: '2-3 minutes'
     })
     
   } catch (error) {

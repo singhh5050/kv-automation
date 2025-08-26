@@ -273,8 +273,15 @@ export default function Home() {
             console.log(`✅ S3 upload completed: ${data.s3Key}`)
             console.log(`🔄 ${data.message}`)
             
-            // Show user feedback about async processing
+            // Show user feedback about async processing with detailed timeline
             setErrorMessage(null) // Clear any previous errors
+            
+            // Show success notification with processing timeline
+            alert(`✅ Upload successful! 
+
+🔄 Processing in background - Your PDF is being analyzed automatically. Financial data extraction and analysis will complete within 2-3 minutes.
+
+📊 Results will appear in the company dashboard once processing is complete. You can continue using the platform normally while this happens in the background.`)
             
             // Refresh companies list to show any new entries (in case this is a new company)
             await loadCompanies(true)

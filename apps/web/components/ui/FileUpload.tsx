@@ -124,7 +124,7 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
             {isLoading ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="text-sm font-medium text-gray-600">Processing...</span>
+                <span className="text-sm font-medium text-gray-600">Uploading & queuing for analysis...</span>
               </>
             ) : (
               <>

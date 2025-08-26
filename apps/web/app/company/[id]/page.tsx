@@ -749,11 +749,13 @@ export default function CompanyDetailPage() {
     
     // Show success/error messages and refresh data
     if (successCount > 0) {
-      const successMsg = `✅ Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}!`
+      const successMsg = `✅ Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}!
+      
+🔄 Processing in background - Financial data will be extracted and analyzed automatically within 2-3 minutes. You'll see the results appear in the company dashboard once processing is complete.`
       setUploadSuccess(successMsg)
       
-      // Clear success message after 4 seconds
-      setTimeout(() => setUploadSuccess(null), 4000)
+      // Clear success message after 8 seconds to give users time to read processing info
+      setTimeout(() => setUploadSuccess(null), 8000)
       
       // Clear any error if we had complete success
       if (errorCount === 0) {
