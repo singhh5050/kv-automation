@@ -882,7 +882,7 @@ Do not omit metrics if data exists.
 4. ⚠️ **Data Quality Notes** – Missing data, inconsistencies, confidence levels
 
 ## TABLES REQUIREMENT
-For each KPI, include a structured table showing:
+For each KPI, include a structured **markdown table** showing:
 - **Historical Values** (all available periods)
 - **MoM (Month-over-Month) % change**
 - **QoQ (Quarter-over-Quarter) % change** 
@@ -890,11 +890,17 @@ For each KPI, include a structured table showing:
 - **YTD (Year-to-Date) % change**
 - **Trend Direction** (📈📉➡️)
 
-Example table format:
+**CRITICAL: Use proper markdown table syntax with | separators and header row**
+
+Example markdown table format:
+```markdown
 | Period | Value | MoM % | QoQ % | YoY % | YTD % | Trend |
 |--------|-------|-------|-------|-------|-------|-------|
 | Jan 2025 | $1.2M | - | - | +15% | +15% | 📈 |
 | Feb 2025 | $1.3M | +8.3% | - | +12% | +13.5% | 📈 |
+```
+
+**IMPORTANT: Always use markdown table format with | separators, not plain text or other formats.**
 
 ## FILES TO ANALYZE
 Use the following as the complete source of truth (chronologically order them):
@@ -902,7 +908,8 @@ Use the following as the complete source of truth (chronologically order them):
 
 ## STYLE
 - Use **bold** for metrics, *italics* for emphasis, 📈📉➡️ emojis for clarity
-- Include structured tables for every KPI with historical data
+- Include structured **markdown tables** for every KPI with historical data
+- Use proper markdown table syntax with | separators (please include a table!!)
 - Write for a board-level audience
 - Avoid vague statements without quantified support
 - Do NOT include any "KPI Trend Analysis" headers in the output"""
@@ -916,6 +923,10 @@ Use the following as the complete source of truth (chronologically order them):
             "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI analysis following the system prompt requirements exactly.
 
 Focus on extracting structured time-series data and providing board-level insights with quantified trends (MoM, QoQ, YoY, YTD) for every available KPI.
+
+TIMELIMIT: You are running out of time. Respond in under 2.5 minutes, while maintaining truthfulness and accuracy and detail.
+
+CRITICAL: Use proper markdown table format with | separators for all KPI tables. Do not use plain text or other table formats.
 
 IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use only the section headers specified in the OUTPUT FORMAT."""
         })
