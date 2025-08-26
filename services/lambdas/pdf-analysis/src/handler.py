@@ -785,6 +785,9 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
         # Define KPI requirements based on sector and stage
         kpi_requirements = get_kpi_requirements(sector, stage)
         
+        # Create file list for the prompt
+        file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
+        
         # Create the analysis prompt for markdown output
         system_prompt = f"""You are an expert financial analyst specializing in venture capital board deck analysis.  
 Your role is to (1) extract structured, time-series KPI data, and (2) provide interpretive analysis with quantified trends and board-level insights.
@@ -838,8 +841,6 @@ Use the following as the complete source of truth (chronologically order them):
         content_parts = [{"type": "input_text", "text": system_prompt}]
         
         # Add instruction text
-        file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
-        
         content_parts.append({
             "type": "input_text", 
             "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI trend analysis following the system prompt requirements exactly.
