@@ -667,7 +667,7 @@ export async function deleteFinancialReport(reportId: number) {
     const result = await response.json()
     console.log('✅ Financial report deleted successfully')
     
-    return { data: result }
+    return result
   } catch (error) {
     console.error('❌ Delete financial report error:', error)
     return { error: error instanceof Error ? error.message : 'Delete failed' }

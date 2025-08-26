@@ -801,8 +801,8 @@ export default function CompanyDetailPage() {
       
       const result = await deleteFinancialReport(reportToDelete.id)
       
-      if (result.error) {
-        throw new Error(result.error)
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete report')
       }
       
       console.log('✅ Financial report deleted successfully')
