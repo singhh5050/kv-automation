@@ -877,9 +877,24 @@ Do not omit metrics if data exists.
 
 ## OUTPUT FORMAT (include all sections)
 1. 📊 **Executive Summary** – 3–4 key quantified highlights, trajectory, inflection points
-2. 📈 **Per KPI Analysis** – Per KPI: Current value, trend indicators, metrics, table, context, implications
+2. 📈 **Per KPI Analysis** – For each KPI: Current value, trend indicators, metrics, context, implications
 3. 🎯 **Strategic Insights** – Benchmarks, sustainability, recommendations
 4. ⚠️ **Data Quality Notes** – Missing data, inconsistencies, confidence levels
+
+## TABLES REQUIREMENT
+For each KPI, include a structured table showing:
+- **Historical Values** (all available periods)
+- **MoM (Month-over-Month) % change**
+- **QoQ (Quarter-over-Quarter) % change** 
+- **YoY (Year-over-Year) % change**
+- **YTD (Year-to-Date) % change**
+- **Trend Direction** (📈📉➡️)
+
+Example table format:
+| Period | Value | MoM % | QoQ % | YoY % | YTD % | Trend |
+|--------|-------|-------|-------|-------|-------|-------|
+| Jan 2025 | $1.2M | - | - | +15% | +15% | 📈 |
+| Feb 2025 | $1.3M | +8.3% | - | +12% | +13.5% | 📈 |
 
 ## FILES TO ANALYZE
 Use the following as the complete source of truth (chronologically order them):
@@ -887,9 +902,10 @@ Use the following as the complete source of truth (chronologically order them):
 
 ## STYLE
 - Use **bold** for metrics, *italics* for emphasis, 📈📉➡️ emojis for clarity
-- Include tables for historical data
+- Include structured tables for every KPI with historical data
 - Write for a board-level audience
-- Avoid vague statements without quantified support"""
+- Avoid vague statements without quantified support
+- Do NOT include any "KPI Trend Analysis" headers in the output"""
 
         # Build content parts for Responses API
         content_parts = [{"type": "input_text", "text": system_prompt}]
@@ -897,9 +913,11 @@ Use the following as the complete source of truth (chronologically order them):
         # Add instruction text
         content_parts.append({
             "type": "input_text", 
-            "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI trend analysis following the system prompt requirements exactly.
+            "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI analysis following the system prompt requirements exactly.
 
-Focus on extracting structured time-series data and providing board-level insights with quantified trends (MoM, QoQ, YoY, YTD) for every available KPI."""
+Focus on extracting structured time-series data and providing board-level insights with quantified trends (MoM, QoQ, YoY, YTD) for every available KPI.
+
+IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use only the section headers specified in the OUTPUT FORMAT."""
         })
         
         # Add all uploaded PDF files
