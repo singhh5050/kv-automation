@@ -385,10 +385,17 @@ export default function CompanyDetailPage() {
     if (!company?.company?.id) return
     
     try {
+      console.log('🔍 Loading KPI analysis for company:', company.company.id)
       const result = await getCompanyKpiAnalysis(company.company.id)
+      console.log('📊 KPI analysis API response:', result)
       
-      if (result.data?.data?.analysis_content) {
-        setKpiAnalysisResult(result.data.data.analysis_content)
+      // Try different possible response structures
+      const analysis = result.data?.data?.analysis_content || 
+                      result.data?.analysis_content || 
+                      result.analysis_content
+      
+      if (analysis) {
+        setKpiAnalysisResult(analysis)
         console.log('✅ Loaded saved KPI analysis')
       } else {
         console.log('ℹ️ No saved KPI analysis found')
@@ -1305,7 +1312,7 @@ export default function CompanyDetailPage() {
 
                 {/* 4. Team */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-1">
                       <div>
                         <h3 className="section-title">Team</h3>
@@ -1473,57 +1480,20 @@ export default function CompanyDetailPage() {
                   )}
                   
                   {kpiAnalysisResult ? (
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                      {/* Header with gradient */}
-                      <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200 px-6 py-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                            <span className="text-white text-lg">📊</span>
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900">KPI Trend Analysis</h3>
-                            <p className="text-sm text-gray-600">Quantified insights across board deck presentations</p>
-                          </div>
-                        </div>
+                    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span>📊</span>
+                        <h3 className="text-sm font-bold text-gray-900">KPI Trend Analysis</h3>
                       </div>
-                      
-                      {/* Content */}
-                      <div className="p-6">
-                        <div className="prose prose-sm max-w-none">
-                          <MarkdownContent content={kpiAnalysisResult} className="kpi-analysis" />
-                        </div>
+                      <div className="prose prose-sm max-w-none">
+                        <MarkdownContent content={kpiAnalysisResult} />
                       </div>
                     </div>
                   ) : !kpiAnalysisLoading && !kpiAnalysisError && (
-                    <div className="bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 p-4 rounded-lg text-center">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                        <span className="text-xl">📊</span>
-                      </div>
-                      <h4 className="text-sm font-bold text-blue-800 mb-2">KPI Trend Analysis</h4>
-                      <p className="text-blue-700 text-xs leading-relaxed mb-4">
-                        Analyze trends across your most recent board deck presentations. 
-                        Our AI will extract and track KPIs specific to your sector and stage.
-                      </p>
-                      {!company?.company?.id ? (
-                        <p className="text-red-600 text-xs">Company data loading...</p>
-                      ) : company?.current_cap_table?.investors && detectCompanyStage(company.current_cap_table.investors) === 'Unknown' ? (
-                        <p className="text-amber-600 text-xs">Stage detection requires cap table data with KV fund investments.</p>
-                      ) : (
-                        <div className="flex justify-center space-x-4 text-xs text-blue-600">
-                          <div className="flex items-center space-x-1">
-                            <span>📈</span>
-                            <span>Trend Analysis</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <span>🎯</span>
-                            <span>Stage-Specific KPIs</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <span>🤖</span>
-                            <span>AI Insights</span>
-                          </div>
-                        </div>
-                      )}
+                    <div className="p-4 text-center">
+                      <div className="text-gray-400 text-lg mb-2">📊</div>
+                      <h4 className="text-xs font-medium text-gray-900 mb-2">No KPI Analysis</h4>
+                      <p className="text-gray-500 text-xs">Analyze trends across your most recent board deck presentations to track KPIs specific to your sector and stage.</p>
                     </div>
                   )}
                 </div>
@@ -1574,7 +1544,7 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'key' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-md font-bold text-gray-900">Key Updates</h3>
+                         <h3 className="section-title">Key Updates</h3>
                        </div>
                        {latestReport ? (
                           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 space-y-3">
@@ -1602,7 +1572,7 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'sector' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-md font-bold text-gray-900">Sector Updates</h3>
+                         <h3 className="section-title">Sector Updates</h3>
                        </div>
                        <div className="space-y-3">
                          <div>
@@ -1645,7 +1615,7 @@ export default function CompanyDetailPage() {
                    {activeOverviewSection === 'details' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                        <div className="mb-2">
-                         <h3 className="text-md font-bold text-gray-900">Additional Details</h3>
+                         <h3 className="section-title">Additional Details</h3>
                        </div>
                        {latestReport ? (
                          <div className="grid grid-cols-1 gap-3">
