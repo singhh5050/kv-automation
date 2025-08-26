@@ -46,6 +46,10 @@ def lambda_handler(event, context):
                     "body": json.dumps({"error": "Invalid JSON in request body"})}
 
     operation = event.get("operation") or body.get("operation")
+    print(f"🔍 LAMBDA EVENT: {event}")
+    print(f"🔍 PARSED BODY: {body}")
+    print(f"🔍 OPERATION: {operation}")
+    
     if not operation:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": "Operation not specified"})}
@@ -104,7 +108,11 @@ def lambda_handler(event, context):
     elif operation == "delete_company_note":
         result = delete_company_note(db_config, body.get("note_id"))
     elif operation == "delete_financial_report":
-        result = delete_financial_report(db_config, body.get("report_id"))
+        # Handle both direct Lambda invocation and API Gateway
+        report_id = body.get("report_id") or event.get("report_id")
+        result = delete_financial_report(db_config, report_id)
+    elif operation == "get_company_kpi_analysis":
+        result = get_company_kpi_analysis(db_config, body.get("company_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -2684,6 +2692,8 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
     """
     Delete a financial report by ID from both database and S3
     """
+    print(f"🔍 DELETE REQUEST: report_id={report_id}, type={type(report_id)}")
+    
     if not report_id:
         return {
             'success': False,
@@ -2699,6 +2709,7 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         cursor = conn.cursor()
         
         # Get report details before deletion for confirmation
+        print(f"🔍 QUERYING: SELECT ... WHERE id = {report_id}")
         cursor.execute("""
             SELECT id, company_id, file_name, report_date
             FROM financial_reports 
@@ -2706,10 +2717,12 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         """, [report_id])
         
         report_data = cursor.fetchone()
+        print(f"🔍 QUERY RESULT: {report_data}")
         
         if not report_data:
             cursor.close()
             conn.close()
+            print(f"❌ REPORT NOT FOUND: id={report_id}")
             return {
                 'success': False,
                 'error': 'Financial report not found'
@@ -2721,22 +2734,26 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         report_date = report_data[3]
         
         # Delete the financial report from database
+        print(f"🔍 DELETING: DELETE FROM financial_reports WHERE id = {report_id}")
         cursor.execute("""
             DELETE FROM financial_reports 
             WHERE id = %s
         """, [report_id])
         
         deleted_count = cursor.rowcount
+        print(f"🔍 DELETED COUNT: {deleted_count}")
         
         if deleted_count == 0:
             cursor.close()
             conn.close()
+            print(f"❌ NO ROWS DELETED: id={report_id}")
             return {
                 'success': False,
                 'error': 'Failed to delete financial report from database'
             }
         
         # Commit database deletion first
+        print(f"✅ COMMITTING: {deleted_count} row(s) deleted")
         conn.commit()
         cursor.close()
         conn.close()
@@ -2782,4 +2799,66 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to delete financial report: {str(e)}'
+        }
+
+
+def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Get the latest KPI analysis for a company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Get the latest KPI analysis for this company
+        cursor.execute("""
+            SELECT id, analysis_content, stage, reports_analyzed, 
+                   generated_at, updated_at
+            FROM company_kpi_analysis 
+            WHERE company_id = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """, [company_id])
+        
+        analysis_data = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if not analysis_data:
+            return {
+                'success': True,
+                'data': None,
+                'message': 'No KPI analysis found for this company'
+            }
+        
+        analysis_id, content, stage, reports_count, generated_at, updated_at = analysis_data
+        
+        return {
+            'success': True,
+            'data': {
+                'id': analysis_id,
+                'company_id': company_id,
+                'analysis_content': content,
+                'stage': stage,
+                'reports_analyzed': reports_count,
+                'generated_at': generated_at.isoformat() if generated_at else None,
+                'updated_at': updated_at.isoformat() if updated_at else None
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to retrieve KPI analysis: {str(e)}'
         } 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis } from '@/lib/api'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
@@ -349,6 +349,13 @@ export default function CompanyDetailPage() {
     loadCompanyData()
   }, [companyId])
 
+  // Load saved KPI analysis when company data is loaded
+  useEffect(() => {
+    if (company?.company?.id) {
+      loadSavedKpiAnalysis()
+    }
+  }, [company?.company?.id])
+
   const loadCompanyData = async () => {
     if (!companyId) return
     
@@ -373,7 +380,23 @@ export default function CompanyDetailPage() {
     }
   }
 
-
+  // Load saved KPI analysis on page load
+  const loadSavedKpiAnalysis = async () => {
+    if (!company?.company?.id) return
+    
+    try {
+      const result = await getCompanyKpiAnalysis(company.company.id)
+      
+      if (result.data?.data?.analysis_content) {
+        setKpiAnalysisResult(result.data.data.analysis_content)
+        console.log('✅ Loaded saved KPI analysis')
+      } else {
+        console.log('ℹ️ No saved KPI analysis found')
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to load saved KPI analysis:', error)
+    }
+  }
 
   // Enrichment functions
   const handleEnrichCompany = async () => {
@@ -1450,9 +1473,25 @@ export default function CompanyDetailPage() {
                   )}
                   
                   {kpiAnalysisResult ? (
-                    <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                      <div className="prose prose-sm max-w-none">
-                        <MarkdownContent content={kpiAnalysisResult} />
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                      {/* Header with gradient */}
+                      <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200 px-6 py-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                            <span className="text-white text-lg">📊</span>
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">KPI Trend Analysis</h3>
+                            <p className="text-sm text-gray-600">Quantified insights across board deck presentations</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="p-6">
+                        <div className="prose prose-sm max-w-none">
+                          <MarkdownContent content={kpiAnalysisResult} className="kpi-analysis" />
+                        </div>
                       </div>
                     </div>
                   ) : !kpiAnalysisLoading && !kpiAnalysisError && (

@@ -374,123 +374,155 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             print(f"✅ File uploaded: {file_response.id}")
             text_content = None
 
-        # --- Instructions + JSON Schema ---
-        system_prompt = (
-            "Return ONLY one JSON object that validates the provided JSON Schema. "
-            "No code fences; no prose outside the JSON. Escape quotes correctly. "
-            "You are an expert financial analyst for VC board decks. Numeric fields must be raw numbers."
-        )
+        # --- Enhanced Financial Analysis Prompt ---
+        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a structured JSON format.
 
-        schema = {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "companyName": {"type": ["string", "null"]},
-                "reportDate": {"type": ["string", "null"], "format": "date"},
-                "reportPeriod": {"type": ["string", "null"]},
-                "sector": {"type": ["string", "null"], "enum": ["healthcare", "consumer", "enterprise", "manufacturing"]},
-                "cashOnHand": {"type": ["number", "null"]},
-                "monthlyBurnRate": {"type": ["number", "null"]},
-                "cashOutDate": {"type": ["string", "null"]},
-                "runway": {"type": ["integer", "null"]},
-                "budgetVsActual": {"type": ["string", "null"]},
-                "financialSummary": {"type": ["string", "null"]},
-                "sectorHighlightA": {"type": ["string", "null"]},
-                "sectorHighlightB": {"type": ["string", "null"]},
-                "keyRisks": {"type": ["string", "null"]},
-                "personnelUpdates": {"type": ["string", "null"]},
-                "nextMilestones": {"type": ["string", "null"]},
-                "evidence": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "companyName": {"type": ["object", "null"], "additionalProperties": False,
-                                        "properties": {"page": {"type": ["integer", "null"]},
-                                                       "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                        "required": ["page", "quote"]},
-                        "reportDate": {"type": ["object", "null"], "additionalProperties": False,
-                                       "properties": {"page": {"type": ["integer", "null"]},
-                                                      "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                       "required": ["page", "quote"]},
-                        "reportPeriod": {"type": ["object", "null"], "additionalProperties": False,
-                                         "properties": {"page": {"type": ["integer", "null"]},
-                                                        "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                         "required": ["page", "quote"]},
-                        "sector": {"type": ["object", "null"], "additionalProperties": False,
-                                   "properties": {"page": {"type": ["integer", "null"]},
-                                                  "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                   "required": ["page", "quote"]},
-                        "cashOnHand": {"type": ["object", "null"], "additionalProperties": False,
-                                       "properties": {"page": {"type": ["integer", "null"]},
-                                                      "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                       "required": ["page", "quote"]},
-                        "monthlyBurnRate": {"type": ["object", "null"], "additionalProperties": False,
-                                            "properties": {"page": {"type": ["integer", "null"]},
-                                                           "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                            "required": ["page", "quote"]},
-                        "cashOutDate": {"type": ["object", "null"], "additionalProperties": False,
-                                        "properties": {"page": {"type": ["integer", "null"]},
-                                                       "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                        "required": ["page", "quote"]},
-                        "runway": {"type": ["object", "null"], "additionalProperties": False,
-                                   "properties": {"page": {"type": ["integer", "null"]},
-                                                  "quote": {"type": ["string", "null"], "maxLength": 120}},
-                                   "required": ["page", "quote"]},
-                        "budgetVsActual": {"type": ["object", "null"], "additionalProperties": False,
-                                           "properties": {"page": {"type": ["integer", "null"]},
-                                                          "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                           "required": ["page", "quote"]},
-                        "financialSummary": {"type": ["object", "null"], "additionalProperties": False,
-                                             "properties": {"page": {"type": ["integer", "null"]},
-                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                             "required": ["page", "quote"]},
-                        "sectorHighlightA": {"type": ["object", "null"], "additionalProperties": False,
-                                             "properties": {"page": {"type": ["integer", "null"]},
-                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                             "required": ["page", "quote"]},
-                        "sectorHighlightB": {"type": ["object", "null"], "additionalProperties": False,
-                                             "properties": {"page": {"type": ["integer", "null"]},
-                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                             "required": ["page", "quote"]},
-                        "keyRisks": {"type": ["object", "null"], "additionalProperties": False,
-                                     "properties": {"page": {"type": ["integer", "null"]},
-                                                    "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                     "required": ["page", "quote"]},
-                        "personnelUpdates": {"type": ["object", "null"], "additionalProperties": False,
-                                             "properties": {"page": {"type": ["integer", "null"]},
-                                                            "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                             "required": ["page", "quote"]},
-                        "nextMilestones": {"type": ["object", "null"], "additionalProperties": False,
-                                           "properties": {"page": {"type": ["integer", "null"]},
-                                                          "quote": {"type": ["string", "null"], "maxLength": 200}},
-                                           "required": ["page", "quote"]}
-                    },
-                    "required": ["companyName","reportDate","reportPeriod","sector","cashOnHand","monthlyBurnRate","cashOutDate","runway","budgetVsActual","financialSummary","sectorHighlightA","sectorHighlightB","keyRisks","personnelUpdates","nextMilestones"]
-                }
-            },
-            "required": ["companyName","reportDate","reportPeriod","sector","cashOnHand","monthlyBurnRate","cashOutDate","runway","budgetVsActual","financialSummary","sectorHighlightA","sectorHighlightB","keyRisks","personnelUpdates","nextMilestones","evidence"]
-        }
+CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
-        structured_format = {
-            "type": "json_schema",
-            "name": "financial_kpis_with_evidence",
-            "schema": schema,
-            "strict": True
-        }
+## SECTOR DETECTION
+First, determine the company's primary sector from these categories:
+- **healthcare**: Biotech, pharma, medical devices, digital health platforms
+- **consumer**: D2C, marketplaces, consumer services, insurance brokerages  
+- **enterprise**: B2B SaaS, platforms, workforce management, business tools
+- **manufacturing**: Hardware, industrial equipment, energy systems, robotics
 
-        # --- Build single-user message: first part is instructions, then data/file ---
+## SECTOR-SPECIFIC ANALYSIS
+Based on the detected sector, provide detailed analysis for these two areas:
+
+### Healthcare
+- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions, enrollment rates, adverse events, primary/secondary endpoints, regulatory submissions, trial site performance
+- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape, manufacturing optimization, formulation improvements, patent applications, IND/NDA preparation, pipeline expansion
+
+### Consumer  
+- **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates, churn analysis, customer lifetime value, acquisition channels, pricing optimization, cohort analysis
+- **sectorHighlightB** ("Growth Efficiency Initiatives"): Market expansion, AI-driven productivity, channel optimization, operational improvements, automation initiatives, cost reduction programs, geographic expansion, product development velocity, team scaling
+
+### Enterprise
+- **sectorHighlightA** ("Product Roadmap & Adoption"): Feature launches, usage metrics, customer engagement, platform development, product velocity, feature adoption rates, customer feedback integration, technical debt management, scalability improvements
+- **sectorHighlightB** ("Go-to-Market Performance"): Sales pipeline, bookings by region, partnership channels, customer success metrics, sales efficiency, market penetration, competitive wins/losses, channel performance, customer expansion rates
+
+### Manufacturing
+- **sectorHighlightA** ("Operational Performance"): Units produced/shipped, manufacturing efficiency, quality metrics, capacity utilization, yield improvements, cost per unit, production bottlenecks, quality control results, equipment performance
+- **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals, supply chain optimization, vendor performance, logistics improvements, customer delivery metrics, regulatory compliance
+
+## FORMATTING REQUIREMENTS
+ALL text fields must use **Markdown formatting** for better readability:
+
+### For budgetVsActual - Use a markdown table:
+```
+| Metric | Budget | Actual | Variance |
+|--------|--------|--------|----------|
+| Revenue | $X.XM | $X.XM | +X% |
+| Burn Rate | $X.XM | $X.XM | +X% |
+| CPA | $XXX | $XXX | -X% |
+```
+
+### For lists (nextMilestones, keyRisks, personnelUpdates) - Use markdown bullets with context:
+```
+- ✅ **Q3-24**: Close Keen Insurance acquisition and integrate 50-state footprint *↺ strategic expansion to capture national market*
+- 🚀 **Jul 31**: Launch ML Bidder v2 and AI Sales Rep; target CPA 550 entering AEP *critical for AEP performance optimization*
+- ⚠️ **Q4-24**: Deploy automated commission management system before AEP *timeline pressure due to agent scaling needs*
+```
+
+**Emoji Guide**: ✅ committed/on-track, 🚀 growth initiatives, ⚠️ at-risk, 🎯 strategic milestones
+
+### For sector highlights - Use structured format with narrative + metrics:
+```
+**Overview**: Policies in force crossed 15k in Q2, up 2.3x YoY with management guiding to 25k by year-end. *The growth acceleration reflects successful ACA launch execution and expanded agent network.*
+
+**Key Metrics**:
+- CPA **$705** vs $775 LY (-9%) and $805 budget (-12%) *↺ building on Q1 optimization efforts*
+- Retention by cohort: **89.6%** (2023), **88.4%** (2022), **89.2%** (2021) *consistent with historical 90% target*
+- Lead-to-sale rate **4.6%** on media-partner channels vs **3.7%** Q2-23 *improved conversion efficiency*
+
+**Strategic Implications**: *The CPA improvement and retention stability provide confidence for scaling to 25k policies while maintaining unit economics. The enhanced lead-to-sale rate suggests our media partner optimization is working.*
+```
+
+### For financialSummary - Board Deck Summary (PRIMARY FOCUS):
+**IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including financial performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
+
+## WRITING STYLE
+Write analysis in the style of an executive summary for board members:
+- Use markdown formatting: **bold** for metrics, *italics* for emphasis
+- Include specific percentages, dollar amounts, and timeline references
+- Focus on narrative developments, personnel changes, strategic decisions, and risk factors
+- Ask strategic questions when appropriate ("How sustainable is current pricing model?")
+- Keep sentences concise but information-dense
+- Note cash runway implications and funding needs
+- Provide substantial detail with specific metrics, dates, and context
+- Include both quantitative data and qualitative insights
+- Reference specific milestones, partnerships, or competitive developments
+
+## STORYTELLING GUIDELINES
+For every section that contains numbers, weave a compelling narrative that answers **"So what?"**:
+
+### Narrative Structure
+- **Context** – Explain why this metric moved (cause / event / decision / market condition)
+- **Implication** – Connect to impact on runway, strategy, or next quarter's plan
+- **Forward-looking** – What does this mean for upcoming decisions or milestones?
+
+### Storytelling Techniques
+- If a figure ties back to previous board discussions, briefly reference it (e.g., "*↺ revisits the Q1 push to lower CAC*")
+- Use *italics* for context and narrative elements, keep metrics **bold**
+- Connect dots between different metrics to tell a cohesive story
+- Explain the "why" behind the "what" - don't just report numbers
+
+### Example Narrative Flow
+- **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts cash runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge financing.*
+
+## NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
+1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
+2. monthlyBurnRate: Return raw number in USD per month (e.g., 1200000 for $1.2M/month)  
+3. runway: Return integer months only (e.g., 18 for 18 months)
+
+## REQUIRED JSON OUTPUT:
+{
+  "companyName": "Company name only",
+  "reportDate": "YYYY-MM-DD format only", 
+  "reportPeriod": "Q1 2025 or 2024 Annual Report format only",
+  "sector": "healthcare|consumer|enterprise|manufacturing",
+  "cashOnHand": 3100000,
+  "monthlyBurnRate": 1200000,
+  "cashOutDate": "April 2025",
+  "runway": 18,
+  "budgetVsActual": "Markdown table with Budget vs Actual metrics and narrative context",
+  "financialSummary": "PRIMARY FOCUS: Exactly 7-10 bullet points precisely summarizing the entire board deck (financial performance, operations, strategy, risks, milestones) with **bold metrics** and brief context",
+  "sectorHighlightA": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**",
+  "sectorHighlightB": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**", 
+  "keyRisks": "Markdown bullet list with emoji status (⚠️) and strategic risk context",
+  "personnelUpdates": "Markdown bullet list with team changes and strategic impact",
+  "nextMilestones": "Markdown bullet list with emoji status (✅🚀⚠️) and milestone context"
+}
+
+EXAMPLES:
+- If document shows "$3.1M cash" → cashOnHand: 3100000
+- If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
+- If document shows "18 month runway" → runway: 18
+
+CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. Return valid JSON without code blocks."""
+
+        # Add the user prompt with document analysis instructions
+        user_prompt = f"""Analyze this financial document and return valid JSON WITH STORY CONTEXT:
+
+Filename: {filename}
+
+IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use emojis for milestone status, and connect dots between different data points. No code blocks, only raw markdown.
+
+Return ONLY valid JSON in the exact format specified in the system prompt."""
+
+        # --- Build single-user message: system prompt + user prompt + file ---
         content_parts = [{"type": "input_text", "text": system_prompt}]
+        content_parts.append({"type": "input_text", "text": user_prompt})
+        
         if is_text_only:
-            content_parts.append({"type": "input_text", "text": f"ANALYZE THIS TEXT (from {filename}):\n\n{text_content}"})
+            content_parts.append({"type": "input_text", "text": f"DOCUMENT TEXT:\n\n{text_content}"})
         else:
-            content_parts.append({"type": "input_text", "text": "Analyze the attached PDF for the required fields using the schema."})
             content_parts.append({"type": "input_file", "file_id": file_response.id})
 
-        print("🚀 Calling Responses API with Structured Outputs...")
+        print("🚀 Calling Responses API with enhanced narrative prompt...")
         response = client.responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-5"),
+            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
             input=[{"role": "user", "content": content_parts}],
-            text={"format": structured_format},
             max_output_tokens=12000
         )
 
@@ -682,6 +714,14 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
         # Perform multi-PDF KPI analysis - returns markdown
         markdown_analysis = analyze_multi_pdf_kpis(pdf_contents, company_name, sector, stage)
         
+        # Store the KPI analysis results in the database
+        try:
+            store_kpi_analysis_in_db(company_id, markdown_analysis, stage, len(pdf_contents))
+            print(f"✅ KPI analysis stored in database for company {company_id}")
+        except Exception as storage_error:
+            print(f"⚠️ Failed to store KPI analysis: {storage_error}")
+            # Continue without failing the entire operation
+        
         return {
             'success': True,
             'company_id': company_id,
@@ -746,35 +786,53 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
         kpi_requirements = get_kpi_requirements(sector, stage)
         
         # Create the analysis prompt for markdown output
-        system_prompt = f"""You are an expert financial analyst specializing in board deck analysis for venture capital portfolio companies.
-
-You will analyze {len(pdf_contents)} board deck PDFs from {company_name} (a {sector} company in {stage}) to extract and track key performance indicators over time.
+        system_prompt = f"""You are an expert financial analyst specializing in venture capital board deck analysis.  
+Your role is to (1) extract structured, time-series KPI data, and (2) provide interpretive analysis with quantified trends and board-level insights.
 
 ## COMPANY CONTEXT
-- **Company**: {company_name}
-- **Sector**: {sector}
-- **Stage**: {stage}
-- **Reports to analyze**: {len(pdf_contents)}
+- Company: {company_name}
+- Sector: {sector}
+- Stage: {stage}
+- Reports to analyze: {len(pdf_contents)}
 
-## KPI REQUIREMENTS FOR THIS ANALYSIS
-Based on the sector and stage, focus on these KPIs:
-
+## KPI FOCUS
+Based on sector and stage, analyze the following KPIs:
 {kpi_requirements}
 
-## ANALYSIS INSTRUCTIONS
-1. **Temporal Analysis**: Track how each KPI has changed across the time periods
-2. **Trend Identification**: Identify improving, declining, or stable trends  
-3. **Context Understanding**: Explain the business context behind changes
-4. **Stage-Appropriate Focus**: Emphasize the KPIs most relevant to this stage
+## ANALYSIS REQUIREMENTS
+### Phase 1: Extraction
+- Extract chronological KPI datasets across all reports
+- Include exact values, periods, and units
+- Build historical tables for every KPI
 
-## OUTPUT FORMAT
-Return a detailed markdown analysis with:
-- Executive summary with key trends
-- KPI trend analysis with tables and bullet points
-- Strategic insights and recommendations
-- Data quality observations
+### Phase 2: Quantified Trend Analysis
+For each KPI, calculate:
+- **MoM, QoQ, YoY, YTD % changes**
+- **Growth Rate (CAGR if possible)**
+- **Trend Direction** (📈📉➡️)
+Do not omit metrics if data exists.
 
-Use headers, tables, bullet points, and emphasis for readability."""
+### Phase 3: Interpretation
+- Tie every insight to a quantified metric
+- Identify acceleration/deceleration, seasonality, anomalies
+- Explain underlying business drivers
+- Provide forward-looking implications
+
+## OUTPUT FORMAT (include all sections)
+1. 📊 **Executive Summary** – 3–4 key quantified highlights, trajectory, inflection points
+2. 📈 **KPI Trend Analysis** – Per KPI: Current value, trend indicators, metrics, table, context, implications
+3. 🎯 **Strategic Insights** – Benchmarks, sustainability, recommendations
+4. ⚠️ **Data Quality Notes** – Missing data, inconsistencies, confidence levels
+
+## FILES TO ANALYZE
+Use the following as the complete source of truth (chronologically order them):
+{file_list}
+
+## STYLE
+- Use **bold** for metrics, *italics* for emphasis, 📈📉➡️ emojis for clarity
+- Include tables for historical data
+- Write for a board-level audience
+- Avoid vague statements without quantified support"""
 
         # Build content parts for Responses API
         content_parts = [{"type": "input_text", "text": system_prompt}]
@@ -784,12 +842,9 @@ Use headers, tables, bullet points, and emphasis for readability."""
         
         content_parts.append({
             "type": "input_text", 
-            "text": f"""Analyze these {len(uploaded_files)} board deck reports for {company_name} and provide a comprehensive KPI trend analysis:
+            "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI trend analysis following the system prompt requirements exactly.
 
-**Files to analyze:**
-{file_list}
-
-Focus on the KPIs specified for {sector} companies in {stage}, and provide detailed markdown analysis with trends, insights, and recommendations."""
+Focus on extracting structured time-series data and providing board-level insights with quantified trends (MoM, QoQ, YoY, YTD) for every available KPI."""
         })
         
         # Add all uploaded PDF files
@@ -946,7 +1001,7 @@ def store_result_in_db(analysis_result: dict, company_id: int):
         else:
             report_date = datetime.now().date()
         
-        # Same INSERT pattern as financial-crud, but WITH evidence field
+        # Same INSERT pattern as financial-crud
         report_insert = """
             INSERT INTO financial_reports (
                 company_id, file_name, report_date, report_period, sector,
@@ -954,11 +1009,11 @@ def store_result_in_db(analysis_result: dict, company_id: int):
                 financial_summary, sector_highlight_a, sector_highlight_b,
                 key_risks, personnel_updates, next_milestones,
                 manually_edited, edited_by, edited_at,
-                upload_date, processed_at, processing_status, evidence
+                upload_date, processed_at, processing_status
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'completed', %s
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'completed'
             )
         """
         
@@ -985,12 +1040,6 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             except (ValueError, TypeError):
                 return None
         
-        # Handle evidence field for database storage
-        evidence_value = analysis_result.get('evidence')
-        if not isinstance(evidence_value, (dict, list, type(None))):
-            evidence_value = None
-        # Evidence column is JSONB, so pass dict/list directly
-        
         # Prepare data array (same order as financial-crud)
         report_data = [
             company_id,
@@ -1010,8 +1059,7 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             analysis_result.get('personnelUpdates'),
             analysis_result.get('nextMilestones'),
             False,  # manually_edited
-            "s3_gpt5_import",  # edited_by - distinguish from API Gateway imports
-            evidence_value  # NEW: evidence field with page citations (JSONB)
+            "s3_gpt5_import"  # edited_by - distinguish from API Gateway imports
         ]
         
         # Debug parameter mapping (remove after confirming fix)
@@ -1028,12 +1076,10 @@ def store_result_in_db(analysis_result: dict, company_id: int):
         cash_value = analysis_result.get('cashOnHand') or 0
         burn_value = analysis_result.get('monthlyBurnRate') or 0
         runway_value = analysis_result.get('runway') or 0
-        evidence_count = len(analysis_result.get('evidence', {}))
         
         print(f"💰 Cash: ${cash_value:,.0f}" if cash_value else "💰 Cash: N/A")
         print(f"🔥 Monthly burn: ${burn_value:,.0f}" if burn_value else "🔥 Monthly burn: N/A")
         print(f"📈 Runway: {runway_value:.1f} months" if runway_value else "📈 Runway: N/A")
-        print(f"📋 Evidence entries: {evidence_count}")
         
         cursor.close()
         conn.close()
@@ -1041,4 +1087,66 @@ def store_result_in_db(analysis_result: dict, company_id: int):
     except Exception as e:
         print(f"❌ Database storage failed: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
+        raise e
+
+
+def store_kpi_analysis_in_db(company_id: int, analysis_content: str, stage: str, reports_count: int):
+    """
+    Store KPI analysis results in the company_kpi_analysis table
+    """
+    import ssl
+    
+    try:
+        print(f"📊 Storing KPI analysis for company {company_id}")
+        
+        # Same database configuration pattern as other Lambdas
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect using same pattern as process-cap-table
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Check if analysis already exists for this company
+        cursor.execute("""
+            SELECT id FROM company_kpi_analysis 
+            WHERE company_id = %s
+        """, [company_id])
+        
+        existing_analysis = cursor.fetchone()
+        
+        if existing_analysis:
+            # Update existing analysis
+            cursor.execute("""
+                UPDATE company_kpi_analysis 
+                SET analysis_content = %s, 
+                    stage = %s, 
+                    reports_analyzed = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE company_id = %s
+            """, [analysis_content, stage, reports_count, company_id])
+            print(f"✅ Updated existing KPI analysis for company {company_id}")
+        else:
+            # Create new analysis
+            cursor.execute("""
+                INSERT INTO company_kpi_analysis 
+                (company_id, analysis_content, stage, reports_analyzed, generated_at, created_by)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, 'system')
+            """, [company_id, analysis_content, stage, reports_count])
+            print(f"✅ Created new KPI analysis for company {company_id}")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"💾 Successfully stored KPI analysis ({len(analysis_content)} chars)")
+        
+    except Exception as e:
+        print(f"❌ Failed to store KPI analysis: {str(e)}")
         raise e

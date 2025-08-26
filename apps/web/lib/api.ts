@@ -672,4 +672,20 @@ export async function deleteFinancialReport(reportId: number) {
     console.error('❌ Delete financial report error:', error)
     return { error: error instanceof Error ? error.message : 'Delete failed' }
   }
+}
+
+/**
+ * Get saved KPI analysis for a company
+ */
+export async function getCompanyKpiAnalysis(companyId: number) {
+  return apiRequest('/financial', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      operation: 'get_company_kpi_analysis',
+      company_id: companyId,
+    }),
+  })
 } 

@@ -148,6 +148,39 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating company_notes table: {e}")
         raise e
 
+    # ---- SAFE: Add company_kpi_analysis table if it doesn't exist ----
+    print("🔧 Creating company_kpi_analysis table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_kpi_analysis (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            analysis_content TEXT NOT NULL,
+            stage VARCHAR(50) NOT NULL,
+            reports_analyzed INTEGER DEFAULT 0,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100) DEFAULT 'system'
+        );
+        """)
+        print("✅ Company KPI analysis table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_kpi_analysis_company_id ON company_kpi_analysis(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_kpi_analysis_generated_at ON company_kpi_analysis(generated_at DESC);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_kpi_analysis_stage ON company_kpi_analysis(stage);
+        """)
+        print("✅ Company KPI analysis table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating company_kpi_analysis table: {e}")
+        raise e
+
     # ---- COMMENTED OUT: Table recreation (safe mode) -----------------
     # cursor.execute("""
     # CREATE TABLE companies (
@@ -199,11 +232,11 @@ def create_database_schema(conn):
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table and company_notes table created safely",
-        "operation": "add_evidence_field_and_notes_table",
-        "affected_tables": ["financial_reports", "company_notes"],
+        "message": "Evidence field added to financial_reports table, company_notes and company_kpi_analysis tables created safely",
+        "operation": "add_evidence_field_notes_and_kpi_tables",
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes"]
+        "new_tables": ["company_notes", "company_kpi_analysis"]
     }
 
 

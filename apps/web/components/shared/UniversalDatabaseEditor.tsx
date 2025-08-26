@@ -428,10 +428,25 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate, refreshKe
   return (
     <div className="space-y-8">
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h2 className="text-xl font-bold text-blue-900 mb-2">Universal Database Editor</h2>
-        <p className="text-blue-700 text-sm mb-3">
-          Complete database view for {allData.company?.name}. Click any editable field to modify it.
-        </p>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h2 className="text-xl font-bold text-blue-900">Universal Database Editor</h2>
+            <p className="text-blue-700 text-sm mb-3">
+              Complete database view for {allData.company?.name}. Click any editable field to modify it.
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              await loadAllData()
+              onUpdate?.() // Trigger parent component refresh
+            }}
+            disabled={loading}
+            className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+            title="Refresh all data including cap table and financial reports"
+          >
+            {loading ? 'Refreshing...' : '🔄 Refresh'}
+          </button>
+        </div>
         
         <div className="flex flex-wrap gap-4 text-xs">
           <div className="flex items-center space-x-1">

@@ -22,9 +22,13 @@ export async function POST(request: NextRequest) {
 
     // Prepare the payload for the Lambda function
     const payload = {
-      operation: 'delete_financial_report',
-      report_id: reportId
+      body: JSON.stringify({
+        operation: 'delete_financial_report',
+        report_id: reportId
+      })
     }
+
+    console.log('🔍 Lambda payload:', JSON.stringify(payload, null, 2))
 
     // Invoke the financial-crud Lambda function
     const command = new InvokeCommand({
@@ -41,6 +45,8 @@ export async function POST(request: NextRequest) {
 
     // Parse the Lambda response
     const responseBody = JSON.parse(Buffer.from(response.Payload).toString())
+    
+    console.log('🔍 Lambda response:', JSON.stringify(responseBody, null, 2))
     
     if (response.StatusCode !== 200) {
       throw new Error(`Lambda execution failed with status ${response.StatusCode}`)
