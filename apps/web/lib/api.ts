@@ -267,6 +267,76 @@ export async function getCompanyByName(companyName: string) {
 }
 
 /**
+ * Create or get a company by name
+ * Returns company ID for use in uploads
+ */
+export async function createOrGetCompany(companyName: string): Promise<{ companyId: number; companyName: string; error?: string }> {
+  try {
+    // First try to find existing company
+    const existingResult = await getCompanyByName(companyName)
+    
+    if (existingResult.data?.data?.found !== false) {
+      // Company exists, return its ID
+      return {
+        companyId: existingResult.data.data.id,
+        companyName: existingResult.data.data.name
+      }
+    }
+    
+    // Company doesn't exist, create it by saving a minimal financial report
+    // This leverages the existing logic that creates companies automatically
+    const dummyReport = {
+      companyName: companyName,
+      reportDate: new Date().toISOString().split('T')[0],
+      reportPeriod: 'Placeholder',
+      filename: '_company_creation_placeholder.pdf',
+      sector: 'healthcare', // default sector
+      cashOnHand: null,
+      monthlyBurnRate: null,
+      cashOutDate: null,
+      runway: null,
+      budgetVsActual: 'Company created via upload interface',
+      financialSummary: 'Company created via upload interface - no financial data available',
+      sectorHighlightA: 'N/A',
+      sectorHighlightB: 'N/A',
+      keyRisks: 'N/A',
+      personnelUpdates: 'N/A',
+      nextMilestones: 'N/A',
+      user_provided_name: true
+    }
+    
+    const createResult = await saveFinancialReport(dummyReport)
+    
+    if (createResult.error) {
+      return { companyId: 0, companyName: '', error: createResult.error }
+    }
+    
+    // Now get the company ID
+    const newCompanyResult = await getCompanyByName(companyName)
+    
+    if (newCompanyResult.data?.data?.id) {
+      // Delete the placeholder report since we only created it to get the company
+      // Note: We could add a delete operation, but for now leaving it as a marker
+      
+      return {
+        companyId: newCompanyResult.data.data.id,
+        companyName: newCompanyResult.data.data.name
+      }
+    } else {
+      return { companyId: 0, companyName: '', error: 'Failed to create company' }
+    }
+    
+  } catch (error) {
+    console.error('Error creating/getting company:', error)
+    return { 
+      companyId: 0, 
+      companyName: '', 
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
+
+/**
  * Create database schema
  */
 export async function createDatabaseSchema() {

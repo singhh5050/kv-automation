@@ -124,10 +124,17 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
     let companyName: string | undefined
     
     if (selectedOption === 'create_new') {
-      companyName = customName.trim() || undefined
+      companyName = customName.trim()
+      if (!companyName) {
+        alert('Please enter a company name.')
+        return
+      }
     } else if (selectedOption) {
       const selectedCompany = companies.find(c => c.id.toString() === selectedOption)
       companyName = selectedCompany?.name
+    } else {
+      alert('Please select a company or create a new one.')
+      return
     }
     
     processFiles(pendingFiles, companyName)
@@ -215,7 +222,7 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
                   autoFocus
                 >
-                  <option value="">Auto-detect from cap table</option>
+                  <option value="">Select a company...</option>
                   {Array.isArray(companies) && companies.map(company => (
                     <option key={company.id} value={company.id.toString()}>
                       {company.name}
@@ -256,7 +263,12 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 order-1 sm:order-2"
+                disabled={!selectedOption || (selectedOption === 'create_new' && !customName.trim())}
+                className={`px-4 py-2 text-white rounded-md order-1 sm:order-2 ${
+                  !selectedOption || (selectedOption === 'create_new' && !customName.trim())
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
               >
                 <span className="hidden sm:inline">Process {pendingFiles.length} XLSX file{pendingFiles.length !== 1 ? 's' : ''}</span>
                 <span className="sm:hidden">Process {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}</span>

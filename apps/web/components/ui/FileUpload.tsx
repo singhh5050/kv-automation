@@ -78,12 +78,19 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
     let companyId: number | undefined
     
     if (selectedOption === 'create_new') {
-      companyName = customName.trim() || undefined
+      companyName = customName.trim()
+      if (!companyName) {
+        alert('Please enter a company name.')
+        return
+      }
       // For new companies, no companyId available yet
     } else if (selectedOption) {
       const selectedCompany = companies.find(c => c.id.toString() === selectedOption)
       companyName = selectedCompany?.name
       companyId = selectedCompany?.id
+    } else {
+      alert('Please select a company or create a new one.')
+      return
     }
     
     onUpload(pendingFiles, companyName, companyId)
@@ -144,7 +151,7 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
           <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md sm:max-w-lg">
             <h3 className="text-lg font-semibold mb-4">Select Company</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Select an existing company or create a new one. Leave blank to auto-detect from the PDF.
+              Select an existing company or create a new one.
             </p>
             
             {loadingCompanies ? (
@@ -160,7 +167,7 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
                   autoFocus
                 >
-                  <option value="">Auto-detect from PDF</option>
+                  <option value="">Select a company...</option>
                   {Array.isArray(companies) && companies.map(company => (
                     <option key={company.id} value={company.id.toString()}>
                       {company.name}
@@ -201,7 +208,12 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 order-1 sm:order-2"
+                disabled={!selectedOption || (selectedOption === 'create_new' && !customName.trim())}
+                className={`px-4 py-2 text-white rounded-md order-1 sm:order-2 ${
+                  !selectedOption || (selectedOption === 'create_new' && !customName.trim())
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
                 <span className="hidden sm:inline">Upload {pendingFiles.length} PDF{pendingFiles.length !== 1 ? 's' : ''}</span>
                 <span className="sm:hidden">Upload {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}</span>

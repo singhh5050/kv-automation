@@ -17,7 +17,8 @@ import {
   getCompanyEnrichment,
   healthCheck,
   testDatabaseConnection,
-  createDatabaseSchema 
+  createDatabaseSchema,
+  createOrGetCompany
 } from '@/lib/api'
 import { companiesCache } from '@/lib/companiesCache'
 import { detectCompanyStage } from '@/lib/stageDetection'
@@ -248,14 +249,48 @@ export default function Home() {
     setIsLoading(true)
     setErrorMessage(null)
     
+    // ALWAYS ensure we have a company ID - create company if needed
+    let finalCompanyId = companyId
+    let finalCompanyName = companyName
+    
+    // If we don't have a company ID but have a company name, create/get the company
+    if (!finalCompanyId && finalCompanyName) {
+      console.log(`🏢 Creating/getting company: ${finalCompanyName}`)
+      try {
+        const companyResult = await createOrGetCompany(finalCompanyName)
+        
+        if (companyResult.error) {
+          setErrorMessage(`Failed to create/get company: ${companyResult.error}`)
+          setIsLoading(false)
+          return
+        }
+        
+        finalCompanyId = companyResult.companyId
+        finalCompanyName = companyResult.companyName
+        console.log(`✅ Company resolved: ID ${finalCompanyId}, Name: ${finalCompanyName}`)
+      } catch (error) {
+        console.error('Failed to create/get company:', error)
+        setErrorMessage(`Failed to create company: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        setIsLoading(false)
+        return
+      }
+    }
+    
+    // At this point we should ALWAYS have a company ID
+    if (!finalCompanyId) {
+      setErrorMessage('Cannot upload: No company ID available and no company name provided')
+      setIsLoading(false)
+      return
+    }
+    
     for (const file of files) {
       try {
-        console.log(`🚀 Uploading ${file.name}${companyName ? ` for company: ${companyName}` : ''} via ${companyId ? 'S3 direct upload' : 'legacy API Gateway'}`)
+        console.log(`🚀 Uploading ${file.name} for company: ${finalCompanyName}`)
+        console.log(`📋 Company DB ID: ${finalCompanyId}`)
+        console.log(`🛤️  Upload method: S3 direct upload (SOTA)`)
         
-        // Use S3 direct upload if we have a company ID, otherwise fall back to legacy method
-        const result = companyId 
-          ? await uploadToS3(file, companyId, companyName)
-          : await uploadFile(file, companyName)
+        // Always use S3 direct upload since we now guarantee having a company ID
+        const result = await uploadToS3(file, finalCompanyId, finalCompanyName)
         
         if (result.error) {
           console.error('Upload error:', result.error)
@@ -267,65 +302,24 @@ export default function Home() {
           const data = result.data
           console.log('Upload successful:', data)
           
-          // Handle different response types: S3 upload vs API Gateway
-          if (data.s3Key) {
-            // S3 Upload: Processing is asynchronous via Lambda
-            console.log(`✅ S3 upload completed: ${data.s3Key}`)
-            console.log(`🔄 ${data.message}`)
-            
-            // Show user feedback about async processing with detailed timeline
-            setErrorMessage(null) // Clear any previous errors
-            
-            // Show success notification with processing timeline
-            alert(`✅ Upload successful! 
+          // S3 Upload: Processing is asynchronous via Lambda
+          console.log(`✅ S3 upload completed: ${data.s3Key}`)
+          console.log(`🔄 ${data.message}`)
+          
+          // Show user feedback about async processing with detailed timeline
+          setErrorMessage(null) // Clear any previous errors
+          
+          // Show success notification with processing timeline
+          alert(`✅ Upload successful! 
 
 🔄 Processing in background - Your PDF is being analyzed automatically. Financial data extraction and analysis will complete within 2-3 minutes.
 
 📊 Results will appear in the company dashboard once processing is complete. You can continue using the platform normally while this happens in the background.`)
-            
-            // Refresh companies list to show any new entries (in case this is a new company)
-            await loadCompanies(true)
-            
-            // Note: No immediate database save - Lambda will handle this automatically
-            
-          } else {
-            // Legacy API Gateway: Immediate processing and database save
-            console.log('📡 Legacy upload - saving to database immediately')
-            
-            try {
-              const saveResult = await saveFinancialReport({
-                companyName: data.companyName || file.name.replace('.pdf', ''),
-                filename: file.name,
-                reportDate: data.reportDate || new Date().toISOString().split('T')[0],
-                reportPeriod: data.reportPeriod || 'Unknown Period',
-                cashOnHand: data.cashOnHand || 'N/A',
-                monthlyBurnRate: data.monthlyBurnRate || 'N/A',
-                cashOutDate: data.cashOutDate || 'N/A',
-                runway: data.runway || 'N/A',
-                budgetVsActual: data.budgetVsActual || 'N/A',
-                financialSummary: data.financialSummary || 'Financial summary not available',
-                sectorHighlightA: data.sectorHighlightA || 'Sector analysis not available',
-                sectorHighlightB: data.sectorHighlightB || 'Sector analysis not available',
-                keyRisks: data.keyRisks || 'N/A',
-                personnelUpdates: data.personnelUpdates || 'N/A',
-                nextMilestones: data.nextMilestones || 'N/A',
-                sector: data.sector || 'unknown',
-                user_provided_name: data.user_provided_name || !!companyName  // Flag for user-provided names
-              })
-            
-            if (saveResult.error) {
-              console.error('Failed to save to database:', saveResult.error)
-              setErrorMessage(`Error saving ${file.name}: ${saveResult.error}`)
-            } else {
-              console.log('Saved to database successfully')
-              // Reload companies to show the new data (force reload to bypass cache)
-              await loadCompanies(true)
-            }
-            } catch (error) {
-              console.error('Database save error:', error)
-              setErrorMessage(`Error saving ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
-            }
-          } // End legacy API Gateway handling
+          
+          // Refresh companies list to show any new entries (in case this is a new company)
+          await loadCompanies(true)
+          
+          // Note: No immediate database save - Lambda will handle this automatically
         } else {
           setErrorMessage(`Error processing ${file.name}: No data returned`)
         }

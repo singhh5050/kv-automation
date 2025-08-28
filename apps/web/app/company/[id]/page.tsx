@@ -657,20 +657,49 @@ export default function CompanyDetailPage() {
     let successCount = 0
     let errorCount = 0
     
-    // Use company ID for S3 direct upload (preferred) or fall back to legacy method
-    const companyDbId = providedCompanyId || company?.company?.id
-    const companyNameToUse = companyName || displayName
+    // ALWAYS ensure we have a company ID - create company if needed
+    let companyDbId = providedCompanyId || company?.company?.id
+    let companyNameToUse = companyName || displayName
+    
+    // If we don't have a company ID but have a company name, create/get the company
+    if (!companyDbId && companyNameToUse) {
+      console.log(`🏢 Creating/getting company: ${companyNameToUse}`)
+      try {
+        const { createOrGetCompany } = await import('../../../lib/api')
+        const companyResult = await createOrGetCompany(companyNameToUse)
+        
+        if (companyResult.error) {
+          setUploadError(`Failed to create/get company: ${companyResult.error}`)
+          setUploadingPdfs(false)
+          return
+        }
+        
+        companyDbId = companyResult.companyId
+        companyNameToUse = companyResult.companyName
+        console.log(`✅ Company resolved: ID ${companyDbId}, Name: ${companyNameToUse}`)
+      } catch (error) {
+        console.error('Failed to create/get company:', error)
+        setUploadError(`Failed to create company: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        setUploadingPdfs(false)
+        return
+      }
+    }
+    
+    // At this point we should ALWAYS have a company ID
+    if (!companyDbId) {
+      setUploadError('Cannot upload: No company ID available and no company name provided')
+      setUploadingPdfs(false)
+      return
+    }
     
     for (const file of files) {
       try {
         console.log(`🚀 Uploading ${file.name} for company: ${companyNameToUse}`)
         console.log(`📋 Company DB ID: ${companyDbId}`)
-        console.log(`🛤️  Upload method: ${companyDbId ? 'S3 direct upload' : 'legacy API Gateway'}`)
+        console.log(`🛤️  Upload method: S3 direct upload (SOTA)`)
         
-        // Use S3 direct upload if we have a company ID, otherwise fall back to legacy method
-        const result = companyDbId 
-          ? await uploadToS3(file, companyDbId, companyNameToUse)
-          : await uploadFile(file, companyNameToUse)
+        // Always use S3 direct upload since we now guarantee having a company ID
+        const result = await uploadToS3(file, companyDbId, companyNameToUse)
         
         if (result.error) {
           console.error('Upload error:', result.error)
@@ -683,57 +712,15 @@ export default function CompanyDetailPage() {
           const data = result.data
           console.log('Upload successful:', data)
           
-          // Handle different response types: S3 upload vs API Gateway
-          if (data.s3Key) {
-            // S3 Upload: Processing is asynchronous via Lambda
-            console.log(`✅ S3 upload completed: ${data.s3Key}`)
-            console.log(`🔄 ${data.message}`)
-            
-            // Show user feedback about async processing
-            setUploadError(null) // Clear any previous errors
-            successCount++ // Count as successful upload
-            
-            // Note: No immediate database save - Lambda will handle this automatically
-            
-          } else {
-            // Legacy API Gateway: Immediate processing and database save
-            console.log('📡 Legacy upload - saving to database immediately')
-            
-            try {
-              const saveResult = await saveFinancialReport({
-                companyName: companyNameToUse, // Use the actual company name
-                filename: file.name,
-                reportDate: data.reportDate || new Date().toISOString().split('T')[0],
-                reportPeriod: data.reportPeriod || 'Unknown Period',
-                cashOnHand: data.cashOnHand || 'N/A',
-                monthlyBurnRate: data.monthlyBurnRate || 'N/A',
-                cashOutDate: data.cashOutDate || 'N/A',
-                runway: data.runway || 'N/A',
-                budgetVsActual: data.budgetVsActual || 'N/A',
-                financialSummary: data.financialSummary || 'Financial summary not available',
-                sectorHighlightA: data.sectorHighlightA || 'Sector analysis not available',
-                sectorHighlightB: data.sectorHighlightB || 'Sector analysis not available',
-                keyRisks: data.keyRisks || 'N/A',
-                personnelUpdates: data.personnelUpdates || 'N/A',
-                nextMilestones: data.nextMilestones || 'N/A',
-              sector: data.sector || companySector,
-              user_provided_name: true
-            })
-            
-            if (saveResult.error) {
-              console.error('Failed to save to database:', saveResult.error)
-              setUploadError(`Error saving ${file.name}: ${saveResult.error}`)
-              errorCount++
-            } else {
-              console.log('PDF processed and saved successfully')
-              successCount++
-            }
-            } catch (error) {
-              console.error('Database save error:', error)
-              setUploadError(`Error saving ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
-              errorCount++
-            }
-          } // End legacy API Gateway handling
+          // S3 Upload: Processing is asynchronous via Lambda
+          console.log(`✅ S3 upload completed: ${data.s3Key}`)
+          console.log(`🔄 ${data.message}`)
+          
+          // Show user feedback about async processing
+          setUploadError(null) // Clear any previous errors
+          successCount++ // Count as successful upload
+          
+          // Note: No immediate database save - Lambda will handle this automatically
         } else {
           setUploadError(`Error processing ${file.name}: No data returned`)
           errorCount++
