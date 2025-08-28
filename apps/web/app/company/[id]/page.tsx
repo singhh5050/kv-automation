@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis } from '@/lib/api'
+import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
@@ -303,11 +304,14 @@ export default function CompanyDetailPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
 
-  // KPI Analysis state
+  // KPI Analysis state (async version)
+  const asyncAnalysis = useAsyncAnalysis()
+  const [showStageSelection, setShowStageSelection] = useState(false)
+  
+  // Legacy state for compatibility (can be removed later)
   const [kpiAnalysisLoading, setKpiAnalysisLoading] = useState(false)
   const [kpiAnalysisResult, setKpiAnalysisResult] = useState<string | null>(null)
   const [kpiAnalysisError, setKpiAnalysisError] = useState<string | null>(null)
-  const [showStageSelection, setShowStageSelection] = useState(false)
   const [selectedStage, setSelectedStage] = useState<string>('')
 
   // Delete financial report state
@@ -394,7 +398,7 @@ export default function CompanyDetailPage() {
       // Try different possible response structures
       const analysis = result.data?.data?.analysis_content || 
                       result.data?.analysis_content || 
-                      result.analysis_content
+                      (result as any).analysis_content
       
       if (analysis) {
         setKpiAnalysisResult(analysis)
@@ -763,7 +767,7 @@ export default function CompanyDetailPage() {
     }
   }
 
-  // KPI Analysis handler
+  // KPI Analysis handler (new async version)
   const handleKpiAnalysis = async () => {
     if (!company?.company?.id) {
       setKpiAnalysisError('Company ID not available')
@@ -779,43 +783,19 @@ export default function CompanyDetailPage() {
       return
     }
 
-    // Proceed with analysis using detected stage
-    await runKpiAnalysis(companyStage)
+    // Start async analysis
+    await asyncAnalysis.startAnalysis(company.company.id, companyStage)
   }
 
-  // Separate function to run the actual analysis
+  // Function for running analysis with selected stage (from modal)
   const runKpiAnalysis = async (stage: string) => {
     if (!company?.company?.id) {
       setKpiAnalysisError('Company ID not available')
       return
     }
 
-    setKpiAnalysisLoading(true)
-    setKpiAnalysisError(null)
-    setKpiAnalysisResult(null)
-
-    try {
-      console.log(`🔍 Starting KPI analysis for ${displayName} (${stage})`)
-      
-      const result = await analyzeCompanyKPIs(company.company.id, stage)
-      
-      if (result.error) {
-        throw new Error(result.error)
-      }
-      
-      if (result.data?.success && result.data?.analysis) {
-        setKpiAnalysisResult(result.data.analysis)
-        console.log('✅ KPI analysis completed successfully')
-      } else {
-        throw new Error(result.data?.error || 'Analysis failed without error message')
-      }
-      
-    } catch (error) {
-      console.error('❌ KPI analysis failed:', error)
-      setKpiAnalysisError(error instanceof Error ? error.message : 'Analysis failed')
-    } finally {
-      setKpiAnalysisLoading(false)
-    }
+    // Start async analysis with selected stage
+    await asyncAnalysis.startAnalysis(company.company.id, stage)
   }
 
   // Handle manual stage selection
@@ -1463,17 +1443,21 @@ export default function CompanyDetailPage() {
                       )}
                       <button
                         onClick={handleKpiAnalysis}
-                        disabled={kpiAnalysisLoading || !company?.company?.id}
+                        disabled={asyncAnalysis.isLoading || !company?.company?.id}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          kpiAnalysisLoading || !company?.company?.id
+                          asyncAnalysis.isLoading || !company?.company?.id
                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-md hover:shadow-lg'
                         }`}
                       >
-                        {kpiAnalysisLoading ? (
+                        {asyncAnalysis.isLoading ? (
                           <div className="flex items-center space-x-2">
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                            <span>Analyzing KPIs...</span>
+                            <span>
+                              {asyncAnalysis.currentJob?.status === 'queued' ? 'Queuing...' :
+                               asyncAnalysis.currentJob?.status === 'processing' ? `Processing... ${asyncAnalysis.progress}%` :
+                               'Analyzing KPIs...'}
+                            </span>
                           </div>
                         ) : (
                           <div className="flex items-center space-x-2">
@@ -1486,29 +1470,80 @@ export default function CompanyDetailPage() {
                   </div>
                   
                   {/* KPI Analysis Results */}
-                  {kpiAnalysisError && (
+                  {asyncAnalysis.error && (
                     <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-red-500">❌</span>
-                        <div>
-                          <h4 className="text-sm font-bold text-red-800">Analysis Failed</h4>
-                          <p className="text-red-700 text-xs mt-1">{kpiAnalysisError}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-red-500">❌</span>
+                          <div>
+                            <h4 className="text-sm font-bold text-red-800">Analysis Failed</h4>
+                            <p className="text-red-700 text-xs mt-1">{asyncAnalysis.error}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={asyncAnalysis.clearJob}
+                          className="text-red-500 hover:text-red-700 text-xs"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Progress indicator for async jobs */}
+                  {asyncAnalysis.isLoading && asyncAnalysis.currentJob && (
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
+                        <div className="flex-1">
+                          <h4 className="text-sm font-bold text-blue-800">
+                            Analysis in Progress
+                          </h4>
+                          <p className="text-blue-700 text-xs mt-1">
+                            Status: {asyncAnalysis.currentJob.status} • Progress: {asyncAnalysis.progress}%
+                            {asyncAnalysis.currentJob.reports_analyzed && (
+                              <span> • Reports analyzed: {asyncAnalysis.currentJob.reports_analyzed}</span>
+                            )}
+                          </p>
+                          {asyncAnalysis.progress > 0 && (
+                            <div className="mt-2 bg-blue-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${asyncAnalysis.progress}%` }}
+                              ></div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   )}
                   
-                  {kpiAnalysisResult ? (
+                  {asyncAnalysis.results ? (
                     <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-                      <div className="flex items-center space-x-2 mb-4">
-                        <span>📊</span>
-                        <h3 className="text-sm font-bold text-gray-900">KPI Trend Analysis</h3>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <span>📊</span>
+                          <h3 className="text-sm font-bold text-gray-900">KPI Trend Analysis</h3>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {asyncAnalysis.currentJob?.completed_at && (
+                            <span className="text-xs text-gray-500">
+                              Completed {new Date(asyncAnalysis.currentJob.completed_at).toLocaleString()}
+                            </span>
+                          )}
+                          <button
+                            onClick={asyncAnalysis.clearJob}
+                            className="text-gray-400 hover:text-gray-600 text-xs"
+                          >
+                            Clear
+                          </button>
+                        </div>
                       </div>
                       <div className="prose prose-sm max-w-none">
-                        <MarkdownContent content={kpiAnalysisResult} />
+                        <MarkdownContent content={asyncAnalysis.results} />
                       </div>
                     </div>
-                  ) : !kpiAnalysisLoading && !kpiAnalysisError && (
+                  ) : !asyncAnalysis.isLoading && !asyncAnalysis.error && (
                     <div className="p-4 text-center">
                       <div className="text-gray-400 text-lg mb-2">📊</div>
                       <h4 className="text-xs font-medium text-gray-900 mb-2">No KPI Analysis</h4>

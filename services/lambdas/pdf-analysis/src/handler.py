@@ -5,6 +5,7 @@ import os
 import sys
 import traceback
 import pg8000
+import boto3
 from datetime import datetime
 
 
@@ -40,6 +41,15 @@ def lambda_handler(event, context):
     elif event.get('action') == 'analyze_kpis':
         print("📊 Processing KPI analysis request")
         return handle_kpi_analysis_request(event, context)
+    elif event.get('action') == 'create_async_kpi_job':
+        print("🚀 Creating async KPI analysis job")
+        return handle_create_async_job(event, context)
+    elif event.get('action') == 'get_job_status':
+        print("🔍 Getting job status")
+        return handle_get_job_status(event, context)
+    elif event.get('action') == 'process_async_kpi_job':
+        print("⚡ Processing async KPI analysis job")
+        return handle_process_async_job(event, context)
     else:
         print("📡 Processing API Gateway event (legacy architecture)")
         return handle_api_gateway_event(event, context)
@@ -1234,3 +1244,368 @@ def store_kpi_analysis_in_db(company_id: int, analysis_content: str, stage: str,
     except Exception as e:
         print(f"❌ Failed to store KPI analysis: {str(e)}")
         raise e
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Async Job Handling Functions
+# ──────────────────────────────────────────────────────────────────────────
+
+def handle_create_async_job(event, context):
+    """
+    Create an async KPI analysis job and return job ID immediately
+    """
+    # CORS headers for all responses
+    cors_headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        # Extract parameters from event
+        company_id = event.get('company_id')
+        stage = event.get('stage')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        if not stage:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'stage is required (Early Stage, Main Stage, or Growth Stage)'})
+            }
+        
+        print(f"🚀 Creating async KPI analysis job for company {company_id}, stage: {stage}")
+        
+        # Create job in database
+        job_id = create_async_job_in_db(company_id, stage)
+        
+        print(f"✅ Created job {job_id}")
+        
+        # Trigger async processing
+        trigger_async_processing(job_id, company_id, stage)
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': True,
+                'job_id': job_id,
+                'status': 'queued',
+                'message': 'Analysis job created and queued for processing'
+            })
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to create async job: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': False,
+                'error': f'Failed to create job: {str(e)}'
+            })
+        }
+
+
+def handle_get_job_status(event, context):
+    """
+    Get the status of an async analysis job
+    """
+    # CORS headers for all responses
+    cors_headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        job_id = event.get('job_id')
+        
+        if not job_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'job_id is required'})
+            }
+        
+        print(f"🔍 Getting status for job {job_id}")
+        
+        # Get job status from database
+        job_status = get_job_status_from_db(job_id)
+        
+        if not job_status:
+            return {
+                'statusCode': 404,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'Job not found'})
+            }
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps(job_status)
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to get job status: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'error': f'Failed to get job status: {str(e)}'
+            })
+        }
+
+
+def handle_process_async_job(event, context):
+    """
+    Process an async analysis job (triggered asynchronously)
+    """
+    try:
+        job_id = event.get('job_id')
+        company_id = event.get('company_id')
+        stage = event.get('stage')
+        
+        if not all([job_id, company_id, stage]):
+            print(f"❌ Missing required parameters: job_id={job_id}, company_id={company_id}, stage={stage}")
+            return {'success': False, 'error': 'Missing required parameters'}
+        
+        print(f"⚡ Processing async job {job_id} for company {company_id}, stage: {stage}")
+        
+        # Update job status to processing
+        update_job_status(job_id, 'processing', 10)
+        
+        # Perform the analysis (this is the heavy work that was timing out)
+        try:
+            result = analyze_recent_pdfs_for_kpis(company_id, stage)
+            
+            if result['success']:
+                # Store results and mark job as completed
+                update_job_status(job_id, 'completed', 100, results=result['analysis'])
+                print(f"✅ Job {job_id} completed successfully")
+                return {'success': True, 'job_id': job_id}
+            else:
+                # Mark job as failed
+                error_msg = result.get('error', 'Analysis failed')
+                update_job_status(job_id, 'failed', 0, error_message=error_msg)
+                print(f"❌ Job {job_id} failed: {error_msg}")
+                return {'success': False, 'error': error_msg}
+        
+        except Exception as analysis_error:
+            # Mark job as failed
+            error_msg = f"Analysis failed: {str(analysis_error)}"
+            update_job_status(job_id, 'failed', 0, error_message=error_msg)
+            print(f"❌ Job {job_id} failed with exception: {error_msg}")
+            print(f"Full traceback: {traceback.format_exc()}")
+            return {'success': False, 'error': error_msg}
+        
+    except Exception as e:
+        print(f"❌ Async job processing failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return {'success': False, 'error': str(e)}
+
+
+def create_async_job_in_db(company_id: int, stage: str) -> str:
+    """
+    Create a new async analysis job in the database
+    Returns the job ID
+    """
+    import ssl
+    
+    try:
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Insert new job
+        cursor.execute("""
+            INSERT INTO async_analysis_jobs (company_id, stage, status, progress, created_by)
+            VALUES (%s, %s, 'queued', 0, 'system')
+            RETURNING id
+        """, [company_id, stage])
+        
+        job_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"💾 Created async job {job_id} in database")
+        return str(job_id)
+        
+    except Exception as e:
+        print(f"❌ Failed to create job in database: {str(e)}")
+        raise e
+
+
+def get_job_status_from_db(job_id: str) -> dict:
+    """
+    Get job status from database
+    """
+    import ssl
+    
+    try:
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get job status
+        cursor.execute("""
+            SELECT id, company_id, stage, status, progress, results, error_message, 
+                   reports_analyzed, started_at, completed_at, created_at
+            FROM async_analysis_jobs 
+            WHERE id = %s
+        """, [job_id])
+        
+        row = cursor.fetchone()
+        
+        if not row:
+            cursor.close()
+            conn.close()
+            return None
+        
+        # Convert to dict
+        job_status = {
+            'job_id': str(row[0]),
+            'company_id': row[1],
+            'stage': row[2],
+            'status': row[3],
+            'progress': row[4],
+            'results': row[5],
+            'error_message': row[6],
+            'reports_analyzed': row[7],
+            'started_at': row[8].isoformat() if row[8] else None,
+            'completed_at': row[9].isoformat() if row[9] else None,
+            'created_at': row[10].isoformat() if row[10] else None
+        }
+        
+        cursor.close()
+        conn.close()
+        
+        return job_status
+        
+    except Exception as e:
+        print(f"❌ Failed to get job status from database: {str(e)}")
+        raise e
+
+
+def update_job_status(job_id: str, status: str, progress: int, results: str = None, error_message: str = None):
+    """
+    Update job status in database
+    """
+    import ssl
+    
+    try:
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Update fields based on status
+        update_fields = ['status = %s', 'progress = %s', 'updated_at = CURRENT_TIMESTAMP']
+        update_values = [status, progress]
+        
+        if status == 'processing' and not error_message:
+            update_fields.append('started_at = CURRENT_TIMESTAMP')
+        elif status == 'completed':
+            update_fields.append('completed_at = CURRENT_TIMESTAMP')
+            if results:
+                update_fields.append('results = %s')
+                update_values.append(results)
+        elif status == 'failed' and error_message:
+            update_fields.append('error_message = %s')
+            update_values.append(error_message)
+        
+        # Build query
+        query = f"""
+            UPDATE async_analysis_jobs 
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+        """
+        update_values.append(job_id)
+        
+        cursor.execute(query, update_values)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"📝 Updated job {job_id} status to {status} (progress: {progress}%)")
+        
+    except Exception as e:
+        print(f"❌ Failed to update job status: {str(e)}")
+        raise e
+
+
+def trigger_async_processing(job_id: str, company_id: int, stage: str):
+    """
+    Trigger async processing of the analysis job
+    """
+    import boto3
+    
+    try:
+        # Initialize Lambda client
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
+        
+        # Prepare payload for async processing
+        payload = {
+            'action': 'process_async_kpi_job',
+            'job_id': job_id,
+            'company_id': company_id,
+            'stage': stage
+        }
+        
+        # Invoke Lambda asynchronously (fire and forget)
+        lambda_client.invoke(
+            FunctionName='kv-automation-pdf-analysis',  # Self-invoke
+            InvocationType='Event',  # Async invocation
+            Payload=json.dumps(payload)
+        )
+        
+        print(f"🚀 Triggered async processing for job {job_id}")
+        
+    except Exception as e:
+        print(f"❌ Failed to trigger async processing: {str(e)}")
+        # Don't raise here - job is created, we can retry processing later
+        pass

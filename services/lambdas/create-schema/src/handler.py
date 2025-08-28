@@ -181,6 +181,44 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating company_kpi_analysis table: {e}")
         raise e
 
+    # ---- SAFE: Add async_analysis_jobs table if it doesn't exist ------------
+    print("🔧 Creating async_analysis_jobs table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS async_analysis_jobs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            stage VARCHAR(50) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
+            progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+            results TEXT,
+            error_message TEXT,
+            reports_analyzed INTEGER DEFAULT 0,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100) DEFAULT 'system'
+        );
+        """)
+        print("✅ Async analysis jobs table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_async_jobs_company_id ON async_analysis_jobs(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_async_jobs_status ON async_analysis_jobs(status);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_async_jobs_created_at ON async_analysis_jobs(created_at DESC);
+        """)
+        print("✅ Async analysis jobs table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating async_analysis_jobs table: {e}")
+        raise e
+
     # ---- COMMENTED OUT: Table recreation (safe mode) -----------------
     # cursor.execute("""
     # CREATE TABLE companies (

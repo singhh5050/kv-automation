@@ -445,7 +445,7 @@ export async function getCompetitiveLandscape(financialData: any) {
 }
 
 /**
- * Multi-PDF KPI Analysis
+ * Multi-PDF KPI Analysis (Synchronous - Legacy)
  * Analyzes the 4 most recent PDFs for a company to extract KPIs based on sector and stage
  */
 export async function analyzeCompanyKPIs(companyId: number, stage: string) {
@@ -476,6 +476,66 @@ export async function analyzeCompanyKPIs(companyId: number, stage: string) {
   } catch (error) {
     console.error('❌ KPI analysis error:', error)
     return { error: error instanceof Error ? error.message : 'KPI analysis failed' }
+  }
+}
+
+/**
+ * Multi-PDF KPI Analysis (Asynchronous - New)
+ * Submits an async analysis job and returns job ID immediately
+ */
+export async function analyzeCompanyKPIsAsync(companyId: number, stage: string) {
+  try {
+    console.log(`🚀 Starting async KPI analysis for company ${companyId}, stage: ${stage}`)
+    
+    const response = await fetch('/api/analyze-kpis-async', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+        stage: stage
+      }),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Async KPI analysis failed: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log(`✅ Async KPI analysis job created: ${result.job_id}`)
+    
+    return { data: result }
+  } catch (error) {
+    console.error('❌ Async KPI analysis error:', error)
+    return { error: error instanceof Error ? error.message : 'Async KPI analysis failed' }
+  }
+}
+
+/**
+ * Get Analysis Job Status
+ * Polls the status of an async analysis job
+ */
+export async function getAnalysisJobStatus(jobId: string) {
+  try {
+    const response = await fetch(`/api/job-status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Failed to get job status: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    return { data: result }
+  } catch (error) {
+    console.error('❌ Job status error:', error)
+    return { error: error instanceof Error ? error.message : 'Failed to get job status' }
   }
 } 
 
