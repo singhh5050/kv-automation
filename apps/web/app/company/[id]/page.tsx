@@ -307,6 +307,8 @@ export default function CompanyDetailPage() {
   const [kpiAnalysisLoading, setKpiAnalysisLoading] = useState(false)
   const [kpiAnalysisResult, setKpiAnalysisResult] = useState<string | null>(null)
   const [kpiAnalysisError, setKpiAnalysisError] = useState<string | null>(null)
+  const [showStageSelection, setShowStageSelection] = useState(false)
+  const [selectedStage, setSelectedStage] = useState<string>('')
 
   // Delete financial report state
   const [deletingReportId, setDeletingReportId] = useState<number | null>(null)
@@ -772,7 +774,19 @@ export default function CompanyDetailPage() {
     const companyStage = detectCompanyStage(company.current_cap_table?.investors || [])
     
     if (companyStage === 'Unknown') {
-      setKpiAnalysisError('Cannot determine company stage. Please ensure cap table data is available.')
+      // Show stage selection modal instead of failing
+      setShowStageSelection(true)
+      return
+    }
+
+    // Proceed with analysis using detected stage
+    await runKpiAnalysis(companyStage)
+  }
+
+  // Separate function to run the actual analysis
+  const runKpiAnalysis = async (stage: string) => {
+    if (!company?.company?.id) {
+      setKpiAnalysisError('Company ID not available')
       return
     }
 
@@ -781,9 +795,9 @@ export default function CompanyDetailPage() {
     setKpiAnalysisResult(null)
 
     try {
-      console.log(`🔍 Starting KPI analysis for ${displayName} (${companyStage})`)
+      console.log(`🔍 Starting KPI analysis for ${displayName} (${stage})`)
       
-      const result = await analyzeCompanyKPIs(company.company.id, companyStage)
+      const result = await analyzeCompanyKPIs(company.company.id, stage)
       
       if (result.error) {
         throw new Error(result.error)
@@ -802,6 +816,22 @@ export default function CompanyDetailPage() {
     } finally {
       setKpiAnalysisLoading(false)
     }
+  }
+
+  // Handle manual stage selection
+  const handleStageSelection = async () => {
+    if (!selectedStage) {
+      alert('Please select a company stage.')
+      return
+    }
+    
+    setShowStageSelection(false)
+    await runKpiAnalysis(selectedStage)
+  }
+
+  const handleCancelStageSelection = () => {
+    setShowStageSelection(false)
+    setSelectedStage('')
   }
 
   // Handle delete financial report
@@ -2611,6 +2641,62 @@ export default function CompanyDetailPage() {
                 className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deletingReportId === reportToDelete.id ? 'Deleting...' : 'Delete Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stage Selection Modal */}
+      {showStageSelection && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Select Company Stage
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Could not automatically determine the company stage from cap table data. 
+              Please select the appropriate stage for KPI analysis:
+            </p>
+            
+            <div className="mb-6">
+              <select
+                value={selectedStage}
+                onChange={(e) => setSelectedStage(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              >
+                <option value="">Select stage...</option>
+                <option value="Early Stage">Early Stage</option>
+                <option value="Main Stage">Main Stage</option>
+                <option value="Growth Stage">Growth Stage</option>
+              </select>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+              <p className="text-xs text-blue-800">
+                <strong>Note:</strong> This selection is temporary and only used for this analysis. 
+                It will not be stored in the database.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelStageSelection}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStageSelection}
+                disabled={!selectedStage}
+                className={`px-4 py-2 text-white rounded-md ${
+                  selectedStage 
+                    ? 'bg-blue-600 hover:bg-blue-700' 
+                    : 'bg-gray-400 cursor-not-allowed'
+                }`}
+              >
+                Run Analysis
               </button>
             </div>
           </div>
