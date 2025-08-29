@@ -1534,12 +1534,18 @@ export default function CompanyDetailPage() {
                     </div>
                   )}
                   
-                  {asyncAnalysis.results ? (
+                  {/* Display KPI Analysis Results - Priority: Async results, then legacy results */}
+                  {(asyncAnalysis.results || kpiAnalysisResult) ? (
                     <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-2">
                           <span>📊</span>
                           <h3 className="text-sm font-bold text-gray-900">KPI Trend Analysis</h3>
+                          {asyncAnalysis.results && (
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                              Latest
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center space-x-2">
                           {asyncAnalysis.currentJob?.completed_at && (
@@ -1548,7 +1554,10 @@ export default function CompanyDetailPage() {
                             </span>
                           )}
                           <button
-                            onClick={asyncAnalysis.clearJob}
+                            onClick={() => {
+                              asyncAnalysis.clearJob()
+                              setKpiAnalysisResult(null)
+                            }}
                             className="text-gray-400 hover:text-gray-600 text-xs"
                           >
                             Clear
@@ -1556,7 +1565,7 @@ export default function CompanyDetailPage() {
                         </div>
                       </div>
                       <div className="prose prose-sm max-w-none">
-                        <MarkdownContent content={asyncAnalysis.results} />
+                        <MarkdownContent content={asyncAnalysis.results || kpiAnalysisResult || ''} />
                       </div>
                     </div>
                   ) : !asyncAnalysis.isLoading && !asyncAnalysis.error && (
