@@ -34,6 +34,23 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
     loadNotes()
   }, [companyId])
 
+  // Function to format current date for note subject
+  const getCurrentDateString = () => {
+    const now = new Date()
+    return now.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+
+  // Function to handle showing the new note form with current date
+  const handleShowNewNoteForm = () => {
+    setNewNoteSubject(getCurrentDateString())
+    setNewNoteContent('')
+    setShowNewNoteForm(true)
+  }
+
   const loadNotes = async () => {
     try {
       setLoading(true)
@@ -148,7 +165,7 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
           <p className="text-sm text-gray-500 mt-1">✨ Full markdown support with checkboxes</p>
         </div>
         <button
-          onClick={() => setShowNewNoteForm(true)}
+          onClick={handleShowNewNoteForm}
           className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
         >
           📝 Add Note
@@ -181,7 +198,7 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
               type="text"
               value={newNoteSubject}
               onChange={(e) => setNewNoteSubject(e.target.value)}
-              placeholder="Note subject..."
+              placeholder="Note subject (defaults to current date)..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
