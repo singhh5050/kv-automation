@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
@@ -392,8 +392,24 @@ export default function CompanyDetailPage() {
     
     try {
       console.log('🔍 Loading KPI analysis for company:', company.company.id)
+      
+      // First try to get the latest async analysis
+      try {
+        const asyncResult = await getLatestAsyncKpiAnalysis(company.company.id)
+        console.log('📊 Async KPI analysis API response:', asyncResult)
+        
+        if (asyncResult.data?.data?.results) {
+          setKpiAnalysisResult(asyncResult.data.data.results)
+          console.log('✅ Loaded saved async KPI analysis')
+          return
+        }
+      } catch (asyncError) {
+        console.log('ℹ️ No async analysis found, trying legacy API')
+      }
+      
+      // Fallback to legacy API
       const result = await getCompanyKpiAnalysis(company.company.id)
-      console.log('📊 KPI analysis API response:', result)
+      console.log('📊 Legacy KPI analysis API response:', result)
       
       // Try different possible response structures
       const analysis = result.data?.data?.analysis_content || 
@@ -402,7 +418,7 @@ export default function CompanyDetailPage() {
       
       if (analysis) {
         setKpiAnalysisResult(analysis)
-        console.log('✅ Loaded saved KPI analysis')
+        console.log('✅ Loaded saved legacy KPI analysis')
       } else {
         console.log('ℹ️ No saved KPI analysis found')
       }

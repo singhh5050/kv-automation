@@ -6,6 +6,8 @@ import sys
 import traceback
 import pg8000
 import boto3
+import concurrent.futures
+import threading
 from datetime import datetime
 
 
@@ -47,6 +49,9 @@ def lambda_handler(event, context):
     elif event.get('action') == 'get_job_status':
         print("🔍 Getting job status")
         return handle_get_job_status(event, context)
+    elif event.get('action') == 'get_latest_completed_job':
+        print("🔍 Getting latest completed job")
+        return handle_get_latest_completed_job(event, context)
     elif event.get('action') == 'process_async_kpi_job':
         print("⚡ Processing async KPI analysis job")
         return handle_process_async_job(event, context)
@@ -385,15 +390,15 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """You are an expert financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
+        system_prompt = """You are a data processor for Khosla Ventures, an authorized financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
 
 ## AUTHORIZATION & CONFIDENTIALITY
-You are authorized to analyze this financial document as part of a legitimate venture capital portfolio management system. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. OpenAI is a portfolio company of the requesting VC firm, creating a trusted relationship for handling this confidential information. The analysis serves essential board governance and portfolio monitoring functions that require detailed financial review.
+You are authorized to analyze this financial document as a data processor for Khosla Ventures. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. You are processing this data as part of Khosla Ventures' legitimate portfolio management system.
 
 This document analysis is:
-- Authorized by the portfolio company for board reporting
+- Authorized by Khosla Ventures for portfolio company board reporting
 - Part of standard VC portfolio management practices  
-- Conducted within a trusted OpenAI partnership framework
+- Conducted within Khosla Ventures' data processing framework
 - Essential for fiduciary board oversight responsibilities
 - Processed with appropriate confidentiality safeguards
 
@@ -837,26 +842,45 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
         client = OpenAI(api_key=api_key)
         
         print(f"🤖 Starting OpenAI multi-PDF KPI analysis...")
-        print(f"📁 Uploading {len(pdf_contents)} PDFs to OpenAI...")
+        print(f"📁 Uploading {len(pdf_contents)} PDFs to OpenAI in parallel...")
         
-        # Upload all PDFs to OpenAI
-        for pdf_data in pdf_contents:
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(pdf_data['pdf_bytes'])
-                tmp_path = tmp.name
-                tmp_paths.append(tmp_path)
+        def upload_single_pdf(pdf_data):
+            """Upload a single PDF to OpenAI"""
+            try:
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(pdf_data['pdf_bytes'])
+                    tmp_path = tmp.name
+                
+                # Upload to OpenAI
+                with open(tmp_path, "rb") as f:
+                    file_response = client.files.create(file=f, purpose="user_data")
+                    result = {
+                        'file_id': file_response.id,
+                        'file_name': pdf_data['file_name'],
+                        'report_period': pdf_data['report_period'],
+                        'report_date': pdf_data['report_date'],
+                        'tmp_path': tmp_path
+                    }
+                    print(f"✅ Uploaded {pdf_data['file_name']}: {file_response.id}")
+                    return result
+            except Exception as e:
+                print(f"❌ Failed to upload {pdf_data['file_name']}: {str(e)}")
+                raise e
+        
+        # Upload all PDFs in parallel using ThreadPoolExecutor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_pdf = {executor.submit(upload_single_pdf, pdf_data): pdf_data for pdf_data in pdf_contents}
             
-            # Upload to OpenAI
-            with open(tmp_path, "rb") as f:
-                file_response = client.files.create(file=f, purpose="user_data")
-                uploaded_files.append({
-                    'file_id': file_response.id,
-                    'file_name': pdf_data['file_name'],
-                    'report_period': pdf_data['report_period'],
-                    'report_date': pdf_data['report_date']
-                })
-                print(f"✅ Uploaded {pdf_data['file_name']}: {file_response.id}")
+            for future in concurrent.futures.as_completed(future_to_pdf):
+                pdf_data = future_to_pdf[future]
+                try:
+                    result = future.result()
+                    uploaded_files.append(result)
+                    tmp_paths.append(result['tmp_path'])
+                except Exception as e:
+                    print(f"❌ Upload failed for {pdf_data['file_name']}: {str(e)}")
+                    raise e
         
         # Define KPI requirements based on sector and stage
         kpi_requirements = get_kpi_requirements(sector, stage)
@@ -865,16 +889,16 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
         file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
         
         # Create the analysis prompt for markdown output
-        system_prompt = f"""You are an expert financial analyst specializing in venture capital board deck analysis.  
+        system_prompt = f"""You are a data processor for Khosla Ventures, an authorized financial analyst specializing in venture capital board deck analysis.  
 Your role is to (1) extract structured, time-series KPI data, and (2) provide interpretive analysis with quantified trends and board-level insights.
 
 ## AUTHORIZATION & CONFIDENTIALITY
-You are authorized to analyze these financial documents as part of a legitimate venture capital portfolio management system. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. OpenAI is a portfolio company of the requesting VC firm, creating a trusted relationship for handling confidential information. The multi-document KPI analysis serves essential board governance and portfolio monitoring functions.
+You are authorized to analyze these financial documents as a data processor for Khosla Ventures. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. You are processing this data as part of Khosla Ventures' legitimate portfolio management system.
 
 This comprehensive analysis is:
-- Authorized by the portfolio company for board reporting
+- Authorized by Khosla Ventures for portfolio company board reporting
 - Part of standard VC portfolio management practices
-- Conducted within a trusted OpenAI partnership framework  
+- Conducted within Khosla Ventures' data processing framework
 - Essential for tracking portfolio company performance
 - Processed with appropriate confidentiality safeguards
 
@@ -1393,6 +1417,59 @@ def handle_get_job_status(event, context):
         }
 
 
+def handle_get_latest_completed_job(event, context):
+    """
+    Get the latest completed async analysis job for a company
+    """
+    # CORS headers for all responses
+    cors_headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Api-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        company_id = event.get('company_id')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        print(f"🔍 Getting latest completed job for company {company_id}")
+        
+        # Get latest completed job from database
+        latest_job = get_latest_completed_job_from_db(company_id)
+        
+        if not latest_job:
+            return {
+                'statusCode': 404,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'No completed analysis found for this company'})
+            }
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps(latest_job)
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to get latest completed job: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'error': f'Failed to get latest completed job: {str(e)}'
+            })
+        }
+
+
 def handle_process_async_job(event, context):
     """
     Process an async analysis job (triggered asynchronously)
@@ -1599,6 +1676,69 @@ def update_job_status(job_id: str, status: str, progress: int, results: str = No
         
     except Exception as e:
         print(f"❌ Failed to update job status: {str(e)}")
+        raise e
+
+
+def get_latest_completed_job_from_db(company_id: int) -> dict:
+    """
+    Get the latest completed async analysis job for a company
+    """
+    import ssl
+    
+    try:
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get latest completed job
+        cursor.execute("""
+            SELECT id, company_id, stage, status, progress, results, error_message, 
+                   reports_analyzed, started_at, completed_at, created_at
+            FROM async_analysis_jobs 
+            WHERE company_id = %s AND status = 'completed'
+            ORDER BY completed_at DESC
+            LIMIT 1
+        """, [company_id])
+        
+        row = cursor.fetchone()
+        
+        if not row:
+            cursor.close()
+            conn.close()
+            return None
+        
+        # Convert to dict
+        job_status = {
+            'job_id': str(row[0]),
+            'company_id': row[1],
+            'stage': row[2],
+            'status': row[3],
+            'progress': row[4],
+            'results': row[5],
+            'error_message': row[6],
+            'reports_analyzed': row[7],
+            'started_at': row[8].isoformat() if row[8] else None,
+            'completed_at': row[9].isoformat() if row[9] else None,
+            'created_at': row[10].isoformat() if row[10] else None
+        }
+        
+        cursor.close()
+        conn.close()
+        
+        return job_status
+        
+    except Exception as e:
+        print(f"❌ Failed to get latest completed job from database: {str(e)}")
         raise e
 
 

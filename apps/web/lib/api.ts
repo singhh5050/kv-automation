@@ -818,4 +818,19 @@ export async function getCompanyKpiAnalysis(companyId: number) {
       company_id: companyId,
     }),
   })
+}
+
+/**
+ * Get the latest completed async KPI analysis for a company
+ */
+export async function getLatestAsyncKpiAnalysis(companyId: number) {
+  return apiRequest('/job-status/latest', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+    }),
+  })
 } 
