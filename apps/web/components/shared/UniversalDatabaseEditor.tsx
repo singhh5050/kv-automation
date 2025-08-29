@@ -188,10 +188,10 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate, refreshKe
         valuation: 'NUMERIC',
         amount_raised: 'NUMERIC',
         round_date: 'DATE',
-              total_pool_size: 'NUMERIC',
-      pool_available: 'NUMERIC',
-      pool_utilization: 'NUMERIC',
-      options_outstanding: 'NUMERIC',
+        total_pool_size: 'NUMERIC',
+        pool_available: 'NUMERIC',
+        pool_utilization: 'NUMERIC',
+        options_outstanding: 'NUMERIC',
         manually_edited: 'BOOLEAN',
         edited_by: 'VARCHAR',
         edited_at: 'TIMESTAMP',
@@ -208,7 +208,8 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate, refreshKe
         manually_edited: 'BOOLEAN',
         edited_by: 'VARCHAR',
         edited_at: 'TIMESTAMP',
-        created_at: 'TIMESTAMP'
+        created_at: 'TIMESTAMP',
+        updated_at: 'TIMESTAMP'
       }
     }
     
@@ -216,8 +217,8 @@ export default function UniversalDatabaseEditor({ companyId, onUpdate, refreshKe
   }
 
   const isFieldEditable = (table: string, field: string): boolean => {
-    const readOnlyFields = ['id', 'company_id', 'cap_table_round_id', 'upload_date', 'processed_at', 'processing_status', 'created_at']
-    const systemFields = ['manually_edited', 'edited_by', 'edited_at', 'updated_at']
+    const readOnlyFields = ['id', 'company_id', 'cap_table_round_id', 'upload_date', 'processed_at', 'processing_status', 'created_at', 'updated_at']
+    const systemFields = ['manually_edited', 'edited_by', 'edited_at']
     
     return !readOnlyFields.includes(field) && !systemFields.includes(field)
   }
