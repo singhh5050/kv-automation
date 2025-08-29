@@ -51,6 +51,14 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
     setShowNewNoteForm(true)
   }
 
+
+
+  // Handler for new note content changes with checkbox normalization
+  const handleNewNoteContentChange = (val: string | undefined) => {
+    const normalizedContent = normalizeCheckboxFormats(val || '');
+    setNewNoteContent(normalizedContent);
+  }
+
   const loadNotes = async () => {
     try {
       setLoading(true)
@@ -210,18 +218,16 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
             <div className="border border-gray-300 rounded-md overflow-hidden">
               <MDEditor
                 value={newNoteContent}
-                onChange={(val) => setNewNoteContent(val || '')}
+                onChange={handleNewNoteContentChange}
                 preview="edit"
                 height={200}
                 data-color-mode="light"
                 textareaProps={{
-                  placeholder: "Write your note in markdown...\n\n✨ Examples:\n- [ ] Unchecked task\n- [x] Completed task\n**Bold text**\n*Italic text*\n\n### Heading\n\n- Bullet point"
+                  placeholder: "Write your note in markdown..."
                 }}
               />
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              💡 <strong>Tip:</strong> Use <code>- [ ]</code> for checkboxes, <code>**bold**</code>, <code>*italic*</code>, and more!
-            </div>
+
           </div>
 
           <div className="flex space-x-2">
@@ -315,6 +321,37 @@ export default function CompanyNotes({ companyId }: CompanyNotesProps) {
   )
 }
 
+// Function to normalize checkbox formats (moved outside for reuse)
+const normalizeCheckboxFormats = (content: string): string => {
+  if (!content) return content
+  
+  return content.split('\n').map(line => {
+    // Match various checkbox formats at the beginning of a line
+    // -[] -> - [ ]
+    // -[ ] -> - [ ]
+    // - [] -> - [ ]
+    const checkboxRegex = /^(\s*)-(\s*)\[(\s*)\]/;
+    const match = line.match(checkboxRegex);
+    
+    if (match) {
+      const [fullMatch, leadingSpaces, dashSpaces, bracketSpaces] = match;
+      // Normalize to standard format: leading spaces + "- [ ]"
+      return leadingSpaces + '- [ ]' + line.substring(fullMatch.length);
+    }
+    
+    return line;
+  }).join('\n');
+}
+
+/*
+Examples of checkbox format normalization:
+- "  -[] Task" -> "  - [ ] Task"
+- "  -[ ] Task" -> "  - [ ] Task"  
+- "  - [] Task" -> "  - [ ] Task"
+- "  - [ ] Task" -> "  - [ ] Task" (no change)
+- "Regular text" -> "Regular text" (no change)
+*/
+
 // Simple inline edit form component
 function EditNoteForm({ 
   note, 
@@ -327,6 +364,12 @@ function EditNoteForm({
 }) {
   const [subject, setSubject] = useState(note.subject)
   const [content, setContent] = useState(note.content)
+
+  // Handler for edit note content changes with checkbox normalization
+  const handleEditNoteContentChange = (val: string | undefined) => {
+    const normalizedContent = normalizeCheckboxFormats(val || '');
+    setContent(normalizedContent);
+  }
 
   const handleSave = () => {
     const updates: { subject?: string; content?: string } = {}
@@ -352,7 +395,7 @@ function EditNoteForm({
       <div className="border border-gray-300 rounded-md overflow-hidden">
         <MDEditor
           value={content}
-          onChange={(val) => setContent(val || '')}
+          onChange={handleEditNoteContentChange}
           preview="edit"
           height={150}
           data-color-mode="light"
