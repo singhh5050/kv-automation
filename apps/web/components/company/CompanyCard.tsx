@@ -237,9 +237,7 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
                 cashOutDateInfo.risk === 'medium' ? 'text-yellow-700' :
                 'text-green-700'
               }`}>
-                {cashOutDateInfo === 'N/A' ? 'N/A' : 
-                 typeof cashOutDateInfo === 'object' ? cashOutDateInfo.display : 
-                 cashOutDate || 'N/A'}
+                {cashOutDate || 'N/A'}
               </p>
             </div>
           </div>
