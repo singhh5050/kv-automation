@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { analyzeCompanyKPIsAsync, getAnalysisJobStatus } from '@/lib/api'
+import { KpiAnalysisConfig } from '@/components/company/CustomKpiAnalysisModal'
 
 export interface AnalysisJob {
   job_id: string
@@ -22,6 +23,7 @@ export interface UseAsyncAnalysisReturn {
   progress: number
   results: string | null
   startAnalysis: (companyId: number, stage: string) => Promise<void>
+  startCustomAnalysis: (companyId: number, stage: string, config: KpiAnalysisConfig) => Promise<void>
   clearJob: () => void
 }
 
@@ -130,6 +132,56 @@ export function useAsyncAnalysis(): UseAsyncAnalysisReturn {
     }
   }, [pollJobStatus])
 
+  // Start custom analysis
+  const startCustomAnalysis = useCallback(async (companyId: number, stage: string, config: KpiAnalysisConfig) => {
+    setIsLoading(true)
+    setError(null)
+    setCurrentJob(null)
+
+    try {
+      console.log(`🚀 Starting custom async analysis for company ${companyId}, stage: ${stage}`)
+      
+      // For now, we'll use the same API but pass custom config
+      // TODO: Update API to accept custom config
+      const result = await analyzeCompanyKPIsAsync(companyId, stage, config)
+      
+      if (result.error) {
+        throw new Error(result.error)
+      }
+
+      if (result.data?.success && result.data?.job_id) {
+        const jobData: AnalysisJob = {
+          job_id: result.data.job_id,
+          company_id: companyId,
+          stage: stage,
+          status: 'queued',
+          progress: 0
+        }
+        
+        setCurrentJob(jobData)
+        
+        // Start polling every 2 seconds
+        const interval = setInterval(() => {
+          pollJobStatus(result.data.job_id)
+        }, 2000)
+        
+        setPollingInterval(interval)
+        
+        // Poll immediately for first status
+        await pollJobStatus(result.data.job_id)
+        
+        console.log(`✅ Custom analysis job created: ${result.data.job_id}`)
+      } else {
+        throw new Error('Failed to create custom analysis job')
+      }
+      
+    } catch (err) {
+      console.error('❌ Failed to start custom analysis:', err)
+      setError(err instanceof Error ? err.message : 'Failed to start custom analysis')
+      setIsLoading(false)
+    }
+  }, [pollJobStatus])
+
   // Clear job
   const clearJob = useCallback(() => {
     setCurrentJob(null)
@@ -148,6 +200,7 @@ export function useAsyncAnalysis(): UseAsyncAnalysisReturn {
     progress: currentJob?.progress || 0,
     results: currentJob?.results || null,
     startAnalysis,
+    startCustomAnalysis,
     clearJob
   }
 }

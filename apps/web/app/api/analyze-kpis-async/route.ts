@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     console.log('🚀 Async KPI analysis API route called')
     
     const body = await request.json()
-    const { company_id, stage } = body
+    const { company_id, stage, custom_config } = body
     
     if (!company_id) {
       return NextResponse.json(
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    console.log(`📊 Submitting async KPI analysis job for company ${company_id}, stage: ${stage}`)
+    console.log(`📊 Submitting async KPI analysis job for company ${company_id}, stage: ${stage}`, custom_config ? '(custom)' : '(standard)')
     
     // Validate AWS credentials
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
@@ -44,10 +44,15 @@ export async function POST(request: NextRequest) {
     })
     
     // Prepare Lambda payload for async job creation
-    const payload = {
+    const payload: any = {
       action: 'create_async_kpi_job',
       company_id: parseInt(company_id),
       stage: stage
+    }
+    
+    // Add custom config if provided
+    if (custom_config) {
+      payload.custom_config = custom_config
     }
     
     console.log(`📤 Invoking Lambda with async payload:`, payload)

@@ -8,6 +8,7 @@ import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
+import CustomKpiAnalysisModal, { KpiAnalysisConfig } from '@/components/company/CustomKpiAnalysisModal'
 import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
@@ -307,6 +308,7 @@ export default function CompanyDetailPage() {
   // KPI Analysis state (async version)
   const asyncAnalysis = useAsyncAnalysis()
   const [showStageSelection, setShowStageSelection] = useState(false)
+  const [showCustomKpiModal, setShowCustomKpiModal] = useState(false)
   
   // Legacy state for compatibility (can be removed later)
   const [kpiAnalysisLoading, setKpiAnalysisLoading] = useState(false)
@@ -783,7 +785,22 @@ export default function CompanyDetailPage() {
     }
   }
 
-  // KPI Analysis handler (new async version)
+  // Custom KPI Analysis handler
+  const handleCustomKpiAnalysis = async (config: KpiAnalysisConfig) => {
+    if (!company?.company?.id) {
+      setKpiAnalysisError('Company ID not available')
+      return
+    }
+
+    // Detect company stage for context (still needed for backend)
+    const companyStage = detectCompanyStage(company.current_cap_table?.investors || []) || 'Main Stage'
+    
+    // Start async analysis with custom config
+    await asyncAnalysis.startCustomAnalysis(company.company.id, companyStage, config)
+    setShowCustomKpiModal(false)
+  }
+
+  // Legacy KPI Analysis handler (fallback - can be removed later)
   const handleKpiAnalysis = async () => {
     if (!company?.company?.id) {
       setKpiAnalysisError('Company ID not available')
@@ -1458,7 +1475,7 @@ export default function CompanyDetailPage() {
                         </span>
                       )}
                       <button
-                        onClick={handleKpiAnalysis}
+                        onClick={() => setShowCustomKpiModal(true)}
                         disabled={asyncAnalysis.isLoading || !company?.company?.id}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                           asyncAnalysis.isLoading || !company?.company?.id
@@ -1478,7 +1495,7 @@ export default function CompanyDetailPage() {
                         ) : (
                           <div className="flex items-center space-x-2">
                             <span>📊</span>
-                            <span>Analyze KPI Trends</span>
+                            <span>Custom KPI Analysis</span>
                           </div>
                         )}
                       </button>
@@ -2706,6 +2723,15 @@ export default function CompanyDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Custom KPI Analysis Modal */}
+      <CustomKpiAnalysisModal
+        isOpen={showCustomKpiModal}
+        onClose={() => setShowCustomKpiModal(false)}
+        onSubmit={handleCustomKpiAnalysis}
+        isLoading={asyncAnalysis.isLoading}
+        companyName={company?.company?.name || 'Unknown Company'}
+      />
 
       {/* Stage Selection Modal */}
       {showStageSelection && (

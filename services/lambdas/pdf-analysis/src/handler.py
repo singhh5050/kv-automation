@@ -76,6 +76,7 @@ def handle_kpi_analysis_request(event, context):
         # Extract parameters from event
         company_id = event.get('company_id')
         stage = event.get('stage')
+        custom_config = event.get('custom_config')
         
         if not company_id:
             return {
@@ -91,10 +92,10 @@ def handle_kpi_analysis_request(event, context):
                 'body': json.dumps({'error': 'stage is required (Early Stage, Main Stage, or Growth Stage)'})
             }
         
-        print(f"🔍 KPI analysis requested for company {company_id}, stage: {stage}")
+        print(f"🔍 KPI analysis requested for company {company_id}, stage: {stage}", '(custom)' if custom_config else '(standard)')
         
         # Perform the analysis
-        result = analyze_recent_pdfs_for_kpis(company_id, stage)
+        result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config)
         
         if result['success']:
             return {
@@ -614,7 +615,7 @@ Return ONLY valid JSON in the exact format specified in the system prompt."""
 
 
 
-def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
+def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dict = None) -> dict:
     """
     Analyze the 4 most recent PDFs for a company to extract KPIs based on sector and stage
     
@@ -793,7 +794,12 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
         print(f"📋 Successfully retrieved {len(pdf_contents)} PDFs for analysis")
         
         # Perform multi-PDF KPI analysis - returns markdown
-        markdown_analysis = analyze_multi_pdf_kpis(pdf_contents, company_name, sector, stage)
+        if custom_config:
+            print(f"🎯 Using custom analysis configuration")
+            markdown_analysis = analyze_multi_pdf_kpis_custom(pdf_contents, company_name, sector, stage, custom_config)
+        else:
+            print(f"📊 Using standard analysis configuration")
+            markdown_analysis = analyze_multi_pdf_kpis(pdf_contents, company_name, sector, stage)
         
         # Store the KPI analysis results in the database
         try:
@@ -820,6 +826,142 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str) -> dict:
             'success': False,
             'error': f'Multi-PDF KPI analysis failed: {str(e)}'
         }
+
+
+def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector: str, stage: str, custom_config: dict) -> str:
+    """
+    Use OpenAI to analyze multiple PDFs with custom user-defined prompts and requirements
+    Returns detailed markdown analysis based on user specifications
+    """
+    import os, tempfile
+    
+    # Check for API key
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        raise Exception("OpenAI API key not configured")
+    
+    uploaded_files = []
+    tmp_paths = []
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        print(f"🤖 Starting custom OpenAI multi-PDF KPI analysis...")
+        print(f"📁 Uploading {len(pdf_contents)} PDFs to OpenAI in parallel...")
+        
+        def upload_single_pdf(pdf_data):
+            """Upload a single PDF to OpenAI"""
+            try:
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(pdf_data['pdf_bytes'])
+                    tmp_path = tmp.name
+                
+                # Upload to OpenAI
+                with open(tmp_path, "rb") as f:
+                    file_response = client.files.create(file=f, purpose="user_data")
+                    result = {
+                        'file_id': file_response.id,
+                        'file_name': pdf_data['file_name'],
+                        'report_period': pdf_data['report_period'],
+                        'report_date': pdf_data['report_date'],
+                        'tmp_path': tmp_path
+                    }
+                    print(f"✅ Uploaded {pdf_data['file_name']}: {file_response.id}")
+                    return result
+            except Exception as e:
+                print(f"❌ Failed to upload {pdf_data['file_name']}: {str(e)}")
+                raise e
+        
+        # Upload all PDFs in parallel using ThreadPoolExecutor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_pdf = {executor.submit(upload_single_pdf, pdf_data): pdf_data for pdf_data in pdf_contents}
+            
+            for future in concurrent.futures.as_completed(future_to_pdf):
+                pdf_data = future_to_pdf[future]
+                try:
+                    result = future.result()
+                    uploaded_files.append(result)
+                    tmp_paths.append(result['tmp_path'])
+                except Exception as e:
+                    print(f"❌ Upload failed for {pdf_data['file_name']}: {str(e)}")
+                    raise e
+        
+        # Create file list for the prompt
+        file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
+        
+        # Get mood-specific tone
+        mood_instructions = get_mood_instructions(custom_config.get('analysisMood', 'balanced'))
+        
+        # Create the custom analysis prompt
+        system_prompt = f"""You are a KV financial analyst. Analyze {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
+
+{mood_instructions}
+
+## USER REQUIREMENTS
+**Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
+**Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
+**Industry Context:** {custom_config.get('industryContext', 'General')}
+**Business Model:** {custom_config.get('businessModelDetails', 'Standard')}
+**Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
+
+## CRITICAL: MANDATORY TABLE
+Create a markdown table with:
+- User's KPIs as COLUMNS, time periods as ROWS
+- Proper | separators and headers
+- MoM/QoQ changes and trend arrows (📈📉➡️)
+
+Example:
+| Period | Revenue | CAC | LTV | MoM Change | Trend |
+|--------|---------|-----|-----|------------|-------|
+| Q1 2024 | $1.2M | $150 | $850 | - | 📈 |
+
+## OUTPUT FORMAT
+1. 📊 **Executive Summary** (3-4 key highlights)
+2. 📋 **KPI Table** (MANDATORY as specified above)
+3. 📈 **Trend Analysis** (quantified insights per KPI)
+4. 🎯 **Strategic Recommendations**
+
+## FILES
+{file_list}
+
+Focus on user's specific KPIs, use their table format, consider their context, avoid their mentioned issues."""
+
+        # Create the user message
+        user_message = f"""Analyze these {len(uploaded_files)} reports for {company_name}. Create the mandatory KPI table exactly as I specified, then provide trend analysis and recommendations."""
+
+        # Create the completion
+        print(f"🤖 Sending custom analysis request to OpenAI...")
+        
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message, "attachments": [{"file_id": f['file_id'], "tools": [{"type": "file_search"}]} for f in uploaded_files]}
+            ],
+            temperature=0.1,
+            max_tokens=4000,
+            tools=[{"type": "file_search"}]
+        )
+        
+        analysis_result = completion.choices[0].message.content
+        
+        print(f"✅ Custom OpenAI analysis completed successfully")
+        print(f"📄 Analysis length: {len(analysis_result)} characters")
+        
+        return analysis_result
+        
+    except Exception as e:
+        print(f"❌ Custom OpenAI analysis failed: {str(e)}")
+        raise e
+    finally:
+        # Clean up temporary files
+        for tmp_path in tmp_paths:
+            try:
+                os.unlink(tmp_path)
+            except Exception as cleanup_error:
+                print(f"⚠️ Local file cleanup failed: {cleanup_error}")
 
 
 def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, stage: str) -> str:
@@ -1031,6 +1173,20 @@ IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use o
                     os.unlink(tmp_path)
             except Exception as cleanup_error:
                 print(f"⚠️ Local file cleanup failed: {cleanup_error}")
+
+
+def get_mood_instructions(mood: str) -> str:
+    """
+    Get analysis tone and style instructions based on selected mood
+    """
+    mood_map = {
+        'cheerleader': "## TONE: CHEERLEADER 📣\nBe optimistic and encouraging. Highlight wins, frame challenges as opportunities.",
+        'balanced': "## TONE: BALANCED ⚖️\nUse neutral, professional language. Present facts objectively.",
+        'skeptical': "## TONE: WALL STREET SKEPTIC 🤨\nApply rigorous scrutiny. Question assumptions, highlight risks.",
+        'roast': "## TONE: ROAST MODE 🔥\nBe direct and brutally honest (but professional). Call out issues without sugar-coating."
+    }
+    
+    return mood_map.get(mood, mood_map['balanced'])
 
 
 def get_kpi_requirements(sector: str, stage: str) -> str:
@@ -1314,6 +1470,7 @@ def handle_create_async_job(event, context):
         # Extract parameters from event
         company_id = event.get('company_id')
         stage = event.get('stage')
+        custom_config = event.get('custom_config')
         
         if not company_id:
             return {
@@ -1329,15 +1486,15 @@ def handle_create_async_job(event, context):
                 'body': json.dumps({'error': 'stage is required (Early Stage, Main Stage, or Growth Stage)'})
             }
         
-        print(f"🚀 Creating async KPI analysis job for company {company_id}, stage: {stage}")
+        print(f"🚀 Creating async KPI analysis job for company {company_id}, stage: {stage}", '(custom)' if custom_config else '(standard)')
         
         # Create job in database
-        job_id = create_async_job_in_db(company_id, stage)
+        job_id = create_async_job_in_db(company_id, stage, custom_config)
         
         print(f"✅ Created job {job_id}")
         
         # Trigger async processing
-        trigger_async_processing(job_id, company_id, stage)
+        trigger_async_processing(job_id, company_id, stage, custom_config)
         
         return {
             'statusCode': 200,
@@ -1478,19 +1635,20 @@ def handle_process_async_job(event, context):
         job_id = event.get('job_id')
         company_id = event.get('company_id')
         stage = event.get('stage')
+        custom_config = event.get('custom_config')
         
         if not all([job_id, company_id, stage]):
             print(f"❌ Missing required parameters: job_id={job_id}, company_id={company_id}, stage={stage}")
             return {'success': False, 'error': 'Missing required parameters'}
         
-        print(f"⚡ Processing async job {job_id} for company {company_id}, stage: {stage}")
+        print(f"⚡ Processing async job {job_id} for company {company_id}, stage: {stage}", '(custom)' if custom_config else '(standard)')
         
         # Update job status to processing
         update_job_status(job_id, 'processing', 10)
         
         # Perform the analysis (this is the heavy work that was timing out)
         try:
-            result = analyze_recent_pdfs_for_kpis(company_id, stage)
+            result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config)
             
             if result['success']:
                 # Store results and mark job as completed
@@ -1518,7 +1676,7 @@ def handle_process_async_job(event, context):
         return {'success': False, 'error': str(e)}
 
 
-def create_async_job_in_db(company_id: int, stage: str) -> str:
+def create_async_job_in_db(company_id: int, stage: str, custom_config: dict = None) -> str:
     """
     Create a new async analysis job in the database
     Returns the job ID
@@ -1742,7 +1900,7 @@ def get_latest_completed_job_from_db(company_id: int) -> dict:
         raise e
 
 
-def trigger_async_processing(job_id: str, company_id: int, stage: str):
+def trigger_async_processing(job_id: str, company_id: int, stage: str, custom_config: dict = None):
     """
     Trigger async processing of the analysis job
     """
@@ -1759,6 +1917,10 @@ def trigger_async_processing(job_id: str, company_id: int, stage: str):
             'company_id': company_id,
             'stage': stage
         }
+        
+        # Add custom config if provided
+        if custom_config:
+            payload['custom_config'] = custom_config
         
         # Invoke Lambda asynchronously (fire and forget)
         lambda_client.invoke(

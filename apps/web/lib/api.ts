@@ -483,19 +483,26 @@ export async function analyzeCompanyKPIs(companyId: number, stage: string) {
  * Multi-PDF KPI Analysis (Asynchronous - New)
  * Submits an async analysis job and returns job ID immediately
  */
-export async function analyzeCompanyKPIsAsync(companyId: number, stage: string) {
+export async function analyzeCompanyKPIsAsync(companyId: number, stage: string, customConfig?: any) {
   try {
-    console.log(`🚀 Starting async KPI analysis for company ${companyId}, stage: ${stage}`)
+    console.log(`🚀 Starting async KPI analysis for company ${companyId}, stage: ${stage}`, customConfig ? '(custom)' : '(standard)')
+    
+    const requestBody: any = {
+      company_id: companyId,
+      stage: stage
+    }
+    
+    // Add custom config if provided
+    if (customConfig) {
+      requestBody.custom_config = customConfig
+    }
     
     const response = await fetch('/api/analyze-kpis-async', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: stage
-      }),
+      body: JSON.stringify(requestBody),
     })
     
     if (!response.ok) {
