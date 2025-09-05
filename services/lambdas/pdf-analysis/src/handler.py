@@ -1054,15 +1054,15 @@ Focus on user's specific KPIs, use their table format, consider their context, a
             print(f"🔍 - model: gpt-5")
             print(f"🔍 - instructions length: {len(system_prompt)} chars")
             print(f"🔍 - input length: {len(user_content)} items")
-            print(f"🔍 - reasoning: {{'effort': 'high'}}")
-            print(f"🔍 - max_output_tokens: 4000")
+            print(f"🔍 - reasoning: {{'effort': 'medium'}}")
+            print(f"🔍 - max_output_tokens: unlimited")
             
             resp = client.responses.create(
                 model="gpt-5",
                 instructions=system_prompt,   # system/developer guidance
                 input=[{"role": "user", "content": user_content}],
-                reasoning={"effort": "high"}, # enables thinking mode
-                max_output_tokens=4000,       # Responses API uses max_output_tokens
+                reasoning={"effort": "medium"}, # reduced to leave room for content
+                # removed max_output_tokens to allow full response
             )
             
             print(f"🔍 API call completed successfully, got response type: {type(resp)}")
@@ -1285,8 +1285,8 @@ Use the following as the complete source of truth (chronologically order them):
             model="gpt-5",
             instructions=system_prompt,   # system/developer guidance
             input=[{"role": "user", "content": user_content}],
-            reasoning={"effort": "high"}, # enables thinking mode
-            max_output_tokens=6000,       # Responses API uses max_output_tokens
+            reasoning={"effort": "medium"}, # reduced to leave room for content
+            # removed max_output_tokens to allow full response
         )
 
         markdown_analysis = extract_output_text(resp)
