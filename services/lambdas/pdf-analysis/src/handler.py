@@ -932,22 +932,23 @@ Focus on user's specific KPIs, use their table format, consider their context, a
         user_message = f"""Analyze these {len(uploaded_files)} reports for {company_name}. Create the mandatory KPI table exactly as I specified, then provide trend analysis and recommendations."""
 
         # Create the completion
-        print(f"🤖 Sending custom analysis request to OpenAI...")
+        print(f"🤖 Sending custom analysis request to GPT-5...")
         
         completion = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message, "attachments": [{"file_id": f['file_id'], "tools": [{"type": "file_search"}]} for f in uploaded_files]}
+                {"role": "user", "content": user_message, "attachments": [{"file_id": f['file_id']} for f in uploaded_files]}
             ],
             temperature=0.1,
             max_tokens=4000,
-            tools=[{"type": "file_search"}]
+            reasoning_effort="high",
+            verbosity="high"
         )
         
         analysis_result = completion.choices[0].message.content
         
-        print(f"✅ Custom OpenAI analysis completed successfully")
+        print(f"✅ Custom GPT-5 analysis completed successfully")
         print(f"📄 Analysis length: {len(analysis_result)} characters")
         
         return analysis_result
@@ -1138,15 +1139,21 @@ IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use o
                 "file_id": file_info['file_id']
             })
         
-        print("🚀 Calling Responses API for multi-PDF KPI analysis...")
+        print("🚀 Calling GPT-5 for multi-PDF KPI analysis...")
         
-        response = client.responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            input=[{"role": "user", "content": content_parts}],
-            max_output_tokens=6000
+        completion = client.chat.completions.create(
+            model="gpt-5",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Analyze these {len(uploaded_files)} reports for {company_name}. Provide comprehensive KPI analysis with structured tables.", "attachments": [{"file_id": f['file_id']} for f in uploaded_files]}
+            ],
+            temperature=0.1,
+            max_tokens=6000,
+            reasoning_effort="high",
+            verbosity="high"
         )
         
-        markdown_analysis = response.output_text or ""
+        markdown_analysis = completion.choices[0].message.content or ""
         
         if not markdown_analysis.strip():
             raise ValueError("Empty output from OpenAI model")
@@ -1644,7 +1651,7 @@ def handle_process_async_job(event, context):
         print(f"⚡ Processing async job {job_id} for company {company_id}, stage: {stage}", '(custom)' if custom_config else '(standard)')
         
         # Update job status to processing
-        update_job_status(job_id, 'processing', 10)
+        update_job_status(job_id, 'processing', 0)
         
         # Perform the analysis (this is the heavy work that was timing out)
         try:
@@ -1652,7 +1659,7 @@ def handle_process_async_job(event, context):
             
             if result['success']:
                 # Store results and mark job as completed
-                update_job_status(job_id, 'completed', 100, results=result['analysis'])
+                update_job_status(job_id, 'completed', 0, results=result['analysis'])
                 print(f"✅ Job {job_id} completed successfully")
                 return {'success': True, 'job_id': job_id}
             else:
