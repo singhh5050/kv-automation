@@ -944,7 +944,6 @@ Focus on user's specific KPIs, use their table format, consider their context, a
             instructions=system_prompt,   # system/developer guidance
             input=[{"role": "user", "content": user_content}],
             reasoning={"effort": "high"}, # enables thinking mode
-            temperature=0.1,
             max_output_tokens=4000,       # Responses API uses max_output_tokens
         )
         
@@ -1140,7 +1139,6 @@ Use the following as the complete source of truth (chronologically order them):
             instructions=system_prompt,   # system/developer guidance
             input=[{"role": "user", "content": user_content}],
             reasoning={"effort": "high"}, # enables thinking mode
-            temperature=0.1,
             max_output_tokens=6000,       # Responses API uses max_output_tokens
         )
 
