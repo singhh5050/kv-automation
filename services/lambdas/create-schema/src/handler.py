@@ -181,6 +181,41 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating company_kpi_analysis table: {e}")
         raise e
 
+    # ---- SAFE: Add company_health_check table if it doesn't exist ----
+    print("🔧 Creating company_health_check table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_health_check (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            health_score VARCHAR(10) NOT NULL CHECK (health_score IN ('GREEN', 'YELLOW', 'RED')),
+            justification TEXT NOT NULL,
+            criticality_level INTEGER CHECK (criticality_level >= 1 AND criticality_level <= 10),
+            manual_override BOOLEAN DEFAULT FALSE,
+            analysis_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100) DEFAULT 'system'
+        );
+        """)
+        print("✅ Company health check table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_health_check_company_id ON company_health_check(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_health_check_timestamp ON company_health_check(analysis_timestamp DESC);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_health_check_score ON company_health_check(health_score);
+        """)
+        print("✅ Company health check table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating company_health_check table: {e}")
+        raise e
+
     # ---- SAFE: Add async_analysis_jobs table if it doesn't exist ------------
     print("🔧 Creating async_analysis_jobs table...")
     try:
@@ -270,11 +305,11 @@ def create_database_schema(conn):
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table, company_notes and company_kpi_analysis tables created safely",
-        "operation": "add_evidence_field_notes_and_kpi_tables",
-        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis"],
+        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, and company_health_check tables created safely",
+        "operation": "add_evidence_field_notes_kpi_and_health_tables",
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes", "company_kpi_analysis"]
+        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check"]
     }
 
 

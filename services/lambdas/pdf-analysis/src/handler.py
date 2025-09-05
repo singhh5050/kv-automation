@@ -165,6 +165,12 @@ def lambda_handler(event, context):
     elif event.get('action') == 'process_async_kpi_job':
         print("⚡ Processing async KPI analysis job")
         return handle_process_async_job(event, context)
+    elif event.get('action') == 'health_check':
+        print("🏥 Processing health check request")
+        return handle_health_check_request(event, context)
+    elif event.get('action') == 'get_health_check':
+        print("🔍 Getting latest health check")
+        return handle_get_health_check_request(event, context)
     else:
         print("📡 Processing API Gateway event (legacy architecture)")
         return handle_api_gateway_event(event, context)
@@ -1670,6 +1676,130 @@ def store_kpi_analysis_in_db(company_id: int, analysis_content: str, stage: str,
         raise e
 
 
+def store_health_check_in_db(company_id: int, health_score: str, justification: str, criticality_level: int = None, manual_override: bool = False):
+    """
+    Store health check results in the company_health_check table
+    """
+    import ssl
+    from datetime import datetime
+    
+    try:
+        print(f"🏥 Storing health check for company {company_id}")
+        
+        # Same database configuration pattern as other functions
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Check if there's an existing health check for this company (keep only the latest)
+        cursor.execute("""
+            SELECT id FROM company_health_check 
+            WHERE company_id = %s
+            ORDER BY analysis_timestamp DESC
+            LIMIT 1
+        """, [company_id])
+        
+        existing_row = cursor.fetchone()
+        
+        if existing_row:
+            # Update the existing record
+            cursor.execute("""
+                UPDATE company_health_check 
+                SET health_score = %s, justification = %s, criticality_level = %s, 
+                    manual_override = %s, analysis_timestamp = CURRENT_TIMESTAMP, 
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE company_id = %s
+            """, [health_score, justification, criticality_level, manual_override, company_id])
+            print(f"✅ Updated existing health check for company {company_id}")
+        else:
+            # Create new health check record
+            cursor.execute("""
+                INSERT INTO company_health_check 
+                (company_id, health_score, justification, criticality_level, manual_override, 
+                 analysis_timestamp, created_by)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'system')
+            """, [company_id, health_score, justification, criticality_level, manual_override])
+            print(f"✅ Created new health check for company {company_id}")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"💾 Successfully stored health check ({health_score}) for company {company_id}")
+        
+    except Exception as e:
+        print(f"❌ Failed to store health check: {str(e)}")
+        raise e
+
+
+def get_latest_health_check(company_id: int) -> dict:
+    """
+    Get the latest health check for a company from the database
+    """
+    import ssl
+    
+    try:
+        print(f"🔍 Getting latest health check for company {company_id}")
+        
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get latest health check
+        cursor.execute("""
+            SELECT health_score, justification, criticality_level, manual_override, 
+                   analysis_timestamp, created_at
+            FROM company_health_check 
+            WHERE company_id = %s
+            ORDER BY analysis_timestamp DESC
+            LIMIT 1
+        """, [company_id])
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not row:
+            return {'success': True, 'data': None}
+        
+        health_score, justification, criticality_level, manual_override, analysis_timestamp, created_at = row
+        
+        return {
+            'success': True,
+            'data': {
+                'success': True,
+                'score': health_score,
+                'justification': justification,
+                'criticality_level': criticality_level,
+                'manual_override': manual_override,
+                'analysis_timestamp': analysis_timestamp.isoformat() + 'Z' if analysis_timestamp else None
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to get health check: {str(e)}")
+        return {'success': False, 'error': f'Failed to retrieve health check: {str(e)}'}
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Async Job Handling Functions
 # ──────────────────────────────────────────────────────────────────────────
@@ -1894,6 +2024,130 @@ def handle_process_async_job(event, context):
         print(f"❌ Async job processing failed: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         return {'success': False, 'error': str(e)}
+
+
+def handle_health_check_request(event, context):
+    """
+    Handle health check analysis requests
+    """
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        # Extract parameters from event
+        company_id = event.get('company_id')
+        criticality_level = event.get('criticality_level', 5)  # Default to balanced
+        manual_score = event.get('manual_score')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        # Validate criticality level
+        if criticality_level is not None and (criticality_level < 1 or criticality_level > 10):
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'criticality_level must be between 1 and 10'})
+            }
+        
+        # Validate manual score
+        if manual_score and manual_score not in ['GREEN', 'YELLOW', 'RED']:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'manual_score must be GREEN, YELLOW, or RED'})
+            }
+        
+        print(f"🏥 Health check for company {company_id}, criticality: {criticality_level}, manual: {manual_score or 'none'}")
+        
+        # Perform health check analysis
+        result = analyze_company_health(company_id, criticality_level, manual_score)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result['data'])
+            }
+        else:
+            return {
+                'statusCode': 500,
+                'headers': cors_headers,
+                'body': json.dumps({'error': result['error']})
+            }
+            
+    except Exception as e:
+        print(f"❌ Health check failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': False,
+                'error': f'Health check failed: {str(e)}'
+            })
+        }
+
+
+def handle_get_health_check_request(event, context):
+    """
+    Handle requests to get the latest health check for a company
+    """
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        # Extract parameters from event
+        company_id = event.get('company_id')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        print(f"🔍 Getting latest health check for company {company_id}")
+        
+        # Get the latest health check
+        result = get_latest_health_check(company_id)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result['data'] or {'success': True, 'data': None})
+            }
+        else:
+            return {
+                'statusCode': 500,
+                'headers': cors_headers,
+                'body': json.dumps({'error': result['error']})
+            }
+            
+    except Exception as e:
+        print(f"❌ Get health check failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': False,
+                'error': f'Get health check failed: {str(e)}'
+            })
+        }
 
 
 def create_async_job_in_db(company_id: int, stage: str, custom_config: dict = None) -> str:
@@ -2154,4 +2408,293 @@ def trigger_async_processing(job_id: str, company_id: int, stage: str, custom_co
     except Exception as e:
         print(f"❌ Failed to trigger async processing: {str(e)}")
         # Don't raise here - job is created, we can retry processing later
-        pass
+
+
+def analyze_company_health(company_id: int, criticality_level: int = 5, manual_score: str = None) -> dict:
+    """
+    Analyze company health using the most recent board deck and financial summaries
+    Returns health score (GREEN/YELLOW/RED) with justification
+    """
+    import ssl
+    import tempfile
+    import concurrent.futures
+    from datetime import datetime
+    
+    try:
+        print(f"🏥 Starting health check analysis for company {company_id}")
+        
+        # If manual score is provided, store it and return immediately
+        if manual_score:
+            try:
+                store_health_check_in_db(
+                    company_id=company_id,
+                    health_score=manual_score,
+                    justification=f"Manual override: Health score set to {manual_score} by user.",
+                    criticality_level=None,
+                    manual_override=True
+                )
+                print(f"✅ Manual health check stored in database for company {company_id}")
+            except Exception as storage_error:
+                print(f"⚠️ Failed to store manual health check: {storage_error}")
+                # Continue without failing
+            
+            return {
+                'success': True,
+                'data': {
+                    'success': True,
+                    'score': manual_score,
+                    'justification': f"Manual override: Health score set to {manual_score} by user.",
+                    'manual_override': True,
+                    'analysis_timestamp': datetime.utcnow().isoformat() + 'Z'
+                }
+            }
+        
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database and get company info + recent PDFs
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get company info
+        cursor.execute("""
+            SELECT name, sector, normalized_name 
+            FROM companies 
+            WHERE id = %s
+        """, [company_id])
+        
+        company_row = cursor.fetchone()
+        if not company_row:
+            cursor.close()
+            conn.close()
+            return {'success': False, 'error': f'Company {company_id} not found'}
+        
+        company_name, sector, normalized_name = company_row
+        print(f"🏢 Company: {company_name} (Sector: {sector or 'unknown'})")
+        
+        # Get the most recent board deck PDF
+        cursor.execute("""
+            SELECT id, file_name, report_date, report_period, s3_key,
+                   cash_on_hand, monthly_burn_rate, cash_out_date, runway,
+                   budget_vs_actual, financial_summary, key_risks
+            FROM financial_reports 
+            WHERE company_id = %s 
+            ORDER BY report_date DESC 
+            LIMIT 1
+        """, [company_id])
+        
+        report_row = cursor.fetchone()
+        if not report_row:
+            cursor.close()
+            conn.close()
+            return {'success': False, 'error': f'No financial reports found for company {company_id}'}
+        
+        report_id, file_name, report_date, report_period, s3_key, cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual, financial_summary, key_risks = report_row
+        
+        print(f"📄 Most recent report: {file_name} ({report_date})")
+        
+        # Get all financial summaries for context
+        cursor.execute("""
+            SELECT report_date, report_period, cash_on_hand, monthly_burn_rate, 
+                   cash_out_date, runway, financial_summary, key_risks
+            FROM financial_reports 
+            WHERE company_id = %s 
+            ORDER BY report_date DESC 
+            LIMIT 5
+        """, [company_id])
+        
+        historical_data = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Download the most recent PDF from S3
+        import boto3
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-automation-reports')
+        
+        try:
+            pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
+            pdf_bytes = pdf_object['Body'].read()
+            print(f"📥 Downloaded PDF: {len(pdf_bytes)} bytes")
+        except Exception as s3_error:
+            print(f"⚠️ Could not download PDF from S3: {s3_error}")
+            pdf_bytes = None
+        
+        # Prepare context data for AI analysis
+        financial_context = []
+        for row in historical_data:
+            context_entry = {
+                'date': str(row[0]),
+                'period': row[1],
+                'cash_on_hand': row[2],
+                'monthly_burn_rate': row[3],
+                'cash_out_date': str(row[4]) if row[4] else None,
+                'runway': row[5],
+                'summary': row[6],
+                'risks': row[7]
+            }
+            financial_context.append(context_entry)
+        
+        # Perform AI analysis using OpenAI
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            return {'success': False, 'error': 'OpenAI API key not configured'}
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        # Build the health check prompt based on criticality level
+        criticality_descriptions = {
+            1: "Very lenient analysis - focus heavily on positives, minimize concerns",
+            2: "Lenient analysis - generally optimistic perspective",
+            3: "Somewhat lenient - mild optimistic bias",
+            4: "Slightly lenient - slight positive lean",
+            5: "Balanced analysis - neutral, objective assessment",
+            6: "Slightly critical - slight negative lean", 
+            7: "Somewhat critical - mild pessimistic bias",
+            8: "Critical analysis - generally pessimistic perspective",
+            9: "Very critical - harsh but fair assessment",
+            10: "Extremely critical - maximum scrutiny, find all issues"
+        }
+        
+        system_prompt = f"""You are a KV financial analyst conducting a health check for {company_name}.
+
+CRITICALITY LEVEL: {criticality_level}/10 - {criticality_descriptions[criticality_level]}
+
+## ANALYSIS APPROACH
+Based on the criticality level {criticality_level}, adjust your analysis accordingly:
+- Levels 1-3: Focus on strengths, downplay risks, optimistic interpretation
+- Levels 4-6: Balanced perspective, equal weight to positives and negatives  
+- Levels 7-10: Emphasize risks, scrutinize assumptions, pessimistic interpretation
+
+## YOUR TASK
+Analyze the company's health using:
+1. Most recent board deck (PDF attached)
+2. Historical financial summaries and metrics
+3. Cash position, burn rate, and runway data
+4. Key risks and business performance indicators
+
+## OUTPUT REQUIREMENTS
+Provide a health score assessment:
+
+**HEALTH SCORE**: Choose exactly one:
+- GREEN: Company is healthy with strong fundamentals
+- YELLOW: Company has manageable concerns but is stable
+- RED: Company faces significant challenges requiring attention
+
+**JUSTIFICATION**: Provide 2-3 paragraphs explaining your reasoning, including:
+- Key financial metrics and trends
+- Major strengths or concerns
+- Risk factors and their severity
+- Overall trajectory and outlook
+
+## FINANCIAL CONTEXT
+Historical data for context:
+{financial_context}
+
+Focus on recent trends, cash management, business performance, and risk factors. Adjust your assessment based on the criticality level specified above."""
+
+        # Create user content with PDF if available
+        user_content = [
+            {"type": "input_text", "text": f"Please analyze the health of {company_name} based on the attached board deck and financial data. Provide a clear health score (GREEN/YELLOW/RED) with detailed justification."}
+        ]
+        
+        # Upload PDF to OpenAI if available
+        uploaded_file_id = None
+        tmp_path = None
+        
+        if pdf_bytes:
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(pdf_bytes)
+                    tmp_path = tmp.name
+                
+                with open(tmp_path, "rb") as f:
+                    file_response = client.files.create(file=f, purpose="user_data")
+                    uploaded_file_id = file_response.id
+                    print(f"✅ Uploaded PDF to OpenAI: {uploaded_file_id}")
+                
+                user_content.append({"type": "input_file", "file_id": uploaded_file_id})
+            except Exception as upload_error:
+                print(f"⚠️ Failed to upload PDF to OpenAI: {upload_error}")
+        
+        # Make the OpenAI API call
+        try:
+            print(f"🤖 Calling GPT-5 for health check analysis (criticality: {criticality_level})")
+            
+            resp = client.responses.create(
+                model="gpt-5",
+                instructions=system_prompt,
+                input=[{"role": "user", "content": user_content}],
+                reasoning={"effort": "medium"}
+            )
+            
+            analysis_result = extract_output_text(resp)
+            print(f"✅ Health check analysis completed: {len(analysis_result)} chars")
+            
+            # Parse the health score from the response
+            health_score = 'YELLOW'  # Default fallback
+            if 'GREEN' in analysis_result.upper():
+                health_score = 'GREEN'
+            elif 'RED' in analysis_result.upper():
+                health_score = 'RED'
+            elif 'YELLOW' in analysis_result.upper():
+                health_score = 'YELLOW'
+            
+            # Clean up uploaded file
+            if uploaded_file_id:
+                try:
+                    client.files.delete(uploaded_file_id)
+                    print(f"🗑️ Cleaned up OpenAI file: {uploaded_file_id}")
+                except:
+                    pass
+            
+            # Clean up temp file
+            if tmp_path:
+                try:
+                    import os
+                    os.unlink(tmp_path)
+                except:
+                    pass
+            
+            # Store the health check results in the database
+            try:
+                store_health_check_in_db(
+                    company_id=company_id,
+                    health_score=health_score,
+                    justification=analysis_result,
+                    criticality_level=criticality_level,
+                    manual_override=False
+                )
+                print(f"✅ Health check stored in database for company {company_id}")
+            except Exception as storage_error:
+                print(f"⚠️ Failed to store health check: {storage_error}")
+                # Continue without failing the entire operation
+            
+            return {
+                'success': True,
+                'data': {
+                    'success': True,
+                    'score': health_score,
+                    'justification': analysis_result,
+                    'criticality_level': criticality_level,
+                    'manual_override': False,
+                    'analysis_timestamp': datetime.utcnow().isoformat() + 'Z'
+                }
+            }
+            
+        except Exception as api_error:
+            print(f"❌ OpenAI API call failed: {str(api_error)}")
+            return {'success': False, 'error': f'AI analysis failed: {str(api_error)}'}
+        
+    except Exception as e:
+        print(f"❌ Health check analysis failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return {'success': False, 'error': f'Health check failed: {str(e)}'}

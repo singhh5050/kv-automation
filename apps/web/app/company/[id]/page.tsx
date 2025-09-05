@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
-import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig } from '@/types'
+import HealthCheckModal from '@/components/company/HealthCheckModal'
+import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig, HealthCheckConfig, HealthCheckResult } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
   ResponsiveContainer,
@@ -84,7 +85,7 @@ const getSectorLabels = (sector: string = 'unknown') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes'
+type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes' | 'health'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -328,6 +329,12 @@ export default function CompanyDetailPage() {
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
 
+  // Health Check state
+  const [showHealthCheckModal, setShowHealthCheckModal] = useState(false)
+  const [healthCheckLoading, setHealthCheckLoading] = useState(false)
+  const [healthCheckResult, setHealthCheckResult] = useState<HealthCheckResult | null>(null)
+  const [healthCheckError, setHealthCheckError] = useState<string | null>(null)
+
   // (Chart remount on resize is handled inside SimpleCashChart)
 
   // Utility functions for formatting
@@ -367,6 +374,13 @@ export default function CompanyDetailPage() {
   useEffect(() => {
     if (company?.company?.id) {
       loadSavedKpiAnalysis()
+    }
+  }, [company?.company?.id])
+
+  // Load saved health check when company data is loaded
+  useEffect(() => {
+    if (company?.company?.id) {
+      loadSavedHealthCheck()
     }
   }, [company?.company?.id])
 
@@ -853,6 +867,64 @@ export default function CompanyDetailPage() {
     setSelectedStage('')
   }
 
+  // Load saved health check results
+  const loadSavedHealthCheck = async () => {
+    if (!company?.company?.id) return
+    
+    try {
+      console.log('🔍 Loading saved health check...')
+      const result = await getLatestHealthCheck(company.company.id)
+      
+      if (result.error) {
+        console.log('ℹ️ No saved health check found or error:', result.error)
+        setHealthCheckResult(null)
+      } else if (result && result.score) {
+        setHealthCheckResult(result)
+        console.log('✅ Loaded saved health check:', result.score)
+      } else {
+        console.log('ℹ️ No saved health check found')
+        setHealthCheckResult(null)
+      }
+    } catch (error) {
+      console.error('❌ Failed to load saved health check:', error)
+      // Don't show error to user for loading saved data
+    }
+  }
+
+  // Health Check handler
+  const handleHealthCheck = async (config: HealthCheckConfig) => {
+    if (!company?.company?.id) {
+      setHealthCheckError('Company ID not available')
+      return
+    }
+
+    setHealthCheckLoading(true)
+    setHealthCheckError(null)
+    setHealthCheckResult(null)
+
+    try {
+      console.log('🏥 Starting health check analysis...')
+      const result = await runHealthCheck(
+        company.company.id, 
+        config.criticality_level, 
+        config.manual_score
+      )
+
+      if (result.error) {
+        setHealthCheckError(result.error)
+      } else {
+        setHealthCheckResult(result)
+        console.log('✅ Health check completed:', result)
+      }
+    } catch (error) {
+      console.error('❌ Health check failed:', error)
+      setHealthCheckError(error instanceof Error ? error.message : 'Health check failed')
+    } finally {
+      setHealthCheckLoading(false)
+      setShowHealthCheckModal(false)
+    }
+  }
+
   // Handle delete financial report
   const handleDeleteReport = (report: any) => {
     setReportToDelete(report)
@@ -1195,6 +1267,17 @@ export default function CompanyDetailPage() {
             >
               <span>📝</span>
               <span>Notes</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('health')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'health'
+                  ? 'bg-green-50 text-green-700 border border-green-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>🏥</span>
+              <span>Health Check</span>
             </button>
           </nav>
         </div>
@@ -2721,6 +2804,142 @@ export default function CompanyDetailPage() {
                 </div>
               </div>
             )}
+
+            {activeTab === 'health' && (
+              <div className="space-y-4">
+                {/* Health Check Section */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xl">🏥</span>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">Company Health Check</h3>
+                        <p className="text-gray-600 text-sm">AI-powered analysis of company performance and risks</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowHealthCheckModal(true)}
+                      disabled={healthCheckLoading}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        healthCheckLoading
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-green-500 to-blue-600 text-white hover:from-green-600 hover:to-blue-700 shadow-md hover:shadow-lg'
+                      }`}
+                    >
+                      {healthCheckLoading ? (
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                          <span>Analyzing...</span>
+                        </div>
+                      ) : (
+                        'Run Health Check'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Health Check Results */}
+                  {healthCheckResult && (
+                    <div className="mb-6">
+                      <div className={`rounded-xl border-2 p-4 ${
+                        healthCheckResult.score === 'GREEN' 
+                          ? 'border-green-200 bg-green-50'
+                          : healthCheckResult.score === 'YELLOW'
+                          ? 'border-yellow-200 bg-yellow-50'
+                          : 'border-red-200 bg-red-50'
+                      }`}>
+                        <div className="flex items-start space-x-3">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            healthCheckResult.score === 'GREEN' 
+                              ? 'bg-green-100'
+                              : healthCheckResult.score === 'YELLOW'
+                              ? 'bg-yellow-100'
+                              : 'bg-red-100'
+                          }`}>
+                            <span className="text-2xl">
+                              {healthCheckResult.score === 'GREEN' ? '🟢' : healthCheckResult.score === 'YELLOW' ? '🟡' : '🔴'}
+                            </span>
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <h4 className={`text-lg font-bold ${
+                                healthCheckResult.score === 'GREEN' 
+                                  ? 'text-green-800'
+                                  : healthCheckResult.score === 'YELLOW'
+                                  ? 'text-yellow-800'
+                                  : 'text-red-800'
+                              }`}>
+                                Health Score: {healthCheckResult.score === 'GREEN' ? 'Healthy' : healthCheckResult.score === 'YELLOW' ? 'Caution' : 'Critical'}
+                              </h4>
+                              {healthCheckResult.manual_override && (
+                                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                                  Manual Override
+                                </span>
+                              )}
+                              {healthCheckResult.criticality_level && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                  Criticality: {healthCheckResult.criticality_level}/10
+                                </span>
+                              )}
+                            </div>
+                            <div className={`text-sm leading-relaxed ${
+                              healthCheckResult.score === 'GREEN' 
+                                ? 'text-green-800'
+                                : healthCheckResult.score === 'YELLOW'
+                                ? 'text-yellow-800'
+                                : 'text-red-800'
+                            }`}>
+                              <MarkdownContent content={healthCheckResult.justification} />
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500">
+                              Analyzed on {new Date(healthCheckResult.analysis_timestamp).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Health Check Error */}
+                  {healthCheckError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-red-600">❌</span>
+                        <p className="text-red-800 font-medium">Health Check Failed</p>
+                      </div>
+                      <p className="text-red-700 text-sm mt-1">{healthCheckError}</p>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  {!healthCheckResult && !healthCheckError && (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-2xl">🏥</span>
+                      </div>
+                      <h4 className="text-lg font-semibold text-gray-900 mb-2">Ready for Health Check</h4>
+                      <p className="text-gray-600 text-sm mb-4 max-w-md mx-auto">
+                        Click "Run Health Check" to analyze the company's latest board deck and financial data using AI. 
+                        You can adjust the criticality level or set a manual score.
+                      </p>
+                      <div className="flex items-center justify-center space-x-4 text-xs text-gray-500">
+                        <div className="flex items-center space-x-1">
+                          <span>🟢</span>
+                          <span>Healthy</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <span>🟡</span>
+                          <span>Caution</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <span>🔴</span>
+                          <span>Critical</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2830,6 +3049,15 @@ export default function CompanyDetailPage() {
           onExport={handlePdfExport}
         />
       )}
+
+      {/* Health Check Modal */}
+      <HealthCheckModal
+        isOpen={showHealthCheckModal}
+        onClose={() => setShowHealthCheckModal(false)}
+        onSubmit={handleHealthCheck}
+        isLoading={healthCheckLoading}
+        companyName={company?.company?.name || 'Unknown Company'}
+      />
     </div>
   )
 } 

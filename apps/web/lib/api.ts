@@ -840,4 +840,66 @@ export async function getLatestAsyncKpiAnalysis(companyId: number) {
       company_id: companyId,
     }),
   })
+}
+
+/**
+ * Run health check analysis for a company
+ */
+export async function runHealthCheck(companyId: number, criticality_level?: number, manual_score?: 'GREEN' | 'YELLOW' | 'RED') {
+  try {
+    const response = await fetch('/api/health-check', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+        criticality_level,
+        manual_score,
+      }),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Health check failed: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log('✅ Health check completed successfully')
+    
+    return result
+  } catch (error) {
+    console.error('❌ Health check error:', error)
+    return { error: error instanceof Error ? error.message : 'Health check failed' }
+  }
+}
+
+/**
+ * Get the latest health check for a company
+ */
+export async function getLatestHealthCheck(companyId: number) {
+  try {
+    const response = await fetch('/api/get-health-check', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+      }),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `Get health check failed: ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log('✅ Latest health check retrieved successfully')
+    
+    return result
+  } catch (error) {
+    console.error('❌ Get health check error:', error)
+    return { error: error instanceof Error ? error.message : 'Get health check failed' }
+  }
 } 

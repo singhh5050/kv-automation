@@ -103,4 +103,19 @@ export interface FinancialReport {
     previousPlan: string
     competitiveContext: string
     customPrompt?: string  // Optional prompt override
+  }
+
+  export interface HealthCheckConfig {
+    criticality_level?: number  // 1-10 scale
+    manual_score?: 'GREEN' | 'YELLOW' | 'RED'
+  }
+
+  export interface HealthCheckResult {
+    success: boolean
+    score: 'GREEN' | 'YELLOW' | 'RED'
+    justification: string
+    criticality_level?: number
+    manual_override?: boolean
+    analysis_timestamp: string
+    error?: string
   } 
