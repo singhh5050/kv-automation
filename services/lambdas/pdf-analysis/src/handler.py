@@ -1123,6 +1123,15 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
             print(f"🔍 - input length: {len(user_content)} items")
             print(f"🔍 - reasoning: {{'effort': 'medium'}}")
             print(f"🔍 - max_output_tokens: unlimited")
+            print(f"🔍 ACTUAL SYSTEM PROMPT:")
+            print(f"📝 {system_prompt}")
+            print(f"🔍 ACTUAL USER MESSAGE:")
+            for i, content_item in enumerate(user_content):
+                if content_item.get('type') == 'input_text':
+                    print(f"📝 User text: {content_item.get('text', '')}")
+                elif content_item.get('type') == 'input_file':
+                    print(f"📁 File {i}: {content_item.get('file_id', 'unknown')}")
+            print(f"🔍 END DEBUG INFO")
             
             resp = client.responses.create(
                 model="gpt-5",
