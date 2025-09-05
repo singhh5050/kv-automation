@@ -14,6 +14,48 @@ from datetime import datetime
 # Add the Lambda layer path for dependencies
 sys.path.insert(0, '/opt/python')
 
+def extract_output_text(resp) -> str:
+    """
+    Robustly extract plain text from Responses API objects.
+    Prefers the SDK helper .output_text, then falls back to flattening content parts.
+    """
+    # 1) Preferred: SDK helper (handles multiple parts automatically)
+    txt = getattr(resp, "output_text", None)
+    if isinstance(txt, str) and txt.strip():
+        return txt.strip()
+
+    # 2) Fallback: flatten output → content → text.value
+    out = []
+    output = getattr(resp, "output", None)
+    if output:
+        # resp.output is typically a list of "message" objects
+        for item in (output if isinstance(output, list) else [output]):
+            content = getattr(item, "content", None)
+            if not content and isinstance(item, dict):
+                content = item.get("content")
+            if not content:
+                continue
+
+            for c in (content if isinstance(content, list) else [content]):
+                # pydantic object or dict; look for .type and .text.value
+                ctype = getattr(c, "type", None) or (c.get("type") if isinstance(c, dict) else None)
+                if ctype in ("output_text", "text"):
+                    # pydantic-style
+                    text_obj = getattr(c, "text", None)
+                    if text_obj and hasattr(text_obj, "value"):
+                        val = text_obj.value or ""
+                        if val:
+                            out.append(val)
+                    # dict-style
+                    elif isinstance(c, dict):
+                        t = c.get("text")
+                        if isinstance(t, dict) and t.get("value"):
+                            out.append(t["value"])
+                        elif isinstance(t, str):
+                            out.append(t)
+
+    return "\n".join(s for s in out if s).strip()
+
 def lambda_handler(event, context):
     """
     Lambda function for PDF extraction and OpenAI analysis
@@ -947,35 +989,20 @@ Focus on user's specific KPIs, use their table format, consider their context, a
             max_output_tokens=4000,       # Responses API uses max_output_tokens
         )
         
-        # Debug: Print response structure
-        print(f"🔍 Response object type: {type(resp)}")
-        print(f"🔍 Response object attributes: {dir(resp)}")
-        if hasattr(resp, '__dict__'):
-            print(f"🔍 Response dict: {resp.__dict__}")
+        analysis_result = extract_output_text(resp)
         
-        # Extract content from Responses API - try the correct fields
-        analysis_result = ""
-        if hasattr(resp, 'output') and resp.output:
-            if isinstance(resp.output, list) and len(resp.output) > 0:
-                # resp.output is a list of output parts
-                if hasattr(resp.output[0], 'content'):
-                    analysis_result = resp.output[0].content or ""
-                    print(f"🔍 Using output[0].content: {len(analysis_result)} chars")
-                elif hasattr(resp.output[0], 'text'):
-                    analysis_result = resp.output[0].text or ""
-                    print(f"🔍 Using output[0].text: {len(analysis_result)} chars")
-            elif hasattr(resp.output, 'content'):
-                analysis_result = resp.output.content or ""
-                print(f"🔍 Using output.content: {len(analysis_result)} chars")
-            elif hasattr(resp.output, 'text'):
-                analysis_result = resp.output.text or ""
-                print(f"🔍 Using output.text: {len(analysis_result)} chars")
-        elif hasattr(resp, 'content'):
-            analysis_result = resp.content or ""
-            print(f"🔍 Using direct content: {len(analysis_result)} chars")
-        else:
-            print(f"🚨 Unknown response format, trying string conversion: {resp}")
-            analysis_result = str(resp)
+        # Guard: don't clobber DB with empty output
+        if not analysis_result:
+            # Optional: include usage to help debug partial/empty responses
+            usage = getattr(resp, "usage", None)
+            out_toks = getattr(usage, "output_tokens", None) if usage else None
+            raise RuntimeError(f"Empty model output (output_tokens={out_toks}). Failing job instead of persisting.")
+        
+        # Log a short preview + token usage for observability
+        usage = getattr(resp, "usage", None)
+        preview = (analysis_result[:120] + "…") if len(analysis_result) > 120 else analysis_result
+        print(f"🧾 usage: input={getattr(usage,'input_tokens',None)}, "
+              f"output={getattr(usage,'output_tokens',None)} | preview: {preview}")
         
         print(f"✅ Custom GPT-5 (Responses API) analysis completed successfully")
         print(f"📄 Analysis length: {len(analysis_result)} characters")
@@ -1170,38 +1197,20 @@ Use the following as the complete source of truth (chronologically order them):
             max_output_tokens=6000,       # Responses API uses max_output_tokens
         )
 
-        # Debug: Print response structure
-        print(f"🔍 Response object type: {type(resp)}")
-        print(f"🔍 Response object attributes: {dir(resp)}")
-        if hasattr(resp, '__dict__'):
-            print(f"🔍 Response dict: {resp.__dict__}")
+        markdown_analysis = extract_output_text(resp)
         
-        # Extract content from Responses API - try the correct fields
-        markdown_analysis = ""
-        if hasattr(resp, 'output') and resp.output:
-            if isinstance(resp.output, list) and len(resp.output) > 0:
-                # resp.output is a list of output parts
-                if hasattr(resp.output[0], 'content'):
-                    markdown_analysis = resp.output[0].content or ""
-                    print(f"🔍 Using output[0].content: {len(markdown_analysis)} chars")
-                elif hasattr(resp.output[0], 'text'):
-                    markdown_analysis = resp.output[0].text or ""
-                    print(f"🔍 Using output[0].text: {len(markdown_analysis)} chars")
-            elif hasattr(resp.output, 'content'):
-                markdown_analysis = resp.output.content or ""
-                print(f"🔍 Using output.content: {len(markdown_analysis)} chars")
-            elif hasattr(resp.output, 'text'):
-                markdown_analysis = resp.output.text or ""
-                print(f"🔍 Using output.text: {len(markdown_analysis)} chars")
-        elif hasattr(resp, 'content'):
-            markdown_analysis = resp.content or ""
-            print(f"🔍 Using direct content: {len(markdown_analysis)} chars")
-        else:
-            print(f"🚨 Unknown response format, trying string conversion: {resp}")
-            markdown_analysis = str(resp)
+        # Guard: don't clobber DB with empty output
+        if not markdown_analysis:
+            # Optional: include usage to help debug partial/empty responses
+            usage = getattr(resp, "usage", None)
+            out_toks = getattr(usage, "output_tokens", None) if usage else None
+            raise RuntimeError(f"Empty model output (output_tokens={out_toks}). Failing job instead of persisting.")
         
-        if not markdown_analysis.strip():
-            raise ValueError("Empty output from OpenAI model")
+        # Log a short preview + token usage for observability
+        usage = getattr(resp, "usage", None)
+        preview = (markdown_analysis[:120] + "…") if len(markdown_analysis) > 120 else markdown_analysis
+        print(f"🧾 usage: input={getattr(usage,'input_tokens',None)}, "
+              f"output={getattr(usage,'output_tokens',None)} | preview: {preview}")
         
         print(f"✅ Received {len(markdown_analysis)} characters of markdown analysis")
         return markdown_analysis
