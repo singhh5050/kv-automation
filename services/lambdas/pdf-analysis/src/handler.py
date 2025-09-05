@@ -1049,13 +1049,28 @@ Focus on user's specific KPIs, use their table format, consider their context, a
         # Create the completion
         print(f"🤖 Sending custom analysis request to GPT-5 (Responses API)...")
         
-        resp = client.responses.create(
-            model="gpt-5",
-            instructions=system_prompt,   # system/developer guidance
-            input=[{"role": "user", "content": user_content}],
-            reasoning={"effort": "high"}, # enables thinking mode
-            max_output_tokens=4000,       # Responses API uses max_output_tokens
-        )
+        try:
+            print(f"🔍 About to call client.responses.create with:")
+            print(f"🔍 - model: gpt-5")
+            print(f"🔍 - instructions length: {len(system_prompt)} chars")
+            print(f"🔍 - input length: {len(user_content)} items")
+            print(f"🔍 - reasoning: {{'effort': 'high'}}")
+            print(f"🔍 - max_output_tokens: 4000")
+            
+            resp = client.responses.create(
+                model="gpt-5",
+                instructions=system_prompt,   # system/developer guidance
+                input=[{"role": "user", "content": user_content}],
+                reasoning={"effort": "high"}, # enables thinking mode
+                max_output_tokens=4000,       # Responses API uses max_output_tokens
+            )
+            
+            print(f"🔍 API call completed successfully, got response type: {type(resp)}")
+            
+        except Exception as api_error:
+            print(f"🚨 API call failed with error: {str(api_error)}")
+            print(f"🚨 Error type: {type(api_error)}")
+            raise api_error
         
         # Debug the entire response object recursively
         print(f"🔍 ========== FULL RESPONSE DEBUG ==========")
