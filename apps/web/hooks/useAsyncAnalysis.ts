@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { analyzeCompanyKPIsAsync, getAnalysisJobStatus } from '@/lib/api'
-import { KpiAnalysisConfig } from '@/components/company/CustomKpiAnalysisModal'
+import { KpiAnalysisConfig } from '@/types'
 
 export interface AnalysisJob {
   job_id: string

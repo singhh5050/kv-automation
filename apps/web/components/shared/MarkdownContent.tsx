@@ -2,6 +2,7 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import HealthScoreDisplay from './HealthScoreDisplay'
 
 interface MarkdownContentProps {
   content: string
@@ -40,6 +41,9 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
   
   return (
     <div className={`markdown-content ${className}`}>
+      {/* Show health score if this is KPI analysis */}
+      {isKpiAnalysis && <HealthScoreDisplay content={processedContent} />}
+      
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
         components={{

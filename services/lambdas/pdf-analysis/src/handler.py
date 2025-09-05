@@ -1005,39 +1005,72 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
         # Get mood-specific tone
         mood_instructions = get_mood_instructions(custom_config.get('analysisMood', 'balanced'))
         
-        # Create the custom analysis prompt
-        system_prompt = f"""You are a KV financial analyst. Analyze {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
+        # Check if user provided a custom prompt override
+        if custom_config.get('customPrompt'):
+            print(f"🎯 Using custom user-provided prompt ({len(custom_config['customPrompt'])} chars)")
+            system_prompt = custom_config['customPrompt']
+        else:
+            # Create the default custom analysis prompt
+            system_prompt = f"""You are a KV financial analyst. Analyze {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
 
-{mood_instructions}
+    {mood_instructions}
 
-## USER REQUIREMENTS
-**Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
-**Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
-**Industry Context:** {custom_config.get('industryContext', 'General')}
-**Business Model:** {custom_config.get('businessModelDetails', 'Standard')}
-**Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
+    ## USER REQUIREMENTS
+    **Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
+    **Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
+    **Previous Plan to benchmark against:** {custom_config.get('previousPlan', 'No previous plan provided')}
+    **Competitive Context:** {custom_config.get('competitiveContext', 'General market context')}
+    **Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
 
-## CRITICAL: MANDATORY TABLE
-Create a markdown table with:
-- User's KPIs as COLUMNS, time periods as ROWS
-- Proper | separators and headers
-- MoM/QoQ changes and trend arrows (📈📉➡️)
+    ## MULTI-DIMENSIONAL ANALYSIS FRAMEWORK
+    You will analyze across THREE key dimensions:
+    1. **PLANS DIMENSION**: Look for multiple adjusted plans/projections in the board decks (e.g., "Original Plan", "Revised Q2 Plan", "Updated Forecast") PLUS any user-provided plan above
+    2. **TIME DIMENSION**: Different time periods (months, quarters, years)  
+    3. **KPI DIMENSION**: The specific metrics requested by the user
+    
+    **CRITICAL**: When you find multiple plans in the documents, treat each as a separate benchmark. Compare actual performance against each plan version to show how targets evolved over time.
 
-Example:
-| Period | Revenue | CAC | LTV | MoM Change | Trend |
-|--------|---------|-----|-----|------------|-------|
-| Q1 2024 | $1.2M | $150 | $850 | - | 📈 |
+    ## FORMATTING REQUIREMENTS
+    - Use **bold** for key metrics, company names, and important findings
+    - Use *italics* for emphasis and commentary
+    - Use `code formatting` for specific numbers and percentages
+    - Rich markdown formatting throughout (headers, bullets, etc.)
+    - Include emojis for visual appeal and section headers
 
-## OUTPUT FORMAT
-1. 📊 **Executive Summary** (3-4 key highlights)
-2. 📋 **KPI Table** (MANDATORY as specified above)
-3. 📈 **Trend Analysis** (quantified insights per KPI)
-4. 🎯 **Strategic Recommendations**
+    ## CRITICAL: MANDATORY TABLE
+    Create a markdown table with:
+    - User's KPIs as COLUMNS, time periods as ROWS
+    - Proper | separators and headers
+    - MoM/QoQ changes and trend arrows (📈📉➡️)
 
-## FILES
-{file_list}
+    Example:
+    | Period | Revenue | CAC | LTV | MoM Change | Trend |
+    |--------|---------|-----|-----|------------|-------|
+    | Q1 2024 | $1.2M | $150 | $850 | - | 📈 |
 
-Focus on user's specific KPIs, use their table format, consider their context, avoid their mentioned issues."""
+    ## OUTPUT FORMAT
+    1. 🏥 **Company Health Score** 
+       - Overall assessment: 🟢 GREEN / 🟡 YELLOW / 🔴 RED
+       - Brief justification in **bold key points**
+    
+    2. 📊 **Executive Summary** (3-4 key highlights with **bold** metrics)
+    
+    3. 📋 **KPI Table** (MANDATORY as specified above)
+    
+    4. 📈 **Trend Analysis** (quantified insights per KPI with *italicized* commentary)
+    
+    5. 🆘 **What Company Needs Help With**
+       - Primary areas: Recruiting, GTM, Fundraising, M&A, PR, Operations, etc.
+       - **Bold** the top 2-3 priority areas
+    
+    6. 🎯 **Key Diagnoses** (focus on diagnosis, minimal strategic advice)
+
+    ## FILES
+    {file_list}
+
+    Focus on user's specific KPIs, use their table format, identify and benchmark against ALL plans found in documents (treat each plan version as a separate dimension), consider competitive context, avoid mentioned issues. Use rich markdown formatting throughout.
+    
+    **Remember**: This is a 3D analysis - Plans × Time × KPIs. Show how performance compares across multiple plan versions over time."""
 
         # Build a single user message with text + N input_file parts (Responses API)
         user_content = [

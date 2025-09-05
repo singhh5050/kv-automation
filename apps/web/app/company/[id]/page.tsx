@@ -8,8 +8,8 @@ import EditableMetric from '@/components/company/EditableMetric'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
-import CustomKpiAnalysisModal, { KpiAnalysisConfig } from '@/components/company/CustomKpiAnalysisModal'
-import { CompanyOverview, CapTableInvestor, FinancialReport } from '@/types'
+import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
+import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
   ResponsiveContainer,

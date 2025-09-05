@@ -93,4 +93,14 @@ export interface FinancialReport {
       financial_reports_count: number
       latest_financial_report: FinancialReport | null
     }
+  }
+
+  export interface KpiAnalysisConfig {
+    targetKpis: string
+    tableFormat: string
+    analysisMood: string
+    previousIssues: string
+    previousPlan: string
+    competitiveContext: string
+    customPrompt?: string  // Optional prompt override
   } 

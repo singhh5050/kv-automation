@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
+import { KpiAnalysisConfig } from '../../types'
 
 interface CustomKpiAnalysisModalProps {
   isOpen: boolean
@@ -11,14 +12,6 @@ interface CustomKpiAnalysisModalProps {
   companyName: string
 }
 
-export interface KpiAnalysisConfig {
-  targetKpis: string
-  tableFormat: string
-  analysisMood: string
-  previousIssues: string
-  industryContext: string
-  businessModelDetails: string
-}
 
 const MOOD_OPTIONS = [
   { value: 'cheerleader', label: '📣 Cheerleader', description: 'Optimistic, encouraging tone' },
@@ -39,9 +32,69 @@ export default function CustomKpiAnalysisModal({
     tableFormat: '',
     analysisMood: 'balanced',
     previousIssues: '',
-    industryContext: '',
-    businessModelDetails: ''
+    previousPlan: '',
+    competitiveContext: '',
+    customPrompt: ''
   })
+
+  const [showPromptEditor, setShowPromptEditor] = useState(false)
+  
+  // Generate the default system prompt for editing
+  const generateDefaultPrompt = () => {
+    const moodInstructions = {
+      'cheerleader': "## TONE: CHEERLEADER 📣\nBe optimistic and encouraging. Highlight wins, frame challenges as opportunities.",
+      'balanced': "## TONE: BALANCED ⚖️\nUse neutral, professional language. Present facts objectively.",
+      'skeptical': "## TONE: WALL STREET SKEPTIC 🤨\nApply rigorous scrutiny. Question assumptions, highlight risks.",
+      'roast': "## TONE: ROAST MODE 🔥\nBe direct and brutally honest (but professional). Call out issues without sugar-coating."
+    }[config.analysisMood]
+
+    return `You are a KV financial analyst. Analyze reports for ${companyName}.
+
+${moodInstructions}
+
+## USER REQUIREMENTS
+**Target KPIs:** ${config.targetKpis || 'Standard financial metrics'}
+**Table Format:** ${config.tableFormat || 'KPIs as columns, time as rows'}
+**Previous Plan to benchmark against:** ${config.previousPlan || 'No previous plan provided'}
+**Competitive Context:** ${config.competitiveContext || 'General market context'}
+**Avoid These Issues:** ${config.previousIssues || 'None'}
+
+## MULTI-DIMENSIONAL ANALYSIS FRAMEWORK
+You will analyze across THREE key dimensions:
+1. **PLANS DIMENSION**: Look for multiple adjusted plans/projections in the board decks (e.g., "Original Plan", "Revised Q2 Plan", "Updated Forecast") PLUS any user-provided plan above
+2. **TIME DIMENSION**: Different time periods (months, quarters, years)  
+3. **KPI DIMENSION**: The specific metrics requested by the user
+
+**CRITICAL**: When you find multiple plans in the documents, treat each as a separate benchmark. Compare actual performance against each plan version to show how targets evolved over time.
+
+## FORMATTING REQUIREMENTS
+- Use **bold** for key metrics, company names, and important findings
+- Use *italics* for emphasis and commentary
+- Use \`code formatting\` for specific numbers and percentages
+- Rich markdown formatting throughout (headers, bullets, etc.)
+- Include emojis for visual appeal and section headers
+
+## OUTPUT FORMAT
+1. 🏥 **Company Health Score** 
+   - Overall assessment: 🟢 GREEN / 🟡 YELLOW / 🔴 RED
+   - Brief justification in **bold key points**
+
+2. 📊 **Executive Summary** (3-4 key highlights with **bold** metrics)
+
+3. 📋 **KPI Table** (MANDATORY as specified above)
+
+4. 📈 **Trend Analysis** (quantified insights per KPI with *italicized* commentary)
+
+5. 🆘 **What Company Needs Help With**
+   - Primary areas: Recruiting, GTM, Fundraising, M&A, PR, Operations, etc.
+   - **Bold** the top 2-3 priority areas
+
+6. 🎯 **Key Diagnoses** (focus on diagnosis, minimal strategic advice)
+
+Focus on user's specific KPIs, use their table format, identify and benchmark against ALL plans found in documents (treat each plan version as a separate dimension), consider competitive context, avoid mentioned issues. Use rich markdown formatting throughout.
+
+**Remember**: This is a 3D analysis - Plans × Time × KPIs. Show how performance compares across multiple plan versions over time.`
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,9 +107,11 @@ export default function CustomKpiAnalysisModal({
       tableFormat: '',
       analysisMood: 'balanced',
       previousIssues: '',
-      industryContext: '',
-      businessModelDetails: ''
+      previousPlan: '',
+      competitiveContext: '',
+      customPrompt: ''
     })
+    setShowPromptEditor(false)
   }
 
   if (!isOpen) return null
@@ -159,32 +214,82 @@ export default function CustomKpiAnalysisModal({
             <p className="text-xs text-gray-500">Help us avoid repeating past mistakes</p>
           </div>
 
-          {/* Industry Context */}
+          {/* Previous Plan */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-900">
-              🏭 Industry & Competitive Context
+              📋 Previous Plan/Targets (Optional)
             </label>
             <textarea
-              value={config.industryContext}
-              onChange={(e) => setConfig({ ...config, industryContext: e.target.value })}
-              placeholder="e.g., We're in B2B SaaS with 12-month contracts, typical industry CAC payback is 18 months, our main competitor is X with different pricing model..."
+              value={config.previousPlan}
+              onChange={(e) => setConfig({ ...config, previousPlan: e.target.value })}
+              placeholder="e.g., Our Q3 plan was to reach $2M ARR, reduce CAC by 15%, achieve 95% gross retention. Board deck from last quarter projected 40% growth..."
               className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             />
-            <p className="text-xs text-gray-500">Industry benchmarks and competitive dynamics</p>
+            <p className="text-xs text-gray-500">Previous targets, board plans, or projections to benchmark against</p>
           </div>
 
-          {/* Business Model Details */}
+          {/* Competitive Context */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-900">
-              💰 Key Business Model Details
+              🏆 Competitive Context (Optional)
             </label>
             <textarea
-              value={config.businessModelDetails}
-              onChange={(e) => setConfig({ ...config, businessModelDetails: e.target.value })}
-              placeholder="e.g., Revenue mix: 70% subscription, 30% usage-based. Key unit economics: LTV/CAC = 4.2x, gross margin target = 80%. Seasonal patterns in Q4..."
+              value={config.competitiveContext}
+              onChange={(e) => setConfig({ ...config, competitiveContext: e.target.value })}
+              placeholder="e.g., Main competitors are X and Y. Industry benchmarks: typical CAC payback 18mo, NRR >110%. Recent market shifts include new entrants, pricing pressure..."
               className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             />
-            <p className="text-xs text-gray-500">Revenue streams, unit economics, and business model specifics</p>
+            <p className="text-xs text-gray-500">Competitive landscape, industry benchmarks, and market dynamics</p>
+          </div>
+
+          {/* Advanced: Prompt Editor */}
+          <div className="border-t border-gray-200 pt-6">
+            <button
+              type="button"
+              onClick={() => {
+                if (!showPromptEditor && !config.customPrompt) {
+                  setConfig({ ...config, customPrompt: generateDefaultPrompt() })
+                }
+                setShowPromptEditor(!showPromptEditor)
+              }}
+              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              disabled={isLoading}
+            >
+              <span className="text-base">⚙️</span>
+              <span className="font-medium">
+                {showPromptEditor ? 'Hide' : 'Advanced: Edit System Prompt'}
+              </span>
+              <span className="text-xs text-gray-400">
+                ({showPromptEditor ? 'collapse' : 'one-time override'})
+              </span>
+            </button>
+            
+            {showPromptEditor && (
+              <div className="mt-4 space-y-2">
+                <label className="block text-sm font-semibold text-gray-900">
+                  🤖 System Prompt (Advanced)
+                </label>
+                <textarea
+                  value={config.customPrompt || generateDefaultPrompt()}
+                  onChange={(e) => setConfig({ ...config, customPrompt: e.target.value })}
+                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-xs"
+                  placeholder="Edit the system prompt that will be sent to GPT-5..."
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-500">
+                    Customize how the AI analyzes your data. Changes apply to this analysis only.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, customPrompt: generateDefaultPrompt() })}
+                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                    disabled={isLoading}
+                  >
+                    Reset to Default
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
