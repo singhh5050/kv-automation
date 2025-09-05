@@ -1073,8 +1073,16 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
     **Remember**: This is a 3D analysis - Plans × Time × KPIs. Show how performance compares across multiple plan versions over time."""
 
         # Build a single user message with text + N input_file parts (Responses API)
+        if custom_config.get('customPrompt'):
+            # If using custom prompt, send minimal user message to avoid overriding instructions
+            user_text = f"Please process these {len(uploaded_files)} files for {company_name}."
+            print(f"🎯 Using minimal user message due to custom prompt")
+        else:
+            # Use default detailed user message for standard analysis
+            user_text = f"Analyze these {len(uploaded_files)} reports for {company_name}. Provide company health assessment, mandatory KPI table, trend analysis across multiple plan dimensions, and diagnostic insights as specified in the instructions."
+        
         user_content = [
-            {"type": "input_text", "text": f"Analyze these {len(uploaded_files)} reports for {company_name}. Create the mandatory KPI table exactly as I specified, then provide trend analysis and recommendations."}
+            {"type": "input_text", "text": user_text}
         ] + [
             {"type": "input_file", "file_id": f["file_id"]} for f in uploaded_files
         ]
