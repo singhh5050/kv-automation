@@ -947,7 +947,35 @@ Focus on user's specific KPIs, use their table format, consider their context, a
             max_output_tokens=4000,       # Responses API uses max_output_tokens
         )
         
-        analysis_result = resp.output_text or ""
+        # Debug: Print response structure
+        print(f"🔍 Response object type: {type(resp)}")
+        print(f"🔍 Response object attributes: {dir(resp)}")
+        if hasattr(resp, '__dict__'):
+            print(f"🔍 Response dict: {resp.__dict__}")
+        
+        # Extract content from Responses API - try the correct fields
+        analysis_result = ""
+        if hasattr(resp, 'output') and resp.output:
+            if isinstance(resp.output, list) and len(resp.output) > 0:
+                # resp.output is a list of output parts
+                if hasattr(resp.output[0], 'content'):
+                    analysis_result = resp.output[0].content or ""
+                    print(f"🔍 Using output[0].content: {len(analysis_result)} chars")
+                elif hasattr(resp.output[0], 'text'):
+                    analysis_result = resp.output[0].text or ""
+                    print(f"🔍 Using output[0].text: {len(analysis_result)} chars")
+            elif hasattr(resp.output, 'content'):
+                analysis_result = resp.output.content or ""
+                print(f"🔍 Using output.content: {len(analysis_result)} chars")
+            elif hasattr(resp.output, 'text'):
+                analysis_result = resp.output.text or ""
+                print(f"🔍 Using output.text: {len(analysis_result)} chars")
+        elif hasattr(resp, 'content'):
+            analysis_result = resp.content or ""
+            print(f"🔍 Using direct content: {len(analysis_result)} chars")
+        else:
+            print(f"🚨 Unknown response format, trying string conversion: {resp}")
+            analysis_result = str(resp)
         
         print(f"✅ Custom GPT-5 (Responses API) analysis completed successfully")
         print(f"📄 Analysis length: {len(analysis_result)} characters")
@@ -1142,7 +1170,35 @@ Use the following as the complete source of truth (chronologically order them):
             max_output_tokens=6000,       # Responses API uses max_output_tokens
         )
 
-        markdown_analysis = resp.output_text or ""
+        # Debug: Print response structure
+        print(f"🔍 Response object type: {type(resp)}")
+        print(f"🔍 Response object attributes: {dir(resp)}")
+        if hasattr(resp, '__dict__'):
+            print(f"🔍 Response dict: {resp.__dict__}")
+        
+        # Extract content from Responses API - try the correct fields
+        markdown_analysis = ""
+        if hasattr(resp, 'output') and resp.output:
+            if isinstance(resp.output, list) and len(resp.output) > 0:
+                # resp.output is a list of output parts
+                if hasattr(resp.output[0], 'content'):
+                    markdown_analysis = resp.output[0].content or ""
+                    print(f"🔍 Using output[0].content: {len(markdown_analysis)} chars")
+                elif hasattr(resp.output[0], 'text'):
+                    markdown_analysis = resp.output[0].text or ""
+                    print(f"🔍 Using output[0].text: {len(markdown_analysis)} chars")
+            elif hasattr(resp.output, 'content'):
+                markdown_analysis = resp.output.content or ""
+                print(f"🔍 Using output.content: {len(markdown_analysis)} chars")
+            elif hasattr(resp.output, 'text'):
+                markdown_analysis = resp.output.text or ""
+                print(f"🔍 Using output.text: {len(markdown_analysis)} chars")
+        elif hasattr(resp, 'content'):
+            markdown_analysis = resp.content or ""
+            print(f"🔍 Using direct content: {len(markdown_analysis)} chars")
+        else:
+            print(f"🚨 Unknown response format, trying string conversion: {resp}")
+            markdown_analysis = str(resp)
         
         if not markdown_analysis.strip():
             raise ValueError("Empty output from OpenAI model")
