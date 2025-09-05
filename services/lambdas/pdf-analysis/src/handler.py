@@ -1008,7 +1008,33 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
         # Check if user provided a custom prompt override
         if custom_config.get('customPrompt'):
             print(f"🎯 Using custom user-provided prompt ({len(custom_config['customPrompt'])} chars)")
-            system_prompt = custom_config['customPrompt']
+            custom_template = custom_config['customPrompt']
+            
+            # Create variables dictionary for substitution
+            template_vars = {
+                'company_name': company_name,
+                'sector': sector, 
+                'stage': stage,
+                'len(pdf_contents)': len(pdf_contents),
+                'len(uploaded_files)': len(uploaded_files),
+                'mood_instructions': mood_instructions,
+                'file_list': file_list,
+                "custom_config.get('targetKpis', 'Standard financial metrics')": custom_config.get('targetKpis', 'Standard financial metrics'),
+                "custom_config.get('tableFormat', 'KPIs as columns, time as rows')": custom_config.get('tableFormat', 'KPIs as columns, time as rows'),
+                "custom_config.get('previousPlan', 'No previous plan provided')": custom_config.get('previousPlan', 'No previous plan provided'),
+                "custom_config.get('competitiveContext', 'General market context')": custom_config.get('competitiveContext', 'General market context'),
+                "custom_config.get('previousIssues', 'None')": custom_config.get('previousIssues', 'None')
+            }
+            
+            # Perform variable substitution
+            try:
+                system_prompt = custom_template.format(**template_vars)
+                print(f"✅ Template variable substitution successful")
+            except KeyError as e:
+                print(f"⚠️ Template variable substitution failed: {e}")
+                print(f"⚠️ Using custom template as-is without substitution")
+                # Fallback to custom template as-is if substitution fails
+                system_prompt = custom_template
         else:
             # Create the default custom analysis prompt
             system_prompt = f"""You are a KV financial analyst. Analyze {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
