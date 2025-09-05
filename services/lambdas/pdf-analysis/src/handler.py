@@ -14,47 +14,115 @@ from datetime import datetime
 # Add the Lambda layer path for dependencies
 sys.path.insert(0, '/opt/python')
 
+def debug_object_recursively(obj, path="", max_depth=5, current_depth=0):
+    """Recursively debug an object to find all fields and their values"""
+    if current_depth >= max_depth:
+        print(f"🔍 {path}: <max_depth_reached>")
+        return
+    
+    try:
+        obj_type = type(obj).__name__
+        
+        if isinstance(obj, str):
+            snippet = (obj[:100] + "...") if len(obj) > 100 else obj
+            print(f"🔍 {path}: str[{len(obj)}] = '{snippet}'")
+        elif isinstance(obj, (int, float, bool, type(None))):
+            print(f"🔍 {path}: {obj_type} = {obj}")
+        elif isinstance(obj, (list, tuple)):
+            print(f"🔍 {path}: {obj_type}[{len(obj)}]")
+            for i, item in enumerate(obj[:5]):  # Only show first 5 items
+                debug_object_recursively(item, f"{path}[{i}]", max_depth, current_depth + 1)
+            if len(obj) > 5:
+                print(f"🔍 {path}: ... and {len(obj) - 5} more items")
+        elif isinstance(obj, dict):
+            print(f"🔍 {path}: dict with keys: {list(obj.keys())}")
+            for key, value in obj.items():
+                debug_object_recursively(value, f"{path}.{key}", max_depth, current_depth + 1)
+        elif hasattr(obj, '__dict__'):
+            attrs = [attr for attr in dir(obj) if not attr.startswith('_')]
+            print(f"🔍 {path}: {obj_type} with attrs: {attrs}")
+            for attr in attrs[:10]:  # Only show first 10 attributes
+                try:
+                    value = getattr(obj, attr)
+                    if not callable(value):  # Skip methods
+                        debug_object_recursively(value, f"{path}.{attr}", max_depth, current_depth + 1)
+                except Exception as e:
+                    print(f"🔍 {path}.{attr}: <error accessing: {e}>")
+        else:
+            print(f"🔍 {path}: {obj_type} = {str(obj)[:100]}")
+    except Exception as e:
+        print(f"🔍 {path}: <error debugging: {e}>")
+
 def extract_output_text(resp) -> str:
     """
     Robustly extract plain text from Responses API objects.
     Prefers the SDK helper .output_text, then falls back to flattening content parts.
     """
+    print(f"🔍 extract_output_text called with resp type: {type(resp)}")
+    
     # 1) Preferred: SDK helper (handles multiple parts automatically)
     txt = getattr(resp, "output_text", None)
+    print(f"🔍 resp.output_text = {txt} (type: {type(txt)})")
     if isinstance(txt, str) and txt.strip():
+        print(f"🔍 Using SDK helper output_text: {len(txt)} chars")
         return txt.strip()
 
     # 2) Fallback: flatten output → content → text.value
+    print(f"🔍 Falling back to manual extraction")
     out = []
     output = getattr(resp, "output", None)
+    print(f"🔍 resp.output = {output} (type: {type(output)})")
+    
     if output:
         # resp.output is typically a list of "message" objects
-        for item in (output if isinstance(output, list) else [output]):
+        items = output if isinstance(output, list) else [output]
+        print(f"🔍 Processing {len(items)} output items")
+        
+        for i, item in enumerate(items):
+            print(f"🔍 Item {i}: type={type(item)}, dir={[attr for attr in dir(item) if not attr.startswith('_')]}")
+            
             content = getattr(item, "content", None)
             if not content and isinstance(item, dict):
                 content = item.get("content")
+            print(f"🔍 Item {i} content: {content} (type: {type(content)})")
+            
             if not content:
                 continue
 
-            for c in (content if isinstance(content, list) else [content]):
+            content_items = content if isinstance(content, list) else [content]
+            print(f"🔍 Processing {len(content_items)} content items for item {i}")
+            
+            for j, c in enumerate(content_items):
+                print(f"🔍 Content {j}: type={type(c)}, dir={[attr for attr in dir(c) if not attr.startswith('_')]}")
+                
                 # pydantic object or dict; look for .type and .text.value
                 ctype = getattr(c, "type", None) or (c.get("type") if isinstance(c, dict) else None)
+                print(f"🔍 Content {j} type: {ctype}")
+                
                 if ctype in ("output_text", "text"):
                     # pydantic-style
                     text_obj = getattr(c, "text", None)
+                    print(f"🔍 Content {j} text_obj: {text_obj} (type: {type(text_obj)})")
+                    
                     if text_obj and hasattr(text_obj, "value"):
                         val = text_obj.value or ""
+                        print(f"🔍 Found pydantic text.value: {len(val)} chars")
                         if val:
                             out.append(val)
                     # dict-style
                     elif isinstance(c, dict):
                         t = c.get("text")
+                        print(f"🔍 Dict-style text: {t} (type: {type(t)})")
                         if isinstance(t, dict) and t.get("value"):
+                            print(f"🔍 Found dict text.value: {len(t['value'])} chars")
                             out.append(t["value"])
                         elif isinstance(t, str):
+                            print(f"🔍 Found direct text string: {len(t)} chars")
                             out.append(t)
 
-    return "\n".join(s for s in out if s).strip()
+    result = "\n".join(s for s in out if s).strip()
+    print(f"🔍 extract_output_text returning: {len(result)} chars")
+    return result
 
 def lambda_handler(event, context):
     """
@@ -989,13 +1057,22 @@ Focus on user's specific KPIs, use their table format, consider their context, a
             max_output_tokens=4000,       # Responses API uses max_output_tokens
         )
         
+        # Debug the entire response object recursively
+        print(f"🔍 ========== FULL RESPONSE DEBUG ==========")
+        debug_object_recursively(resp, "resp", max_depth=4)
+        print(f"🔍 ========== END RESPONSE DEBUG ==========")
+        
         analysis_result = extract_output_text(resp)
+        print(f"🔍 extract_output_text returned: {len(analysis_result)} chars")
         
         # Guard: don't clobber DB with empty output
         if not analysis_result:
             # Optional: include usage to help debug partial/empty responses
             usage = getattr(resp, "usage", None)
             out_toks = getattr(usage, "output_tokens", None) if usage else None
+            print(f"🚨 EMPTY OUTPUT DETECTED - failing job instead of persisting")
+            print(f"🔍 usage object: {usage}")
+            print(f"🔍 output_tokens: {out_toks}")
             raise RuntimeError(f"Empty model output (output_tokens={out_toks}). Failing job instead of persisting.")
         
         # Log a short preview + token usage for observability
