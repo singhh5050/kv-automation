@@ -1533,9 +1533,9 @@ export default function CompanyDetailPage() {
                             Analysis in Progress
                           </h4>
                           <p className="text-blue-700 text-xs mt-1">
-                            Status: {asyncAnalysis.currentJob.status} • Progress: {asyncAnalysis.progress}%
+                            Analyzing your reports...
                             {asyncAnalysis.currentJob.reports_analyzed && (
-                              <span> • Reports analyzed: {asyncAnalysis.currentJob.reports_analyzed}</span>
+                              <span> • {asyncAnalysis.currentJob.reports_analyzed} reports processed</span>
                             )}
                           </p>
                           {asyncAnalysis.progress > 0 && (
