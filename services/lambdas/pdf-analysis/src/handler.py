@@ -833,13 +833,14 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
     Use OpenAI to analyze multiple PDFs with custom user-defined prompts and requirements
     Returns detailed markdown analysis based on user specifications
     """
-    import os, tempfile
+    import os, tempfile, concurrent.futures
     
     # Check for API key
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise Exception("OpenAI API key not configured")
     
+    client = None
     uploaded_files = []
     tmp_paths = []
     
@@ -928,27 +929,28 @@ Example:
 
 Focus on user's specific KPIs, use their table format, consider their context, avoid their mentioned issues."""
 
-        # Create the user message
-        user_message = f"""Analyze these {len(uploaded_files)} reports for {company_name}. Create the mandatory KPI table exactly as I specified, then provide trend analysis and recommendations."""
+        # Build a single user message with text + N input_file parts (Responses API)
+        user_content = [
+            {"type": "input_text", "text": f"Analyze these {len(uploaded_files)} reports for {company_name}. Create the mandatory KPI table exactly as I specified, then provide trend analysis and recommendations."}
+        ] + [
+            {"type": "input_file", "file_id": f["file_id"]} for f in uploaded_files
+        ]
 
         # Create the completion
-        print(f"🤖 Sending custom analysis request to GPT-5...")
+        print(f"🤖 Sending custom analysis request to GPT-5 (Responses API)...")
         
-        completion = client.chat.completions.create(
+        resp = client.responses.create(
             model="gpt-5",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message, "attachments": [{"file_id": f['file_id']} for f in uploaded_files]}
-            ],
+            instructions=system_prompt,   # system/developer guidance
+            input=[{"role": "user", "content": user_content}],
+            reasoning={"effort": "high"}, # enables thinking mode
             temperature=0.1,
-            max_tokens=4000,
-            reasoning_effort="high",
-            verbosity="high"
+            max_output_tokens=4000,       # Responses API uses max_output_tokens
         )
         
-        analysis_result = completion.choices[0].message.content
+        analysis_result = resp.output_text or ""
         
-        print(f"✅ Custom GPT-5 analysis completed successfully")
+        print(f"✅ Custom GPT-5 (Responses API) analysis completed successfully")
         print(f"📄 Analysis length: {len(analysis_result)} characters")
         
         return analysis_result
@@ -957,12 +959,21 @@ Focus on user's specific KPIs, use their table format, consider their context, a
         print(f"❌ Custom OpenAI analysis failed: {str(e)}")
         raise e
     finally:
-        # Clean up temporary files
-        for tmp_path in tmp_paths:
+        # Best-effort remote cleanup
+        if client is not None:
+            for f in uploaded_files:
+                try:
+                    client.files.delete(f["file_id"])
+                    print(f"🗑️ Deleted {f.get('file_name','(unknown)')} from OpenAI storage")
+                except Exception as ce:
+                    print(f"⚠️ File cleanup failed for {f.get('file_name','(unknown)')}: {ce}")
+        # Local temp files
+        for p in tmp_paths:
             try:
-                os.unlink(tmp_path)
-            except Exception as cleanup_error:
-                print(f"⚠️ Local file cleanup failed: {cleanup_error}")
+                if os.path.exists(p):
+                    os.unlink(p)
+            except Exception as ce:
+                print(f"⚠️ Local file cleanup failed: {ce}")
 
 
 def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, stage: str) -> str:
@@ -970,13 +981,14 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
     Use OpenAI to analyze multiple PDFs and extract KPIs based on sector and stage
     Returns detailed markdown analysis
     """
-    import os, tempfile
+    import os, tempfile, concurrent.futures
     
     # Check for API key
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise Exception("OpenAI API key not configured")
     
+    client = None
     uploaded_files = []
     tmp_paths = []
     
@@ -1115,45 +1127,24 @@ Use the following as the complete source of truth (chronologically order them):
 - Avoid vague statements without quantified support
 - Do NOT include any "KPI Trend Analysis" headers in the output"""
 
-        # Build content parts for Responses API
-        content_parts = [{"type": "input_text", "text": system_prompt}]
-        
-        # Add instruction text
-        content_parts.append({
-            "type": "input_text", 
-            "text": f"""Analyze the provided board deck reports for {company_name} and provide a comprehensive quantified KPI analysis following the system prompt requirements exactly.
+        # Build a single user message with text + N input_file parts (Responses API)
+        user_content = [
+            {"type": "input_text", "text": f"Analyze these {len(uploaded_files)} reports for {company_name}. Provide comprehensive KPI analysis with structured tables, exactly per the instructions."}
+        ] + [
+            {"type": "input_file", "file_id": f["file_id"]} for f in uploaded_files
+        ]
 
-Focus on extracting structured time-series data and providing board-level insights with quantified trends (MoM, QoQ, YoY, YTD) for every available KPI.
-
-TIMELIMIT: You are running out of time. Respond in under 2.5 minutes, while maintaining truthfulness and accuracy and detail.
-
-CRITICAL: Use proper markdown table format with | separators for all KPI tables. Do not use plain text or other table formats.
-
-IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use only the section headers specified in the OUTPUT FORMAT."""
-        })
-        
-        # Add all uploaded PDF files
-        for file_info in uploaded_files:
-            content_parts.append({
-                "type": "input_file",
-                "file_id": file_info['file_id']
-            })
-        
-        print("🚀 Calling GPT-5 for multi-PDF KPI analysis...")
-        
-        completion = client.chat.completions.create(
+        print("🚀 Calling GPT-5 (Responses API) for multi-PDF KPI analysis...")
+        resp = client.responses.create(
             model="gpt-5",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Analyze these {len(uploaded_files)} reports for {company_name}. Provide comprehensive KPI analysis with structured tables.", "attachments": [{"file_id": f['file_id']} for f in uploaded_files]}
-            ],
+            instructions=system_prompt,   # system/developer guidance
+            input=[{"role": "user", "content": user_content}],
+            reasoning={"effort": "high"}, # enables thinking mode
             temperature=0.1,
-            max_tokens=6000,
-            reasoning_effort="high",
-            verbosity="high"
+            max_output_tokens=6000,       # Responses API uses max_output_tokens
         )
-        
-        markdown_analysis = completion.choices[0].message.content or ""
+
+        markdown_analysis = resp.output_text or ""
         
         if not markdown_analysis.strip():
             raise ValueError("Empty output from OpenAI model")
@@ -1165,21 +1156,21 @@ IMPORTANT: Do not include any "KPI Trend Analysis" headers in your output. Use o
         print(f"❌ OpenAI KPI analysis failed: {str(e)}")
         raise e
     finally:
-        # Cleanup uploaded files from OpenAI
-        for file_info in uploaded_files:
+        # Best-effort remote cleanup
+        if client is not None:
+            for f in uploaded_files:
+                try:
+                    client.files.delete(f["file_id"])
+                    print(f"🗑️ Deleted {f.get('file_name','(unknown)')} from OpenAI storage")
+                except Exception as ce:
+                    print(f"⚠️ File cleanup failed for {f.get('file_name','(unknown)')}: {ce}")
+        # Local temp files
+        for p in tmp_paths:
             try:
-                client.files.delete(file_info['file_id'])
-                print(f"🗑️ Deleted {file_info['file_name']} from OpenAI storage")
-            except Exception as cleanup_error:
-                print(f"⚠️ File cleanup failed for {file_info['file_name']}: {cleanup_error}")
-        
-        # Cleanup local temp files
-        for tmp_path in tmp_paths:
-            try:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except Exception as cleanup_error:
-                print(f"⚠️ Local file cleanup failed: {cleanup_error}")
+                if os.path.exists(p):
+                    os.unlink(p)
+            except Exception as ce:
+                print(f"⚠️ Local file cleanup failed: {ce}")
 
 
 def get_mood_instructions(mood: str) -> str:
