@@ -39,25 +39,18 @@ export default function CustomKpiAnalysisModal({
 
   const [showPromptEditor, setShowPromptEditor] = useState(false)
   
-  // Generate the default system prompt for editing
-  const generateDefaultPrompt = () => {
-    const moodInstructions = {
-      'cheerleader': "## TONE: CHEERLEADER 📣\nBe optimistic and encouraging. Highlight wins, frame challenges as opportunities.",
-      'balanced': "## TONE: BALANCED ⚖️\nUse neutral, professional language. Present facts objectively.",
-      'skeptical': "## TONE: WALL STREET SKEPTIC 🤨\nApply rigorous scrutiny. Question assumptions, highlight risks.",
-      'roast': "## TONE: ROAST MODE 🔥\nBe direct and brutally honest (but professional). Call out issues without sugar-coating."
-    }[config.analysisMood]
+  // Generate the template system prompt with variables for editing
+  const generateTemplatePrompt = () => {
+    return `You are a KV financial analyst. Analyze reports for {company_name}.
 
-    return `You are a KV financial analyst. Analyze reports for ${companyName}.
-
-${moodInstructions}
+{mood_instructions}
 
 ## USER REQUIREMENTS
-**Target KPIs:** ${config.targetKpis || 'Standard financial metrics'}
-**Table Format:** ${config.tableFormat || 'KPIs as columns, time as rows'}
-**Previous Plan to benchmark against:** ${config.previousPlan || 'No previous plan provided'}
-**Competitive Context:** ${config.competitiveContext || 'General market context'}
-**Avoid These Issues:** ${config.previousIssues || 'None'}
+**Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
+**Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
+**Previous Plan to benchmark against:** {custom_config.get('previousPlan', 'No previous plan provided')}
+**Competitive Context:** {custom_config.get('competitiveContext', 'General market context')}
+**Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
 
 ## MULTI-DIMENSIONAL ANALYSIS FRAMEWORK
 You will analyze across THREE key dimensions:
@@ -90,6 +83,9 @@ You will analyze across THREE key dimensions:
    - **Bold** the top 2-3 priority areas
 
 6. 🎯 **Key Diagnoses** (focus on diagnosis, minimal strategic advice)
+
+## FILES
+{file_list}
 
 Focus on user's specific KPIs, use their table format, identify and benchmark against ALL plans found in documents (treat each plan version as a separate dimension), consider competitive context, avoid mentioned issues. Use rich markdown formatting throughout.
 
@@ -248,7 +244,7 @@ Focus on user's specific KPIs, use their table format, identify and benchmark ag
               type="button"
               onClick={() => {
                 if (!showPromptEditor && !config.customPrompt) {
-                  setConfig({ ...config, customPrompt: generateDefaultPrompt() })
+                  setConfig({ ...config, customPrompt: generateTemplatePrompt() })
                 }
                 setShowPromptEditor(!showPromptEditor)
               }}
@@ -260,34 +256,54 @@ Focus on user's specific KPIs, use their table format, identify and benchmark ag
                 {showPromptEditor ? 'Hide' : 'Advanced: Edit System Prompt'}
               </span>
               <span className="text-xs text-gray-400">
-                ({showPromptEditor ? 'collapse' : 'one-time override'})
+                ({showPromptEditor ? 'collapse' : 'template with variables'})
               </span>
             </button>
             
             {showPromptEditor && (
-              <div className="mt-4 space-y-2">
-                <label className="block text-sm font-semibold text-gray-900">
-                  🤖 System Prompt (Advanced)
-                </label>
-                <textarea
-                  value={config.customPrompt || generateDefaultPrompt()}
-                  onChange={(e) => setConfig({ ...config, customPrompt: e.target.value })}
-                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-xs"
-                  placeholder="Edit the system prompt that will be sent to GPT-5..."
-                />
+              <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-gray-500">
-                    Customize how the AI analyzes your data. Changes apply to this analysis only.
-                  </p>
+                  <label className="block text-sm font-semibold text-gray-900">
+                    🤖 System Prompt Template
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setConfig({ ...config, customPrompt: generateDefaultPrompt() })}
+                    onClick={() => setConfig({ ...config, customPrompt: generateTemplatePrompt() })}
                     className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
                     disabled={isLoading}
                   >
-                    Reset to Default
+                    Reset to Template
                   </button>
                 </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
+                  <div className="flex items-start space-x-2">
+                    <span className="text-blue-600 font-semibold">💡</span>
+                    <div className="text-blue-800">
+                      <p className="font-semibold mb-1">Template Variables:</p>
+                      <p>Text in <span className="bg-blue-100 px-1 rounded font-mono">{`{curly_braces}`}</span> gets replaced with your form inputs:</p>
+                      <ul className="mt-1 space-y-0.5 text-blue-700">
+                        <li>• <code className="bg-blue-100 px-1 rounded">{`{company_name}`}</code> → {companyName}</li>
+                        <li>• <code className="bg-blue-100 px-1 rounded">{`{custom_config.get('targetKpis', '...')}`}</code> → Your KPIs</li>
+                        <li>• <code className="bg-blue-100 px-1 rounded">{`{mood_instructions}`}</code> → Analysis personality</li>
+                        <li>• <code className="bg-blue-100 px-1 rounded">{`{file_list}`}</code> → PDF files being analyzed</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                
+                <textarea
+                  value={config.customPrompt || generateTemplatePrompt()}
+                  onChange={(e) => setConfig({ ...config, customPrompt: e.target.value })}
+                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-xs"
+                  placeholder="Edit the system prompt template that will be sent to GPT-5..."
+                  style={{
+                    background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, rgba(59, 130, 246, 0.02) 100%)'
+                  }}
+                />
+                <p className="text-xs text-gray-500">
+                  Customize the exact instructions sent to GPT-5. Variables in {`{}`} will be replaced with your inputs. Changes apply to this analysis only.
+                </p>
               </div>
             )}
           </div>
