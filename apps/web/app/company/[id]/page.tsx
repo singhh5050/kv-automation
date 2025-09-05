@@ -24,6 +24,8 @@ import {
 } from 'recharts'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
+import PdfExportModal, { ExportConfig } from '@/components/company/PdfExportModal'
+import { generatePDF } from '@/lib/pdfGenerator'
 
 // Currency formatting utility
 const formatCurrency = (value: string | number | null | undefined): string => {
@@ -321,6 +323,10 @@ export default function CompanyDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [reportToDelete, setReportToDelete] = useState<any>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  // PDF Export state
+  const [showPdfModal, setShowPdfModal] = useState(false)
+  const [pdfExporting, setPdfExporting] = useState(false)
 
   // (Chart remount on resize is handled inside SimpleCashChart)
 
@@ -895,6 +901,22 @@ export default function CompanyDetailPage() {
     setReportToDelete(null)
   }
 
+  // PDF Export handler
+  const handlePdfExport = async (config: ExportConfig) => {
+    if (!company) return
+
+    setPdfExporting(true)
+    try {
+      await generatePDF(company, config)
+      setShowPdfModal(false)
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setPdfExporting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Compact Header */}
@@ -1002,6 +1024,16 @@ export default function CompanyDetailPage() {
                 </p>
               </div>
             </div>
+            
+            {/* PDF Export Button */}
+            <button
+              onClick={() => setShowPdfModal(true)}
+              disabled={pdfExporting}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors shadow-sm"
+            >
+              <span>📄</span>
+              <span>{pdfExporting ? 'Exporting...' : 'Export PDF'}</span>
+            </button>
           </div>
           
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
@@ -2787,6 +2819,16 @@ export default function CompanyDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* PDF Export Modal */}
+      {company && (
+        <PdfExportModal
+          company={company}
+          isOpen={showPdfModal}
+          onClose={() => setShowPdfModal(false)}
+          onExport={handlePdfExport}
+        />
       )}
     </div>
   )

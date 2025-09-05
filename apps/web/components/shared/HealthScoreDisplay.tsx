@@ -25,7 +25,7 @@ export default function HealthScoreDisplay({ content }: HealthScoreDisplayProps)
     }
     
     // Extract the justification (text after the score until next section)
-    const healthSectionMatch = text.match(/🏥.*?Company Health Score.*?\n(.*?)(?=\n##|\n\d+\.|\n�|$)/s)
+    const healthSectionMatch = text.match(/🏥.*?Company Health Score.*?\n(.*?)(?=\n##|\n\d+\.|\n�|$)/)
     const justification = healthSectionMatch ? healthSectionMatch[1].trim() : ''
     
     return { score, justification }
