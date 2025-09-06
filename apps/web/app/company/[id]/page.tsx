@@ -335,6 +335,105 @@ export default function CompanyDetailPage() {
   const [healthCheckResult, setHealthCheckResult] = useState<HealthCheckResult | null>(null)
   const [healthCheckError, setHealthCheckError] = useState<string | null>(null)
 
+  // Report navigation state
+  const [selectedReportIndex, setSelectedReportIndex] = useState(0)
+
+  // Helper functions for report navigation
+  const availableReports = company?.financial_reports || []
+  const latestReport = company?.financial_reports?.[0]
+  const currentReport = availableReports[selectedReportIndex] || latestReport
+  const hasMultipleReports = availableReports.length > 1
+
+  const goToPreviousReport = () => {
+    if (selectedReportIndex > 0) {
+      setSelectedReportIndex(selectedReportIndex - 1)
+    }
+  }
+
+  const goToNextReport = () => {
+    if (selectedReportIndex < availableReports.length - 1) {
+      setSelectedReportIndex(selectedReportIndex + 1)
+    }
+  }
+
+  // Reset report index when company changes
+  useEffect(() => {
+    setSelectedReportIndex(0)
+  }, [company?.company?.id])
+
+  // Report Navigation Component
+  const ReportNavigator = ({ title }: { title: string }) => {
+    if (!hasMultipleReports) return null
+
+    const formatDate = (dateStr: string | null | undefined) => {
+      if (!dateStr) return 'N/A'
+      try {
+        const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return 'Invalid Date'
+        return date.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'short',
+          day: 'numeric'
+        })
+      } catch {
+        return dateStr
+      }
+    }
+
+    return (
+      <div className="flex items-center justify-between mb-3 p-2 bg-gray-50 rounded-lg border">
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-medium text-gray-700">{title}</span>
+          <div className="flex items-center space-x-1 text-xs text-gray-500">
+            <span>({selectedReportIndex + 1} of {availableReports.length})</span>
+            {currentReport && (
+              <>
+                <span>•</span>
+                <span>{formatDate((currentReport as any).report_date)}</span>
+                {(currentReport as any).report_period && (
+                  <>
+                    <span>•</span>
+                    <span>{(currentReport as any).report_period}</span>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={goToPreviousReport}
+            disabled={selectedReportIndex === 0}
+            className={`p-1 rounded transition-colors ${
+              selectedReportIndex === 0 
+                ? 'text-gray-300 cursor-not-allowed' 
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'
+            }`}
+            title="Previous report"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <button
+            onClick={goToNextReport}
+            disabled={selectedReportIndex === availableReports.length - 1}
+            className={`p-1 rounded transition-colors ${
+              selectedReportIndex === availableReports.length - 1
+                ? 'text-gray-300 cursor-not-allowed' 
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'
+            }`}
+            title="Next report"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // (Chart remount on resize is handled inside SimpleCashChart)
 
   // Utility functions for formatting
@@ -653,7 +752,6 @@ export default function CompanyDetailPage() {
   }
 
   const displayName = company.company.name // Use exact name from database
-  const latestReport = company.financial_reports[0]
   
   // Adjustable panel weights (developer-friendly): cash | milestones | team
   // Edit these numbers to change horizontal proportions; they are treated as fr units
@@ -878,7 +976,12 @@ export default function CompanyDetailPage() {
       if (result.error) {
         console.log('ℹ️ No saved health check found or error:', result.error)
         setHealthCheckResult(null)
+      } else if (result.success && result.data && result.data.score) {
+        // Handle nested response structure: {success: true, data: {score: 'GREEN', ...}}
+        setHealthCheckResult(result.data)
+        console.log('✅ Loaded saved health check:', result.data.score)
       } else if (result && result.score) {
+        // Handle direct response structure: {score: 'GREEN', ...}
         setHealthCheckResult(result)
         console.log('✅ Loaded saved health check:', result.score)
       } else {
@@ -1109,7 +1212,7 @@ export default function CompanyDetailPage() {
           </div>
           
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
               <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">👤 CEO</p>
               <p className="text-sm font-bold text-gray-900">
@@ -1163,6 +1266,52 @@ export default function CompanyDetailPage() {
               <p className="text-xs font-medium text-gray-500 mb-1">📍 Location</p>
               <p className="text-sm font-bold text-gray-900 truncate">
                 {enrichmentData?.enrichment?.extracted?.location?.city || 'N/A'}
+              </p>
+            </div>
+            
+            {/* Health Check Section */}
+            <div 
+              className={`p-3 rounded-md cursor-pointer transition-all ${
+                healthCheckResult
+                  ? healthCheckResult.score === 'GREEN'
+                    ? 'bg-green-50 border border-green-200 hover:bg-green-100'
+                    : healthCheckResult.score === 'YELLOW'
+                    ? 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
+                    : 'bg-red-50 border border-red-200 hover:bg-red-100'
+                  : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+              onClick={() => setShowHealthCheckModal(true)}
+              title="Click to run or view health check details"
+            >
+              <p className="text-xs font-medium text-gray-500 mb-1">🏥 Health</p>
+              <p className={`text-sm font-bold truncate ${
+                healthCheckResult
+                  ? healthCheckResult.score === 'GREEN'
+                    ? 'text-green-700'
+                    : healthCheckResult.score === 'YELLOW'
+                    ? 'text-yellow-700'
+                    : 'text-red-700'
+                  : 'text-gray-900'
+              }`}>
+                {healthCheckLoading ? (
+                  <span className="flex items-center gap-1">
+                    <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Analyzing...</span>
+                  </span>
+                ) : healthCheckResult ? (
+                  <span className="flex items-center gap-1">
+                    <span>
+                      {healthCheckResult.score === 'GREEN' ? '🟢' : 
+                       healthCheckResult.score === 'YELLOW' ? '🟡' : '🔴'}
+                    </span>
+                    <span>
+                      {healthCheckResult.score === 'GREEN' ? 'Healthy' : 
+                       healthCheckResult.score === 'YELLOW' ? 'Caution' : 'Critical'}
+                    </span>
+                  </span>
+                ) : (
+                  'Run Check'
+                )}
               </p>
             </div>
           </div>
@@ -1443,10 +1592,11 @@ export default function CompanyDetailPage() {
                       <h3 className="section-title">Upcoming Milestones</h3>
                     </div>
                   </div>
+                  <ReportNavigator title="Milestones" />
                   
-                  {(latestReport as any)?.next_milestones ? (
+                  {(currentReport as any)?.next_milestones ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100 min-h-[160px] max-h-[420px] overflow-y-auto">
-                      <MarkdownContent content={(latestReport as any).next_milestones} className="text-sm leading-7" />
+                      <MarkdownContent content={(currentReport as any).next_milestones} className="text-sm leading-7" />
                     </div>
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-lg border-2 border-dashed border-gray-200 text-center">
@@ -1757,16 +1907,17 @@ export default function CompanyDetailPage() {
                        <div className="mb-2">
                          <h3 className="section-title">Key Updates</h3>
                        </div>
-                       {latestReport ? (
+                       <ReportNavigator title="Board Deck Summary" />
+                       {currentReport ? (
                           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 space-y-3">
-                            <MarkdownContent content={(latestReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
-                            {(latestReport as any)?.key_risks && (
+                            <MarkdownContent content={(currentReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
+                            {(currentReport as any)?.key_risks && (
                               <div className="bg-gradient-to-br from-red-50 to-pink-50 p-3 rounded border border-red-100">
                                 <div className="flex items-center space-x-1 mb-2">
                                   <span className="text-xs">⚠️</span>
                                   <h4 className="font-semibold text-red-900 text-sm">Key Risks</h4>
                                 </div>
-                                <MarkdownContent content={(latestReport as any).key_risks} className="text-sm leading-7" />
+                                <MarkdownContent content={(currentReport as any).key_risks} className="text-sm leading-7" />
                               </div>
                             )}
                           </div>
@@ -1785,15 +1936,16 @@ export default function CompanyDetailPage() {
                        <div className="mb-2">
                          <h3 className="section-title">Sector Updates</h3>
                        </div>
+                       <ReportNavigator title="Sector Analysis" />
                        <div className="space-y-3">
                          <div>
                           <div className="flex items-center space-x-1 mb-2">
                             <span className="text-xs">{sectorLabels.icon}</span>
                             <h4 className="font-semibold text-orange-900 text-sm">{sectorLabels.highlightA}</h4>
                            </div>
-                           {(latestReport as any)?.sector_highlight_a ? (
+                           {(currentReport as any)?.sector_highlight_a ? (
                              <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-3 rounded border border-orange-100">
-                               <MarkdownContent content={(latestReport as any).sector_highlight_a} className="text-sm leading-7" />
+                               <MarkdownContent content={(currentReport as any).sector_highlight_a} className="text-sm leading-7" />
                              </div>
                            ) : (
                              <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
@@ -1808,9 +1960,9 @@ export default function CompanyDetailPage() {
                               <span className="text-xs">🔬</span>
                               <h4 className="font-semibold text-indigo-900 text-sm">{sectorLabels.highlightB}</h4>
                            </div>
-                           {(latestReport as any)?.sector_highlight_b ? (
+                           {(currentReport as any)?.sector_highlight_b ? (
                              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded border border-indigo-100">
-                               <MarkdownContent content={(latestReport as any).sector_highlight_b} className="text-sm leading-7" />
+                               <MarkdownContent content={(currentReport as any).sector_highlight_b} className="text-sm leading-7" />
                              </div>
                            ) : (
                              <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
@@ -1828,23 +1980,24 @@ export default function CompanyDetailPage() {
                        <div className="mb-2">
                          <h3 className="section-title">Additional Details</h3>
                        </div>
-                       {latestReport ? (
+                       <ReportNavigator title="Additional Details" />
+                       {currentReport ? (
                          <div className="grid grid-cols-1 gap-3">
                            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-3 rounded border border-purple-100">
                               <div className="flex items-center space-x-1 mb-2">
                                 <span className="text-xs">⚖️</span>
                                 <h4 className="font-semibold text-purple-900 text-sm">Budget vs Actual</h4>
                              </div>
-                             <MarkdownContent content={(latestReport as any).budget_vs_actual || 'N/A'} className="text-sm leading-7 text-purple-800" />
+                             <MarkdownContent content={(currentReport as any).budget_vs_actual || 'N/A'} className="text-sm leading-7 text-purple-800" />
                            </div>
                          
-                           {(latestReport as any)?.personnel_updates && (
+                           {(currentReport as any)?.personnel_updates && (
                              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded border border-green-100">
                                 <div className="flex items-center space-x-1 mb-2">
                                   <span className="text-xs">👥</span>
                                   <h4 className="font-semibold text-green-900 text-sm">Personnel Updates</h4>
                                </div>
-                               <MarkdownContent content={(latestReport as any).personnel_updates} className="text-sm leading-7" />
+                               <MarkdownContent content={(currentReport as any).personnel_updates} className="text-sm leading-7" />
                              </div>
                            )}
                          

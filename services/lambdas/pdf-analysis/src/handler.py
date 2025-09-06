@@ -2481,7 +2481,7 @@ def analyze_company_health(company_id: int, criticality_level: int = 5, manual_s
         
         # Get the most recent board deck PDF
         cursor.execute("""
-            SELECT id, file_name, report_date, report_period, s3_key,
+            SELECT id, file_name, report_date, report_period,
                    cash_on_hand, monthly_burn_rate, cash_out_date, runway,
                    budget_vs_actual, financial_summary, key_risks
             FROM financial_reports 
@@ -2496,18 +2496,20 @@ def analyze_company_health(company_id: int, criticality_level: int = 5, manual_s
             conn.close()
             return {'success': False, 'error': f'No financial reports found for company {company_id}'}
         
-        report_id, file_name, report_date, report_period, s3_key, cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual, financial_summary, key_risks = report_row
+        report_id, file_name, report_date, report_period, cash_on_hand, monthly_burn_rate, cash_out_date, runway, budget_vs_actual, financial_summary, key_risks = report_row
         
         print(f"📄 Most recent report: {file_name} ({report_date})")
         
-        # Get all financial summaries for context
+        # Get all financial data for comprehensive context (last 10 reports)
         cursor.execute("""
-            SELECT report_date, report_period, cash_on_hand, monthly_burn_rate, 
-                   cash_out_date, runway, financial_summary, key_risks
+            SELECT file_name, report_date, report_period, sector, cash_on_hand, 
+                   monthly_burn_rate, cash_out_date, runway, budget_vs_actual,
+                   financial_summary, sector_highlight_a, sector_highlight_b,
+                   key_risks, personnel_updates, next_milestones
             FROM financial_reports 
             WHERE company_id = %s 
             ORDER BY report_date DESC 
-            LIMIT 5
+            LIMIT 10
         """, [company_id])
         
         historical_data = cursor.fetchall()
@@ -2517,28 +2519,48 @@ def analyze_company_health(company_id: int, criticality_level: int = 5, manual_s
         # Download the most recent PDF from S3
         import boto3
         s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-automation-reports')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
         
-        try:
-            pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
-            pdf_bytes = pdf_object['Body'].read()
-            print(f"📥 Downloaded PDF: {len(pdf_bytes)} bytes")
-        except Exception as s3_error:
-            print(f"⚠️ Could not download PDF from S3: {s3_error}")
-            pdf_bytes = None
+        # Try to find the PDF in S3 using common key patterns
+        pdf_bytes = None
+        possible_keys = [
+            f"company-{company_id}/{file_name}",
+            file_name
+        ]
         
-        # Prepare context data for AI analysis
+        for s3_key in possible_keys:
+            try:
+                print(f"📥 Attempting to download: s3://{bucket_name}/{s3_key}")
+                pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
+                pdf_bytes = pdf_object['Body'].read()
+                print(f"✅ Downloaded PDF: {len(pdf_bytes)} bytes from {s3_key}")
+                break
+            except Exception as s3_error:
+                print(f"❌ Failed to download {s3_key}: {str(s3_error)}")
+                continue
+        
+        if not pdf_bytes:
+            print(f"⚠️ Could not download PDF from S3 for any key pattern")
+        
+        # Prepare comprehensive context data for AI analysis
         financial_context = []
         for row in historical_data:
             context_entry = {
-                'date': str(row[0]),
-                'period': row[1],
-                'cash_on_hand': row[2],
-                'monthly_burn_rate': row[3],
-                'cash_out_date': str(row[4]) if row[4] else None,
-                'runway': row[5],
-                'summary': row[6],
-                'risks': row[7]
+                'file_name': row[0],
+                'date': str(row[1]),
+                'period': row[2],
+                'sector': row[3],
+                'cash_on_hand': row[4],
+                'monthly_burn_rate': row[5],
+                'cash_out_date': str(row[6]) if row[6] else None,
+                'runway': row[7],
+                'budget_vs_actual': row[8],
+                'financial_summary': row[9],
+                'sector_highlight_a': row[10],
+                'sector_highlight_b': row[11],
+                'key_risks': row[12],
+                'personnel_updates': row[13],
+                'next_milestones': row[14]
             }
             financial_context.append(context_entry)
         
@@ -2577,9 +2599,11 @@ Based on the criticality level {criticality_level}, adjust your analysis accordi
 ## YOUR TASK
 Analyze the company's health using:
 1. Most recent board deck (PDF attached)
-2. Historical financial summaries and metrics
-3. Cash position, burn rate, and runway data
-4. Key risks and business performance indicators
+2. Comprehensive historical financial data from last 10 reports
+3. Cash position, burn rate, and runway trends
+4. Budget performance and sector-specific highlights
+5. Personnel updates and milestone progress
+6. Key risks and business performance indicators
 
 ## OUTPUT REQUIREMENTS
 Provide a health score assessment:
@@ -2590,13 +2614,16 @@ Provide a health score assessment:
 - RED: Company faces significant challenges requiring attention
 
 **JUSTIFICATION**: Provide 2-3 paragraphs explaining your reasoning, including:
-- Key financial metrics and trends
+- Key financial metrics and trends over time
+- Budget vs actual performance patterns
 - Major strengths or concerns
+- Personnel and operational updates impact
 - Risk factors and their severity
-- Overall trajectory and outlook
+- Sector-specific performance indicators
+- Overall trajectory and outlook based on milestones
 
-## FINANCIAL CONTEXT
-Historical data for context:
+## COMPREHENSIVE FINANCIAL CONTEXT
+Historical data from last 10 reports for trend analysis:
 {financial_context}
 
 Focus on recent trends, cash management, business performance, and risk factors. Adjust your assessment based on the criticality level specified above."""
@@ -2659,7 +2686,6 @@ Focus on recent trends, cash management, business performance, and risk factors.
             # Clean up temp file
             if tmp_path:
                 try:
-                    import os
                     os.unlink(tmp_path)
                 except:
                     pass
