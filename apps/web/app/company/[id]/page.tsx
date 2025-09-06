@@ -390,12 +390,6 @@ export default function CompanyDetailPage() {
               <>
                 <span>•</span>
                 <span>{formatDate((currentReport as any).report_date)}</span>
-                {(currentReport as any).report_period && (
-                  <>
-                    <span>•</span>
-                    <span>{(currentReport as any).report_period}</span>
-                  </>
-                )}
               </>
             )}
           </div>
@@ -970,8 +964,9 @@ export default function CompanyDetailPage() {
     if (!company?.company?.id) return
     
     try {
-      console.log('🔍 Loading saved health check...')
+      console.log('🔍 Loading saved health check for company:', company.company.id)
       const result = await getLatestHealthCheck(company.company.id)
+      console.log('🔍 Health check API response:', result)
       
       if (result.error) {
         console.log('ℹ️ No saved health check found or error:', result.error)
@@ -979,13 +974,13 @@ export default function CompanyDetailPage() {
       } else if (result.success && result.data && result.data.score) {
         // Handle nested response structure: {success: true, data: {score: 'GREEN', ...}}
         setHealthCheckResult(result.data)
-        console.log('✅ Loaded saved health check:', result.data.score)
+        console.log('✅ Loaded saved health check (nested):', result.data.score)
       } else if (result && result.score) {
         // Handle direct response structure: {score: 'GREEN', ...}
         setHealthCheckResult(result)
-        console.log('✅ Loaded saved health check:', result.score)
+        console.log('✅ Loaded saved health check (direct):', result.score)
       } else {
-        console.log('ℹ️ No saved health check found')
+        console.log('ℹ️ No saved health check found - result structure:', result)
         setHealthCheckResult(null)
       }
     } catch (error) {
@@ -1018,6 +1013,8 @@ export default function CompanyDetailPage() {
       } else {
         setHealthCheckResult(result)
         console.log('✅ Health check completed:', result)
+        // Reload saved health check to ensure database persistence
+        setTimeout(() => loadSavedHealthCheck(), 1000)
       }
     } catch (error) {
       console.error('❌ Health check failed:', error)
@@ -1592,7 +1589,6 @@ export default function CompanyDetailPage() {
                       <h3 className="section-title">Upcoming Milestones</h3>
                     </div>
                   </div>
-                  <ReportNavigator title="Milestones" />
                   
                   {(currentReport as any)?.next_milestones ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100 min-h-[160px] max-h-[420px] overflow-y-auto">
@@ -2021,10 +2017,18 @@ export default function CompanyDetailPage() {
                 {/* 1. Cap Table - Double Width */}
                 <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                   {/* Header */}
-                  <div className="flex items-center space-x-1 mb-3">
+                  <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="section-title">Cap Table</h3>
                     </div>
+                    {enrichmentData?.enrichment?.extracted?.stage && (
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-gray-500 mb-1">Stage</p>
+                        <p className="text-sm font-bold text-gray-900">
+                          {enrichmentData.enrichment.extracted.stage}
+                        </p>
+                      </div>
+                    )}
                   </div>
                   
                   {company.current_cap_table && sortedInvestors.length > 0 ? (
