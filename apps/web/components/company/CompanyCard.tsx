@@ -142,7 +142,26 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
       } else {
         // Notify parent component to remove from list
         onDelete?.(company.id.toString())
-        alert(`Company "${displayName}" and all associated data have been deleted successfully.`)
+        
+        // Show detailed success message including S3 cleanup info
+        const data = result.data || {}
+        const s3Info = data.s3_cleanup || {}
+        const dbRecords = data.total_records_deleted || 0
+        const s3Files = s3Info.deleted_count || 0
+        const s3Total = s3Info.total_files || 0
+        
+        let message = `Company "${displayName}" deleted successfully!\n\n`
+        message += `📊 Database records: ${dbRecords}\n`
+        if (s3Total > 0) {
+          message += `📁 S3 files: ${s3Files}/${s3Total} deleted`
+          if (s3Info.failed_count > 0) {
+            message += ` (${s3Info.failed_count} failed)`
+          }
+        } else {
+          message += `📁 No S3 files to clean up`
+        }
+        
+        alert(message)
       }
     } catch (err: any) {
       alert(`Delete failed: ${err.message}`)

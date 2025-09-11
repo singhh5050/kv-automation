@@ -2259,6 +2259,63 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
             }
         
         company_name = preview[0]
+        
+        # Get all S3 file names for this company before deletion
+        print(f"🗑️ Getting S3 files for company {company_id} ({company_name})")
+        cur.execute("""
+            SELECT file_name FROM financial_reports 
+            WHERE company_id = %s AND file_name IS NOT NULL AND file_name != ''
+        """, (company_id,))
+        
+        s3_files = [row[0] for row in cur.fetchall()]
+        print(f"🔍 Found {len(s3_files)} S3 files to delete: {s3_files}")
+        
+        # Delete S3 files before database deletion
+        s3_deletion_results = []
+        if s3_files:
+            try:
+                s3_client = boto3.client('s3')
+                bucket_name = 'kv-board-decks-prod'
+                
+                for file_name in s3_files:
+                    # Skip placeholder files (they don't exist in S3)
+                    if file_name == '_company_creation_placeholder.pdf':
+                        print(f"⏭️ Skipping placeholder file: {file_name}")
+                        continue
+                    
+                    try:
+                        # Try multiple possible S3 key patterns
+                        possible_keys = [
+                            f"company-{company_id}/{file_name}",  # Standard pattern
+                            file_name,  # Direct filename
+                            f"temp/{file_name}"  # Temp folder pattern
+                        ]
+                        
+                        deleted = False
+                        for s3_key in possible_keys:
+                            try:
+                                s3_client.delete_object(Bucket=bucket_name, Key=s3_key)
+                                print(f"✅ Deleted S3 file: {s3_key}")
+                                s3_deletion_results.append({'file': file_name, 'key': s3_key, 'deleted': True})
+                                deleted = True
+                                break
+                            except Exception as key_error:
+                                print(f"⚠️ Failed to delete {s3_key}: {str(key_error)}")
+                                continue
+                        
+                        if not deleted:
+                            print(f"❌ Could not delete {file_name} from any S3 location")
+                            s3_deletion_results.append({'file': file_name, 'key': None, 'deleted': False, 'error': 'File not found in any expected location'})
+                            
+                    except Exception as file_error:
+                        print(f"❌ Error deleting S3 file {file_name}: {str(file_error)}")
+                        s3_deletion_results.append({'file': file_name, 'key': None, 'deleted': False, 'error': str(file_error)})
+                        
+            except Exception as s3_error:
+                print(f"❌ S3 client error: {str(s3_error)}")
+                # Continue with database deletion even if S3 fails
+        
+        # Continue with cascaded counts from original preview
         cascaded_counts = {
             'financial_reports': preview[1],
             'cap_table_rounds': preview[2], 
@@ -2280,13 +2337,27 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
         
         conn.commit()
         
+        # Summary of S3 deletions
+        s3_deleted_count = sum(1 for result in s3_deletion_results if result.get('deleted', False))
+        s3_failed_count = len(s3_deletion_results) - s3_deleted_count
+        
+        print(f"✅ Company deletion complete: {company_name} (ID: {company_id})")
+        print(f"📊 Database records deleted: {sum(cascaded_counts.values()) + deleted_companies}")
+        print(f"📁 S3 files deleted: {s3_deleted_count}/{len(s3_files)} (excluding placeholders)")
+        
         return {
             'success': True,
             'data': {
                 'deleted_company_id': company_id,
                 'company_name': company_name,
                 'cascaded_deletions': cascaded_counts,
-                'total_records_deleted': sum(cascaded_counts.values()) + deleted_companies
+                'total_records_deleted': sum(cascaded_counts.values()) + deleted_companies,
+                's3_cleanup': {
+                    'total_files': len(s3_files),
+                    'deleted_count': s3_deleted_count,
+                    'failed_count': s3_failed_count,
+                    'deletion_results': s3_deletion_results
+                }
             }
         }
         
