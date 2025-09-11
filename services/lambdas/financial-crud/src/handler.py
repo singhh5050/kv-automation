@@ -113,6 +113,14 @@ def lambda_handler(event, context):
         result = delete_financial_report(db_config, report_id)
     elif operation == "get_company_kpi_analysis":
         result = get_company_kpi_analysis(db_config, body.get("company_id"))
+    elif operation == "save_company_manual_override":
+        result = save_company_manual_override(db_config, body)
+    elif operation == "get_company_manual_overrides":
+        result = get_company_manual_overrides(db_config, body.get("company_id"))
+    elif operation == "delete_company_manual_override":
+        result = delete_company_manual_override(db_config, body)
+    elif operation == "delete_placeholder_pdfs":
+        result = delete_placeholder_pdfs(db_config, body.get("company_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -2802,6 +2810,128 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         }
 
 
+def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Delete placeholder PDFs for a specific company from both database and S3
+    """
+    print(f"🗑️ DELETE PLACEHOLDER REQUEST: company_id={company_id}")
+    
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Find placeholder PDFs for this company
+        print(f"🔍 SEARCHING for placeholder PDFs for company_id={company_id}")
+        cursor.execute("""
+            SELECT id, company_id, file_name, report_date
+            FROM financial_reports 
+            WHERE company_id = %s AND file_name = %s
+        """, [company_id, '_company_creation_placeholder.pdf'])
+        
+        placeholder_reports = cursor.fetchall()
+        print(f"🔍 FOUND {len(placeholder_reports)} placeholder reports")
+        
+        if not placeholder_reports:
+            cursor.close()
+            conn.close()
+            print(f"✅ No placeholder PDFs found for company_id={company_id}")
+            return {
+                'success': True,
+                'data': {
+                    'company_id': company_id,
+                    'deleted_count': 0,
+                    'message': 'No placeholder PDFs found to delete'
+                }
+            }
+        
+        deleted_reports = []
+        s3_errors = []
+        
+        # Delete each placeholder report
+        for report_data in placeholder_reports:
+            report_id = report_data[0]
+            file_name = report_data[2]
+            report_date = report_data[3]
+            
+            print(f"🗑️ DELETING placeholder report: id={report_id}, file={file_name}")
+            
+            # Delete from database
+            cursor.execute("""
+                DELETE FROM financial_reports 
+                WHERE id = %s
+            """, [report_id])
+            
+            deleted_count = cursor.rowcount
+            print(f"🗑️ DATABASE: Deleted {deleted_count} row(s)")
+            
+            if deleted_count > 0:
+                # Try to delete from S3 (best effort)
+                s3_deleted = False
+                s3_error = None
+                
+                try:
+                    s3_client = boto3.client('s3')
+                    bucket_name = 'kv-board-decks-prod'
+                    
+                    # Try to delete the S3 object
+                    s3_client.delete_object(
+                        Bucket=bucket_name,
+                        Key=file_name
+                    )
+                    s3_deleted = True
+                    print(f"✅ S3: Successfully deleted {file_name}")
+                    
+                except Exception as s3_exception:
+                    s3_error = str(s3_exception)
+                    s3_errors.append(f"{file_name}: {s3_error}")
+                    print(f"⚠️ S3: Failed to delete {file_name}: {s3_error}")
+                
+                deleted_reports.append({
+                    'report_id': report_id,
+                    'file_name': file_name,
+                    'report_date': report_date.isoformat() if report_date else None,
+                    'database_deleted': True,
+                    's3_deleted': s3_deleted,
+                    's3_error': s3_error
+                })
+        
+        # Commit database changes
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"✅ Successfully deleted {len(deleted_reports)} placeholder reports")
+        
+        return {
+            'success': True,
+            'data': {
+                'company_id': company_id,
+                'deleted_count': len(deleted_reports),
+                'deleted_reports': deleted_reports,
+                's3_errors': s3_errors,
+                'message': f'Successfully deleted {len(deleted_reports)} placeholder PDF(s)' + 
+                          (f' (with {len(s3_errors)} S3 errors)' if s3_errors else '')
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error deleting placeholder PDFs: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to delete placeholder PDFs: {str(e)}'
+        }
+
+
 def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]:
     """
     Get the latest KPI analysis for a company
@@ -2861,4 +2991,161 @@ def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]
         return {
             'success': False,
             'error': f'Failed to retrieve KPI analysis: {str(e)}'
+        }
+
+def save_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Save or update a manual override for a company field
+    """
+    company_id = data.get('company_id')
+    field_name = data.get('field_name')
+    field_value = data.get('field_value')
+    edited_by = data.get('edited_by', 'user')
+    
+    if not company_id or not field_name:
+        return {
+            'success': False,
+            'error': 'company_id and field_name are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Upsert the override
+        cursor.execute("""
+            INSERT INTO company_manual_overrides (company_id, field_name, field_value, edited_by, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (company_id, field_name) 
+            DO UPDATE SET 
+                field_value = EXCLUDED.field_value,
+                edited_by = EXCLUDED.edited_by,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        """, [company_id, field_name, field_value, edited_by])
+        
+        result = cursor.fetchone()
+        override_id = result[0] if result else None
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'id': override_id,
+                'company_id': company_id,
+                'field_name': field_name,
+                'field_value': field_value,
+                'edited_by': edited_by
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to save manual override: {str(e)}'
+        }
+
+def get_company_manual_overrides(db_config: Dict, company_id: str) -> Dict[str, Any]:
+    """
+    Get all manual overrides for a company
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT field_name, field_value, override_source, edited_by, created_at, updated_at
+            FROM company_manual_overrides
+            WHERE company_id = %s
+        """, [company_id])
+        
+        rows = cursor.fetchall()
+        
+        overrides = {}
+        for row in rows:
+            field_name, field_value, override_source, edited_by, created_at, updated_at = row
+            overrides[field_name] = {
+                'value': field_value,
+                'source': override_source,
+                'edited_by': edited_by,
+                'created_at': created_at.isoformat() if created_at else None,
+                'updated_at': updated_at.isoformat() if updated_at else None
+            }
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': overrides
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get manual overrides: {str(e)}'
+        }
+
+def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Delete a manual override for a company field
+    """
+    company_id = data.get('company_id')
+    field_name = data.get('field_name')
+    
+    if not company_id or not field_name:
+        return {
+            'success': False,
+            'error': 'company_id and field_name are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM company_manual_overrides
+            WHERE company_id = %s AND field_name = %s
+        """, [company_id, field_name])
+        
+        rows_affected = cursor.rowcount
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'deleted': rows_affected > 0,
+                'company_id': company_id,
+                'field_name': field_name
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete manual override: {str(e)}'
         } 

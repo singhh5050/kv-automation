@@ -124,6 +124,37 @@ def extract_output_text(resp) -> str:
     print(f"🔍 extract_output_text returning: {len(result)} chars")
     return result
 
+def delete_placeholder_pdfs_async(company_id: int) -> None:
+    """
+    Asynchronously delete placeholder PDFs for a company by invoking the financial-crud Lambda
+    """
+    try:
+        import boto3
+        import json
+        
+        # Create Lambda client
+        lambda_client = boto3.client('lambda')
+        
+        # Prepare payload for financial-crud Lambda
+        payload = {
+            'operation': 'delete_placeholder_pdfs',
+            'company_id': company_id
+        }
+        
+        # Invoke the financial-crud Lambda asynchronously
+        lambda_client.invoke(
+            FunctionName='kv-automation-financial-crud',  # Adjust function name as needed
+            InvocationType='Event',  # Async invocation
+            Payload=json.dumps(payload)
+        )
+        
+        print(f"🚀 Async placeholder cleanup invoked for company_id={company_id}")
+        
+    except Exception as e:
+        print(f"❌ Failed to invoke async placeholder cleanup: {str(e)}")
+        raise e
+
+
 def lambda_handler(event, context):
     """
     Lambda function for PDF extraction and OpenAI analysis
@@ -309,6 +340,16 @@ def handle_s3_event(event, context):
                     store_result_in_db(analysis_result, company_id)
                     stored = True
                     print("✅ Analysis results stored successfully")
+                    
+                    # Async cleanup: Delete placeholder PDFs after successful processing
+                    try:
+                        print("🧹 Triggering async placeholder PDF cleanup...")
+                        delete_placeholder_pdfs_async(company_id)
+                        print("✅ Placeholder cleanup triggered successfully")
+                    except Exception as cleanup_error:
+                        print(f"⚠️ Placeholder cleanup failed (non-critical): {str(cleanup_error)}")
+                        # Don't fail the main workflow for cleanup issues
+                    
                 except Exception as db_error:
                     print(f"❌ Database storage failed: {str(db_error)}")
                     # Continue processing - don't fail the entire workflow for DB issues
