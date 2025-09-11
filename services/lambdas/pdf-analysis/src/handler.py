@@ -124,34 +124,62 @@ def extract_output_text(resp) -> str:
     print(f"🔍 extract_output_text returning: {len(result)} chars")
     return result
 
-def delete_placeholder_pdfs_async(company_id: int) -> None:
+def delete_placeholder_pdfs_direct(company_id: int) -> int:
     """
-    Asynchronously delete placeholder PDFs for a company by invoking the financial-crud Lambda
+    Directly delete placeholder PDFs from the database for a specific company
+    Returns the number of deleted placeholder reports
     """
+    import ssl
+    
     try:
-        import boto3
-        import json
+        print(f"🗑️ Checking for placeholder PDFs for company_id={company_id}")
         
-        # Create Lambda client
-        lambda_client = boto3.client('lambda')
-        
-        # Prepare payload for financial-crud Lambda
-        payload = {
-            'operation': 'delete_placeholder_pdfs',
-            'company_id': company_id
+        # Database configuration (same pattern as other functions)
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
         }
         
-        # Invoke the financial-crud Lambda asynchronously
-        lambda_client.invoke(
-            FunctionName='kv-automation-financial-crud',  # Adjust function name as needed
-            InvocationType='Event',  # Async invocation
-            Payload=json.dumps(payload)
-        )
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
         
-        print(f"🚀 Async placeholder cleanup invoked for company_id={company_id}")
+        # First check if placeholder PDFs exist
+        cursor.execute("""
+            SELECT id, file_name FROM financial_reports 
+            WHERE company_id = %s AND file_name = %s
+        """, [company_id, '_company_creation_placeholder.pdf'])
+        
+        placeholder_reports = cursor.fetchall()
+        print(f"🔍 Found {len(placeholder_reports)} placeholder report(s)")
+        
+        if not placeholder_reports:
+            cursor.close()
+            conn.close()
+            return 0
+        
+        # Delete placeholder reports
+        cursor.execute("""
+            DELETE FROM financial_reports 
+            WHERE company_id = %s AND file_name = %s
+        """, [company_id, '_company_creation_placeholder.pdf'])
+        
+        deleted_count = cursor.rowcount
+        print(f"🗑️ Deleted {deleted_count} placeholder report(s) from database")
+        
+        # Commit the transaction
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return deleted_count
         
     except Exception as e:
-        print(f"❌ Failed to invoke async placeholder cleanup: {str(e)}")
+        print(f"❌ Failed to delete placeholder PDFs: {str(e)}")
         raise e
 
 
@@ -341,11 +369,14 @@ def handle_s3_event(event, context):
                     stored = True
                     print("✅ Analysis results stored successfully")
                     
-                    # Async cleanup: Delete placeholder PDFs after successful processing
+                    # Direct cleanup: Delete placeholder PDFs after successful processing
                     try:
-                        print("🧹 Triggering async placeholder PDF cleanup...")
-                        delete_placeholder_pdfs_async(company_id)
-                        print("✅ Placeholder cleanup triggered successfully")
+                        print("🧹 Checking for placeholder PDFs to delete...")
+                        deleted_count = delete_placeholder_pdfs_direct(company_id)
+                        if deleted_count > 0:
+                            print(f"✅ Deleted {deleted_count} placeholder PDF(s)")
+                        else:
+                            print("✅ No placeholder PDFs found to delete")
                     except Exception as cleanup_error:
                         print(f"⚠️ Placeholder cleanup failed (non-critical): {str(cleanup_error)}")
                         # Don't fail the main workflow for cleanup issues
