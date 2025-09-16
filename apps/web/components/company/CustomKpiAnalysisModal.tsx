@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { KpiAnalysisConfig } from '../../types'
+import { listCompanyPDFs } from '../../lib/api'
 
 interface CustomKpiAnalysisModalProps {
   isOpen: boolean
@@ -10,6 +11,7 @@ interface CustomKpiAnalysisModalProps {
   onSubmit: (analysisConfig: KpiAnalysisConfig) => void
   isLoading: boolean
   companyName: string
+  companyId: number
 }
 
 const SCOPE_OPTIONS = [
@@ -24,7 +26,8 @@ export default function CustomKpiAnalysisModal({
   onClose, 
   onSubmit, 
   isLoading,
-  companyName 
+  companyName,
+  companyId
 }: CustomKpiAnalysisModalProps) {
   const [standardPL, setStandardPL] = useState(true)
   const [unitEconomics, setUnitEconomics] = useState(true)
@@ -32,6 +35,30 @@ export default function CustomKpiAnalysisModal({
   const [scope, setScope] = useState('auto')
   const [customScope, setCustomScope] = useState('')
   const [additionalInfo, setAdditionalInfo] = useState('')
+  const [availableFiles, setAvailableFiles] = useState<any[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(false)
+
+  // Load available PDF files when modal opens
+  useEffect(() => {
+    if (isOpen && companyId) {
+      setLoadingFiles(true)
+      listCompanyPDFs(companyId)
+        .then(result => {
+          if (result.success) {
+            setAvailableFiles(result.files)
+          } else {
+            console.error('Failed to load PDF files:', result.error)
+          }
+        })
+        .catch(error => {
+          console.error('Error loading PDF files:', error)
+        })
+        .finally(() => {
+          setLoadingFiles(false)
+        })
+    }
+  }, [isOpen, companyId])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,7 +86,8 @@ export default function CustomKpiAnalysisModal({
       previousPlan: '',
       competitiveContext: '',
       customPrompt: '',
-      scope: finalScope
+      scope: finalScope,
+      selected_files: selectedFiles.length > 0 ? selectedFiles : undefined
     }
 
     onSubmit(config)
@@ -176,6 +204,57 @@ export default function CustomKpiAnalysisModal({
               placeholder="e.g., Last analysis missed seasonal trends, didn't account for pricing changes, focus on unit economics..."
               className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             />
+          </div>
+
+          {/* File Selection */}
+          <div className="space-y-3">
+            <h3 className="text-lg font-semibold text-gray-900">Select Files (Optional)</h3>
+            <p className="text-sm text-gray-600">
+              Choose 1-4 specific files to analyze, or leave unselected to use the most recent files automatically.
+            </p>
+            
+            {loadingFiles ? (
+              <div className="flex items-center space-x-2 text-gray-500">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600"></div>
+                <span>Loading available files...</span>
+              </div>
+            ) : availableFiles.length > 0 ? (
+              <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-2">
+                {availableFiles.map((file) => (
+                  <label key={file.key} className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedFiles.includes(file.key)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          if (selectedFiles.length < 4) {
+                            setSelectedFiles([...selectedFiles, file.key])
+                          }
+                        } else {
+                          setSelectedFiles(selectedFiles.filter(key => key !== file.key))
+                        }
+                      }}
+                      disabled={!selectedFiles.includes(file.key) && selectedFiles.length >= 4}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm font-medium text-gray-900 break-all">{file.name}</span>
+                      <div className="text-xs text-gray-500">
+                        {new Date(file.last_modified).toLocaleDateString()} • {Math.round(file.size / 1024)} KB
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic">No PDF files found for this company.</p>
+            )}
+            
+            {selectedFiles.length > 0 && (
+              <div className="text-sm text-blue-600">
+                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected (max 4)
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}

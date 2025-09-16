@@ -445,6 +445,46 @@ export async function getCompetitiveLandscape(financialData: any) {
 }
 
 /**
+ * List available PDF files for a company
+ */
+export async function listCompanyPDFs(companyId: number) {
+  try {
+    console.log(`📁 Listing PDF files for company ${companyId}`)
+    
+    const response = await fetch('/api/analyze-kpis', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'list_pdfs',
+        company_id: companyId
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to list PDFs: ${response.status}`)
+    }
+
+    const result = await response.json()
+    console.log(`✅ Retrieved ${result.files?.length || 0} PDF files`)
+    
+    return {
+      success: result.success,
+      files: result.files || [],
+      error: result.error
+    }
+  } catch (error) {
+    console.error('❌ Failed to list company PDFs:', error)
+    return {
+      success: false,
+      files: [],
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
+
+/**
  * Multi-PDF KPI Analysis (Synchronous - Legacy)
  * Analyzes the 4 most recent PDFs for a company to extract KPIs based on sector and stage
  */

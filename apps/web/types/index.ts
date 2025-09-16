@@ -104,6 +104,7 @@ export interface FinancialReport {
     competitiveContext: string
     customPrompt?: string  // Optional prompt override
     scope: string  // Scope selection (auto, ttm, all, custom)
+    selected_files?: string[]  // Optional array of S3 keys for selected files
   }
 
   export interface HealthCheckConfig {

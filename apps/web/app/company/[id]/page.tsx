@@ -3139,6 +3139,7 @@ export default function CompanyDetailPage() {
         onSubmit={handleCustomKpiAnalysis}
         isLoading={asyncAnalysis.isLoading}
         companyName={company?.company?.name || 'Unknown Company'}
+        companyId={company?.company?.id || 0}
       />
 
       {/* Stage Selection Modal */}

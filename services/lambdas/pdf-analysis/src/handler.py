@@ -235,9 +235,59 @@ def lambda_handler(event, context):
         return handle_api_gateway_event(event, context)
 
 
+def list_company_pdfs(company_id: int) -> dict:
+    """
+    List available PDF files for a company in S3
+    """
+    try:
+        import boto3
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
+        
+        print(f"📁 Listing PDFs for company {company_id}")
+        
+        # List objects in the company folder
+        prefix = f"company-{company_id}/"
+        response = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix=prefix,
+            MaxKeys=1000
+        )
+        
+        pdf_files = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                key = obj['Key']
+                if key.lower().endswith('.pdf') and key != prefix:  # Exclude folder itself
+                    file_name = key.replace(prefix, '')  # Remove prefix to get just filename
+                    pdf_files.append({
+                        'key': key,
+                        'name': file_name,
+                        'size': obj['Size'],
+                        'last_modified': obj['LastModified'].isoformat()
+                    })
+        
+        # Sort by last modified (newest first)
+        pdf_files.sort(key=lambda x: x['last_modified'], reverse=True)
+        
+        print(f"✅ Found {len(pdf_files)} PDF files for company {company_id}")
+        return {
+            'success': True,
+            'files': pdf_files
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to list PDFs for company {company_id}: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e),
+            'files': []
+        }
+
+
 def handle_kpi_analysis_request(event, context):
     """
-    Handle KPI analysis requests for multiple PDFs
+    Handle KPI analysis requests for multiple PDFs and PDF listing
     """
     # CORS headers for all responses
     cors_headers = {
@@ -248,7 +298,24 @@ def handle_kpi_analysis_request(event, context):
     }
     
     try:
-        # Extract parameters from event
+        # Check if this is a request to list PDFs
+        if event.get('action') == 'list_pdfs':
+            company_id = event.get('company_id')
+            if not company_id:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers,
+                    'body': json.dumps({'error': 'company_id is required'})
+                }
+            
+            result = list_company_pdfs(company_id)
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result)
+            }
+        
+        # Otherwise, handle KPI analysis request
         company_id = event.get('company_id')
         stage = event.get('stage')
         custom_config = event.get('custom_config')
@@ -270,7 +337,8 @@ def handle_kpi_analysis_request(event, context):
         print(f"🔍 KPI analysis requested for company {company_id}, stage: {stage}", '(custom)' if custom_config else '(standard)')
         
         # Perform the analysis
-        result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config)
+        selected_files = custom_config.get('selected_files') if custom_config else None
+        result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config, selected_files)
         
         if result['success']:
             return {
@@ -803,13 +871,15 @@ Return ONLY valid JSON in the exact format specified in the system prompt."""
 
 
 
-def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dict = None) -> dict:
+def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dict = None, selected_files: list = None) -> dict:
     """
-    Analyze the 4 most recent PDFs for a company to extract KPIs based on sector and stage
+    Analyze PDFs for a company to extract KPIs based on sector and stage
     
     Args:
         company_id: Database company ID
         stage: Company stage from frontend ('Growth Stage', 'Main Stage', 'Early Stage')
+        custom_config: Custom analysis configuration
+        selected_files: List of specific S3 keys to analyze (if None, uses 4 most recent)
     
     Returns:
         Dict with KPI analysis results
@@ -833,32 +903,21 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
         conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
         cursor = conn.cursor()
         
-        # Get 4 most recent financial reports with their S3 keys
-        query = """
-            SELECT fr.id, fr.file_name, fr.report_date, fr.report_period, fr.sector,
-                   fr.cash_on_hand, fr.monthly_burn_rate, fr.runway,
-                   c.name as company_name
-            FROM financial_reports fr
-            JOIN companies c ON fr.company_id = c.id
-            WHERE fr.company_id = %s AND fr.file_name IS NOT NULL
-            ORDER BY fr.report_date DESC, fr.processed_at DESC
-            LIMIT 4
+        # Get company info
+        company_query = "SELECT name FROM companies WHERE id = %s"
+        cursor.execute(company_query, [company_id])
+        company_result = cursor.fetchone()
+        company_name = company_result[0] if company_result else f"Company {company_id}"
+        
+        # Get sector from any recent report (fallback)
+        sector_query = """
+            SELECT sector FROM financial_reports 
+            WHERE company_id = %s AND sector IS NOT NULL 
+            ORDER BY report_date DESC LIMIT 1
         """
-        
-        cursor.execute(query, [company_id])
-        reports = cursor.fetchall()
-        
-        if len(reports) < 2:
-            return {
-                'success': False,
-                'error': f'Need at least 2 reports for trend analysis, found {len(reports)}'
-            }
-        
-        print(f"📊 Found {len(reports)} reports for analysis")
-        
-        # Extract company info and sector from first report
-        company_name = reports[0][8]
-        sector = reports[0][4] or 'healthcare'
+        cursor.execute(sector_query, [company_id])
+        sector_result = cursor.fetchone()
+        sector = sector_result[0] if sector_result else 'healthcare'
         
         print(f"🏢 Company: {company_name}")
         print(f"🎯 Sector: {sector}")
@@ -872,63 +931,100 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
         pdf_contents = []
         report_metadata = []
         
-        for report in reports:
-            report_id, file_name, report_date, report_period = report[0], report[1], report[2], report[3]
-            
-            # Search for files that end with the original filename (to handle timestamp prefixes)
-            pdf_bytes = None
-            actual_key = None
-            
-            # First try exact matches
-            possible_keys = [
-                f"company-{company_id}/{file_name}",
-                file_name
-            ]
-            
-            for s3_key in possible_keys:
+        if selected_files:
+            # Use selected files
+            print(f"📁 Using {len(selected_files)} selected files")
+            for s3_key in selected_files:
                 try:
-                    print(f"📥 Attempting to download: s3://{bucket_name}/{s3_key}")
+                    print(f"📥 Downloading selected file: s3://{bucket_name}/{s3_key}")
                     pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
                     pdf_bytes = pdf_object['Body'].read()
-                    actual_key = s3_key
+                    
+                    # Extract filename from key
+                    file_name = s3_key.split('/')[-1] if '/' in s3_key else s3_key
+                    
                     print(f"✅ Downloaded {len(pdf_bytes)} bytes from {s3_key}")
-                    break
+                    
+                    # Store PDF bytes directly for upload to OpenAI
+                    pdf_contents.append({
+                        'report_id': None,  # No DB report for selected files
+                        'file_name': file_name,
+                        'report_date': 'Selected File',
+                        'report_period': 'User Selected',
+                        'pdf_bytes': pdf_bytes,
+                        's3_key': s3_key
+                    })
+                    
+                    report_metadata.append({
+                        'report_id': None,
+                        'file_name': file_name,
+                        'report_date': 'Selected File',
+                        'report_period': 'User Selected'
+                    })
+                    
                 except Exception as e:
-                    print(f"❌ Failed to download {s3_key}: {str(e)}")
+                    print(f"❌ Failed to download selected file {s3_key}: {str(e)}")
                     continue
+        else:
+            # Use database reports (existing logic)
+            # Get 4 most recent financial reports with their S3 keys
+            query = """
+                SELECT fr.id, fr.file_name, fr.report_date, fr.report_period, fr.sector,
+                       fr.cash_on_hand, fr.monthly_burn_rate, fr.runway,
+                       c.name as company_name
+                FROM financial_reports fr
+                JOIN companies c ON fr.company_id = c.id
+                WHERE fr.company_id = %s AND fr.file_name IS NOT NULL
+                ORDER BY fr.report_date DESC, fr.processed_at DESC
+                LIMIT 4
+            """
             
-            # If exact match failed, search for files ending with the original filename
-            if not pdf_bytes:
-                try:
-                    print(f"🔍 Searching for files ending with: {file_name}")
-                    
-                    # List objects in the company folder
-                    prefix = f"company-{company_id}/"
-                    response = s3_client.list_objects_v2(
-                        Bucket=bucket_name,
-                        Prefix=prefix,
-                        MaxKeys=1000
-                    )
-                    
-                    if 'Contents' in response:
-                        for obj in response['Contents']:
-                            key = obj['Key']
-                            if key.endswith(file_name):
-                                try:
-                                    print(f"📥 Found matching file: {key}")
-                                    pdf_object = s3_client.get_object(Bucket=bucket_name, Key=key)
-                                    pdf_bytes = pdf_object['Body'].read()
-                                    actual_key = key
-                                    print(f"✅ Downloaded {len(pdf_bytes)} bytes from {key}")
-                                    break
-                                except Exception as e:
-                                    print(f"❌ Failed to download {key}: {str(e)}")
-                                    continue
-                    
-                    # If not found in company folder, search root bucket
-                    if not pdf_bytes:
+            cursor.execute(query, [company_id])
+            reports = cursor.fetchall()
+            
+            if len(reports) < 2:
+                return {
+                    'success': False,
+                    'error': f'Need at least 2 reports for trend analysis, found {len(reports)}'
+                }
+            
+            print(f"📊 Found {len(reports)} reports for analysis")
+            
+            for report in reports:
+                report_id, file_name, report_date, report_period = report[0], report[1], report[2], report[3]
+                
+                # Search for files that end with the original filename (to handle timestamp prefixes)
+                pdf_bytes = None
+                actual_key = None
+                
+                # First try exact matches
+                possible_keys = [
+                    f"company-{company_id}/{file_name}",
+                    file_name
+                ]
+                
+                for s3_key in possible_keys:
+                    try:
+                        print(f"📥 Attempting to download: s3://{bucket_name}/{s3_key}")
+                        pdf_object = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
+                        pdf_bytes = pdf_object['Body'].read()
+                        actual_key = s3_key
+                        print(f"✅ Downloaded {len(pdf_bytes)} bytes from {s3_key}")
+                        break
+                    except Exception as e:
+                        print(f"❌ Failed to download {s3_key}: {str(e)}")
+                        continue
+                
+                # If exact match failed, search for files ending with the original filename
+                if not pdf_bytes:
+                    try:
+                        print(f"🔍 Searching for files ending with: {file_name}")
+                        
+                        # List objects in the company folder
+                        prefix = f"company-{company_id}/"
                         response = s3_client.list_objects_v2(
                             Bucket=bucket_name,
+                            Prefix=prefix,
                             MaxKeys=1000
                         )
                         
@@ -937,7 +1033,7 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
                                 key = obj['Key']
                                 if key.endswith(file_name):
                                     try:
-                                        print(f"📥 Found matching file in root: {key}")
+                                        print(f"📥 Found matching file: {key}")
                                         pdf_object = s3_client.get_object(Bucket=bucket_name, Key=key)
                                         pdf_bytes = pdf_object['Body'].read()
                                         actual_key = key
@@ -946,37 +1042,61 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
                                     except Exception as e:
                                         print(f"❌ Failed to download {key}: {str(e)}")
                                         continue
-                                        
-                except Exception as e:
-                    print(f"❌ Error searching for files ending with {file_name}: {str(e)}")
-            
-            if pdf_bytes:
-                # Store PDF bytes directly for upload to OpenAI
-                pdf_contents.append({
-                    'report_id': report_id,
-                    'file_name': file_name,
-                    'report_date': str(report_date),
-                    'report_period': report_period,
-                    'pdf_bytes': pdf_bytes,
-                    's3_key': actual_key
-                })
+                        
+                        # If not found in company folder, search root bucket
+                        if not pdf_bytes:
+                            response = s3_client.list_objects_v2(
+                                Bucket=bucket_name,
+                                MaxKeys=1000
+                            )
+                            
+                            if 'Contents' in response:
+                                for obj in response['Contents']:
+                                    key = obj['Key']
+                                    if key.endswith(file_name):
+                                        try:
+                                            print(f"📥 Found matching file in root: {key}")
+                                            pdf_object = s3_client.get_object(Bucket=bucket_name, Key=key)
+                                            pdf_bytes = pdf_object['Body'].read()
+                                            actual_key = key
+                                            print(f"✅ Downloaded {len(pdf_bytes)} bytes from {key}")
+                                            break
+                                        except Exception as e:
+                                            print(f"❌ Failed to download {key}: {str(e)}")
+                                            continue
+                                            
+                    except Exception as e:
+                        print(f"❌ Error searching for files ending with {file_name}: {str(e)}")
                 
-                report_metadata.append({
-                    'report_id': report_id,
-                    'file_name': file_name,
-                    'report_date': str(report_date),
-                    'report_period': report_period
-                })
-            else:
-                print(f"⚠️ Could not download PDF for report {report_id}: {file_name}")
+                if pdf_bytes:
+                    # Store PDF bytes directly for upload to OpenAI
+                    pdf_contents.append({
+                        'report_id': report_id,
+                        'file_name': file_name,
+                        'report_date': str(report_date),
+                        'report_period': report_period,
+                        'pdf_bytes': pdf_bytes,
+                        's3_key': actual_key
+                    })
+                    
+                    report_metadata.append({
+                        'report_id': report_id,
+                        'file_name': file_name,
+                        'report_date': str(report_date),
+                        'report_period': report_period
+                    })
+                else:
+                    print(f"⚠️ Could not download PDF for report {report_id}: {file_name}")
         
         cursor.close()
         conn.close()
         
-        if len(pdf_contents) < 2:
+        # Check minimum file requirements
+        min_files = 1 if selected_files else 2  # Allow single file for selected files
+        if len(pdf_contents) < min_files:
             return {
                 'success': False,
-                'error': f'Could only retrieve {len(pdf_contents)} PDFs from S3'
+                'error': f'Could only retrieve {len(pdf_contents)} PDFs from S3 (minimum {min_files} required)'
             }
         
         print(f"📋 Successfully retrieved {len(pdf_contents)} PDFs for analysis")
