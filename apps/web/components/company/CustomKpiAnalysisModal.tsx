@@ -12,12 +12,11 @@ interface CustomKpiAnalysisModalProps {
   companyName: string
 }
 
-
-const MOOD_OPTIONS = [
-  { value: 'cheerleader', label: '📣 Cheerleader', description: 'Optimistic, encouraging tone' },
-  { value: 'balanced', label: '⚖️ Balanced', description: 'Neutral, factual analysis' },
-  { value: 'skeptical', label: '🤨 Wall Street Skeptic', description: 'Critical, detailed scrutiny' },
-  { value: 'roast', label: '🔥 Roast Mode', description: 'Brutally honest (but constructive!)' }
+const SCOPE_OPTIONS = [
+  { value: 'auto', label: 'Auto (best available)' },
+  { value: 'ttm', label: 'TTM (last 12 mo)' },
+  { value: 'all', label: 'All available' },
+  { value: 'custom', label: 'Custom…' }
 ]
 
 export default function CustomKpiAnalysisModal({ 
@@ -27,94 +26,45 @@ export default function CustomKpiAnalysisModal({
   isLoading,
   companyName 
 }: CustomKpiAnalysisModalProps) {
-  const [config, setConfig] = useState<KpiAnalysisConfig>({
-    targetKpis: '',
-    tableFormat: '',
-    analysisMood: 'balanced',
-    previousIssues: '',
-    previousPlan: '',
-    competitiveContext: '',
-    customPrompt: ''
-  })
-
-  const [showPromptEditor, setShowPromptEditor] = useState(false)
-  
-  // Generate the template system prompt with variables for editing
-  const generateTemplatePrompt = () => {
-    return `You are a KV financial analyst. Analyze reports for {company_name}.
-
-{mood_instructions}
-
-## USER REQUIREMENTS
-**Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
-**Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
-**Previous Plan to benchmark against:** {custom_config.get('previousPlan', 'No previous plan provided')}
-**Competitive Context:** {custom_config.get('competitiveContext', 'General market context')}
-**Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
-
-## MULTI-DIMENSIONAL ANALYSIS FRAMEWORK
-You will analyze across THREE key dimensions:
-1. **PLANS DIMENSION**: Look for multiple adjusted plans/projections in the board decks (e.g., "Original Plan", "Revised Q2 Plan", "Updated Forecast") PLUS any user-provided plan above
-2. **TIME DIMENSION**: Different time periods (months, quarters, years)  
-3. **KPI DIMENSION**: The specific metrics requested by the user
-
-**CRITICAL**: When you find multiple plans in the documents, treat each as a separate benchmark. Compare actual performance against each plan version to show how targets evolved over time.
-
-## FORMATTING REQUIREMENTS
-- Use **bold** for key metrics, company names, and important findings
-- Use *italics* for emphasis and commentary
-- Use \`code formatting\` for specific numbers and percentages
-- Rich markdown formatting throughout (headers, bullets, etc.)
-- Include emojis for visual appeal and section headers
-
-## OUTPUT FORMAT
-1. 🏥 **Company Health Score** 
-   - Overall assessment: 🟢 GREEN / 🟡 YELLOW / 🔴 RED
-   - Brief justification in **bold key points**
-
-2. 📊 **Executive Summary** (3-4 key highlights with **bold** metrics)
-
-3. 📋 **KPI Table** (MANDATORY as specified above)
-
-4. 📈 **Trend Analysis** (quantified insights per KPI with *italicized* commentary)
-
-5. 🆘 **What Company Needs Help With**
-   - Primary areas: Recruiting, GTM, Fundraising, M&A, PR, Operations, etc.
-   - **Bold** the top 2-3 priority areas
-
-6. 🎯 **Key Diagnoses** (focus on diagnosis, minimal strategic advice)
-
-## FILES
-{file_list}
-
-Focus on user's specific KPIs, use their table format, identify and benchmark against ALL plans found in documents (treat each plan version as a separate dimension), consider competitive context, avoid mentioned issues. Use rich markdown formatting throughout.
-
-**Remember**: This is a 3D analysis - Plans × Time × KPIs. Show how performance compares across multiple plan versions over time.`
-  }
+  const [standardPL, setStandardPL] = useState(true)
+  const [unitEconomics, setUnitEconomics] = useState(true)
+  const [customKpis, setCustomKpis] = useState('')
+  const [scope, setScope] = useState('auto')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(config)
-  }
+    
+    // Build the target KPIs based on selections
+    const targetKpis = []
+    if (standardPL) {
+      targetKpis.push('Revenue, COGS, Gross Profit, OpEx, EBITDA, Net Income')
+    }
+    if (unitEconomics) {
+      targetKpis.push('CAC, LTV, Payback Period, Contribution Margin')
+    }
+    if (customKpis.trim()) {
+      targetKpis.push(customKpis.trim())
+    }
 
-  const handleReset = () => {
-    setConfig({
-      targetKpis: '',
-      tableFormat: '',
+    const config: KpiAnalysisConfig = {
+      targetKpis: targetKpis.join(', '),
+      tableFormat: 'KPIs as columns, time periods as rows, include percentage changes between periods',
       analysisMood: 'balanced',
       previousIssues: '',
       previousPlan: '',
       competitiveContext: '',
-      customPrompt: ''
-    })
-    setShowPromptEditor(false)
+      customPrompt: '',
+      scope: scope
+    }
+
+    onSubmit(config)
   }
 
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
           <div className="flex items-center space-x-3">
@@ -122,7 +72,7 @@ Focus on user's specific KPIs, use their table format, identify and benchmark ag
               <span className="text-white text-lg">📊</span>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Custom KPI Analysis</h2>
+              <h2 className="text-xl font-bold text-gray-900">KPI Analysis</h2>
               <p className="text-sm text-gray-600">for {companyName}</p>
             </div>
           </div>
@@ -137,215 +87,94 @@ Focus on user's specific KPIs, use their table format, identify and benchmark ag
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Target KPIs */}
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-900">
-              🎯 What KPIs do you want to analyze?
-            </label>
-            <textarea
-              value={config.targetKpis}
-              onChange={(e) => setConfig({ ...config, targetKpis: e.target.value })}
-              placeholder="e.g., Monthly Recurring Revenue (MRR), Customer Acquisition Cost (CAC), Monthly Active Users (MAU), Gross Margin, Net Revenue Retention..."
-              className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-              required
-            />
-            <p className="text-xs text-gray-500">Be specific about the metrics you care about most</p>
+          {/* What to extract */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">What to extract</h3>
+            
+            <div className="space-y-3">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={standardPL}
+                  onChange={(e) => setStandardPL(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-gray-900 font-medium">Standard P&L (Revenue, COGS, Gross Profit, OpEx, EBITDA, Net)</span>
+              </label>
+
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={unitEconomics}
+                  onChange={(e) => setUnitEconomics(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-gray-900 font-medium">Unit Economics (CAC, LTV, Payback, Contribution Margin)</span>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                (Optional) Add custom KPIs/categories
+              </label>
+              <input
+                type="text"
+                value={customKpis}
+                onChange={(e) => setCustomKpis(e.target.value)}
+                placeholder='e.g., "ARR by product," "NRR," "Churn," "Runway"'
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
 
-          {/* Table Format */}
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-900">
-              📋 How do you want your results table structured?
-            </label>
-            <textarea
-              value={config.tableFormat}
-              onChange={(e) => setConfig({ ...config, tableFormat: e.target.value })}
-              placeholder="e.g., Columns should be the KPIs I specified above, rows should be time periods (months/quarters). Include percentage changes between periods. Add a trend direction column with arrows..."
-              className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-              required
-            />
-            <p className="text-xs text-gray-500">Describe the exact table layout and calculations you want</p>
-          </div>
-
-          {/* Analysis Mood */}
+          {/* Scope */}
           <div className="space-y-3">
-            <label className="block text-sm font-semibold text-gray-900">
-              🎭 Analysis Personality
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {MOOD_OPTIONS.map((mood) => (
-                <label key={mood.value} className="relative cursor-pointer">
+            <h3 className="text-lg font-semibold text-gray-900">Scope</h3>
+            <div className="flex flex-wrap gap-3">
+              {SCOPE_OPTIONS.map((option) => (
+                <label key={option.value} className="flex items-center space-x-2">
                   <input
                     type="radio"
-                    name="analysisMood"
-                    value={mood.value}
-                    checked={config.analysisMood === mood.value}
-                    onChange={(e) => setConfig({ ...config, analysisMood: e.target.value })}
-                    className="sr-only"
+                    name="scope"
+                    value={option.value}
+                    checked={scope === option.value}
+                    onChange={(e) => setScope(e.target.value)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 focus:ring-2"
                   />
-                  <div className={`p-3 rounded-lg border-2 transition-all ${
-                    config.analysisMood === mood.value
-                      ? 'border-blue-500 bg-blue-50 shadow-md'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}>
-                    <div className="font-medium text-sm text-gray-900">{mood.label}</div>
-                    <div className="text-xs text-gray-600 mt-1">{mood.description}</div>
-                  </div>
+                  <span className="text-gray-900">{option.label}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Previous Issues */}
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-900">
-              ⚠️ What went wrong in previous analyses? (Optional)
-            </label>
-            <textarea
-              value={config.previousIssues}
-              onChange={(e) => setConfig({ ...config, previousIssues: e.target.value })}
-              placeholder="e.g., Last time it missed the seasonality in our Q4 metrics, or it didn't account for our pricing change in March..."
-              className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            />
-            <p className="text-xs text-gray-500">Help us avoid repeating past mistakes</p>
-          </div>
-
-          {/* Previous Plan */}
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-900">
-              📋 Previous Plan/Targets (Optional)
-            </label>
-            <textarea
-              value={config.previousPlan}
-              onChange={(e) => setConfig({ ...config, previousPlan: e.target.value })}
-              placeholder="e.g., Our Q3 plan was to reach $2M ARR, reduce CAC by 15%, achieve 95% gross retention. Board deck from last quarter projected 40% growth..."
-              className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            />
-            <p className="text-xs text-gray-500">Previous targets, board plans, or projections to benchmark against</p>
-          </div>
-
-          {/* Competitive Context */}
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-900">
-              🏆 Competitive Context (Optional)
-            </label>
-            <textarea
-              value={config.competitiveContext}
-              onChange={(e) => setConfig({ ...config, competitiveContext: e.target.value })}
-              placeholder="e.g., Main competitors are X and Y. Industry benchmarks: typical CAC payback 18mo, NRR >110%. Recent market shifts include new entrants, pricing pressure..."
-              className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            />
-            <p className="text-xs text-gray-500">Competitive landscape, industry benchmarks, and market dynamics</p>
-          </div>
-
-          {/* Advanced: Prompt Editor */}
-          <div className="border-t border-gray-200 pt-6">
-            <button
-              type="button"
-              onClick={() => {
-                if (!showPromptEditor && !config.customPrompt) {
-                  setConfig({ ...config, customPrompt: generateTemplatePrompt() })
-                }
-                setShowPromptEditor(!showPromptEditor)
-              }}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-              disabled={isLoading}
-            >
-              <span className="text-base">⚙️</span>
-              <span className="font-medium">
-                {showPromptEditor ? 'Hide' : 'Advanced: Edit System Prompt'}
-              </span>
-              <span className="text-xs text-gray-400">
-                ({showPromptEditor ? 'collapse' : 'template with variables'})
-              </span>
-            </button>
-            
-            {showPromptEditor && (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="block text-sm font-semibold text-gray-900">
-                    🤖 System Prompt Template
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setConfig({ ...config, customPrompt: generateTemplatePrompt() })}
-                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                    disabled={isLoading}
-                  >
-                    Reset to Template
-                  </button>
-                </div>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-                  <div className="flex items-start space-x-2">
-                    <span className="text-blue-600 font-semibold">💡</span>
-                    <div className="text-blue-800">
-                      <p className="font-semibold mb-1">Template Variables:</p>
-                      <p>Text in <span className="bg-blue-100 px-1 rounded font-mono">{`{curly_braces}`}</span> gets replaced with your form inputs:</p>
-                      <ul className="mt-1 space-y-0.5 text-blue-700">
-                        <li>• <code className="bg-blue-100 px-1 rounded">{`{company_name}`}</code> → {companyName}</li>
-                        <li>• <code className="bg-blue-100 px-1 rounded">{`{custom_config.get('targetKpis', '...')}`}</code> → Your KPIs</li>
-                        <li>• <code className="bg-blue-100 px-1 rounded">{`{mood_instructions}`}</code> → Analysis personality</li>
-                        <li>• <code className="bg-blue-100 px-1 rounded">{`{file_list}`}</code> → PDF files being analyzed</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-                
-                <textarea
-                  value={config.customPrompt || generateTemplatePrompt()}
-                  onChange={(e) => setConfig({ ...config, customPrompt: e.target.value })}
-                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-xs"
-                  placeholder="Edit the system prompt template that will be sent to GPT-5..."
-                  style={{
-                    background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, rgba(59, 130, 246, 0.02) 100%)'
-                  }}
-                />
-                <p className="text-xs text-gray-500">
-                  Customize the exact instructions sent to GPT-5. Variables in {`{}`} will be replaced with your inputs. Changes apply to this analysis only.
-                </p>
-              </div>
-            )}
-          </div>
-
           {/* Action Buttons */}
-          <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-end pt-4 border-t border-gray-200 space-x-3">
             <button
               type="button"
-              onClick={handleReset}
+              onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
               disabled={isLoading}
             >
-              Reset Form
+              Cancel
             </button>
-            <div className="flex items-center space-x-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-                disabled={isLoading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading || !config.targetKpis.trim() || !config.tableFormat.trim()}
-                className={`px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isLoading || !config.targetKpis.trim() || !config.tableFormat.trim()
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-md hover:shadow-lg'
-                }`}
-              >
-                {isLoading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    <span>Analyzing...</span>
-                  </div>
-                ) : (
-                  'Start Analysis'
-                )}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={isLoading || (!standardPL && !unitEconomics && !customKpis.trim())}
+              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                isLoading || (!standardPL && !unitEconomics && !customKpis.trim())
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-md hover:shadow-lg'
+              }`}
+            >
+              {isLoading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  <span>Analyzing...</span>
+                </div>
+              ) : (
+                'Extract'
+              )}
+            </button>
           </div>
         </form>
       </div>

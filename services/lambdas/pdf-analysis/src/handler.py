@@ -1114,67 +1114,50 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
                 # Fallback to custom template as-is if substitution fails
                 system_prompt = custom_template
         else:
-            # Create the default custom analysis prompt
-            system_prompt = f"""You are a KV financial analyst. Analyze {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
+            # Create the simplified data-focused analysis prompt
+            system_prompt = f"""You are a KV financial data analyst. Extract and report financial metrics from {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
 
-    {mood_instructions}
+    ## OBJECTIVE
+    Extract and report numbers with minimal interpretation. Focus on data extraction and clear presentation of metrics.
 
-    ## USER REQUIREMENTS
-    **Target KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
-    **Table Format:** {custom_config.get('tableFormat', 'KPIs as columns, time as rows')}
-    **Previous Plan to benchmark against:** {custom_config.get('previousPlan', 'No previous plan provided')}
-    **Competitive Context:** {custom_config.get('competitiveContext', 'General market context')}
-    **Avoid These Issues:** {custom_config.get('previousIssues', 'None')}
+    ## TARGET METRICS
+    **Extract these KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
+    **Scope:** {custom_config.get('scope', 'Auto (best available)')}
 
-    ## MULTI-DIMENSIONAL ANALYSIS FRAMEWORK
-    You will analyze across THREE key dimensions:
-    1. **PLANS DIMENSION**: Look for multiple adjusted plans/projections in the board decks (e.g., "Original Plan", "Revised Q2 Plan", "Updated Forecast") PLUS any user-provided plan above
-    2. **TIME DIMENSION**: Different time periods (months, quarters, years)  
-    3. **KPI DIMENSION**: The specific metrics requested by the user
-    
-    **CRITICAL**: When you find multiple plans in the documents, treat each as a separate benchmark. Compare actual performance against each plan version to show how targets evolved over time.
-
-    ## FORMATTING REQUIREMENTS
-    - Use **bold** for key metrics, company names, and important findings
-    - Use *italics* for emphasis and commentary
-    - Use `code formatting` for specific numbers and percentages
-    - Rich markdown formatting throughout (headers, bullets, etc.)
-    - Include emojis for visual appeal and section headers
-
-    ## CRITICAL: MANDATORY TABLE
-    Create a markdown table with:
-    - User's KPIs as COLUMNS, time periods as ROWS
-    - Proper | separators and headers
-    - MoM/QoQ changes and trend arrows (📈📉➡️)
-
-    Example:
-    | Period | Revenue | CAC | LTV | MoM Change | Trend |
-    |--------|---------|-----|-----|------------|-------|
-    | Q1 2024 | $1.2M | $150 | $850 | - | 📈 |
+    ## DATA EXTRACTION REQUIREMENTS
+    - Extract exact numbers as they appear in the documents
+    - Report metrics across available time periods
+    - Note data sources and periods clearly
+    - Include percentage changes between periods where calculable
+    - Flag missing or unclear data points
 
     ## OUTPUT FORMAT
-    1. 🏥 **Company Health Score** 
-       - Overall assessment: 🟢 GREEN / 🟡 YELLOW / 🔴 RED
-       - Brief justification in **bold key points**
+    1. 📋 **KPI Data Table** (MANDATORY)
+       - KPIs as columns, time periods as rows
+       - Use exact numbers from documents
+       - Include source document/section references
+       - Mark missing data as "N/A" or "Not Reported"
     
-    2. 📊 **Executive Summary** (3-4 key highlights with **bold** metrics)
-    
-    3. 📋 **KPI Table** (MANDATORY as specified above)
-    
-    4. 📈 **Trend Analysis** (quantified insights per KPI with *italicized* commentary)
-    
-    5. 🆘 **What Company Needs Help With**
-       - Primary areas: Recruiting, GTM, Fundraising, M&A, PR, Operations, etc.
-       - **Bold** the top 2-3 priority areas
-    
-    6. 🎯 **Key Diagnoses** (focus on diagnosis, minimal strategic advice)
+    Example:
+    | Period | Revenue | COGS | Gross Profit | EBITDA | Source |
+    |--------|---------|------|--------------|--------|---------|
+    | Q1 2024 | $1.2M | $400K | $800K | $200K | Board Deck Q1 |
+    | Q2 2024 | $1.5M | $500K | $1.0M | $350K | Board Deck Q2 |
 
-    ## FILES
+    2. 📊 **Data Summary**
+       - Key metrics extracted: List what was found
+       - Data completeness: What periods/metrics are available
+       - Notable data gaps or inconsistencies
+
+    3. 📈 **Basic Trends** (numbers only)
+       - Period-over-period changes (e.g., "Revenue grew 25% Q1 to Q2")
+       - Simple trend direction indicators (📈📉➡️)
+       - No strategic interpretation - just mathematical observations
+
+    ## FILES ANALYZED
     {file_list}
 
-    Focus on user's specific KPIs, use their table format, identify and benchmark against ALL plans found in documents (treat each plan version as a separate dimension), consider competitive context, avoid mentioned issues. Use rich markdown formatting throughout.
-    
-    **Remember**: This is a 3D analysis - Plans × Time × KPIs. Show how performance compares across multiple plan versions over time."""
+    **Focus on data extraction over analysis. Report what the numbers say, not what they mean strategically.**"""
 
         # Build a single user message with text + N input_file parts (Responses API)
         if custom_config.get('customPrompt'):
@@ -1182,8 +1165,8 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
             user_text = f"Please process these {len(uploaded_files)} files for {company_name}."
             print(f"🎯 Using minimal user message due to custom prompt")
         else:
-            # Use default detailed user message for standard analysis
-            user_text = f"Analyze these {len(uploaded_files)} reports for {company_name}. Provide company health assessment, mandatory KPI table, trend analysis across multiple plan dimensions, and diagnostic insights as specified in the instructions."
+            # Use focused data extraction message
+            user_text = f"Extract financial metrics from these {len(uploaded_files)} reports for {company_name}. Focus on data extraction and clear presentation as specified in the instructions."
         
         user_content = [
             {"type": "input_text", "text": user_text}

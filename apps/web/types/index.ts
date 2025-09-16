@@ -103,6 +103,7 @@ export interface FinancialReport {
     previousPlan: string
     competitiveContext: string
     customPrompt?: string  // Optional prompt override
+    scope: string  // Scope selection (auto, ttm, all, custom)
   }
 
   export interface HealthCheckConfig {
