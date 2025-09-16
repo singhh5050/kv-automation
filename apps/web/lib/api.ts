@@ -449,24 +449,33 @@ export async function getCompetitiveLandscape(financialData: any) {
  */
 export async function listCompanyPDFs(companyId: number) {
   try {
-    console.log(`📁 Listing PDF files for company ${companyId}`)
+    console.log(`📁 Listing PDF files for company ${companyId} (type: ${typeof companyId})`)
+    
+    const requestBody = {
+      action: 'list_pdfs',
+      company_id: companyId
+    }
+    console.log(`🔍 Request body:`, requestBody)
     
     const response = await fetch('/api/analyze-kpis', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        action: 'list_pdfs',
-        company_id: companyId
-      }),
+      body: JSON.stringify(requestBody),
     })
 
+    console.log(`📡 Response status: ${response.status}`)
+    console.log(`📡 Response headers:`, Object.fromEntries(response.headers.entries()))
+
     if (!response.ok) {
-      throw new Error(`Failed to list PDFs: ${response.status}`)
+      const errorText = await response.text()
+      console.error(`❌ Response error body:`, errorText)
+      throw new Error(`Failed to list PDFs: ${response.status} - ${errorText}`)
     }
 
     const result = await response.json()
+    console.log(`📄 Full response result:`, result)
     console.log(`✅ Retrieved ${result.files?.length || 0} PDF files`)
     
     return {

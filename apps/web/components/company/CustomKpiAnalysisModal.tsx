@@ -41,22 +41,30 @@ export default function CustomKpiAnalysisModal({
 
   // Load available PDF files when modal opens
   useEffect(() => {
-    if (isOpen && companyId) {
+    if (isOpen && companyId && companyId > 0) {
       setLoadingFiles(true)
+      console.log(`🔍 Loading PDF files for company ID: ${companyId}`)
       listCompanyPDFs(companyId)
         .then(result => {
           if (result.success) {
             setAvailableFiles(result.files)
+            console.log(`✅ Loaded ${result.files.length} PDF files`)
           } else {
             console.error('Failed to load PDF files:', result.error)
+            setAvailableFiles([])
           }
         })
         .catch(error => {
           console.error('Error loading PDF files:', error)
+          setAvailableFiles([])
         })
         .finally(() => {
           setLoadingFiles(false)
         })
+    } else if (isOpen) {
+      console.warn(`⚠️ Modal opened but invalid company ID: ${companyId}`)
+      setAvailableFiles([])
+      setLoadingFiles(false)
     }
   }, [isOpen, companyId])
 

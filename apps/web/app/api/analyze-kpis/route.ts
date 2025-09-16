@@ -7,7 +7,9 @@ export async function POST(request: NextRequest) {
     console.log('🔍 KPI analysis API route called')
     
     const body = await request.json()
-    const { company_id, stage } = body
+    const { company_id, stage, action } = body
+    
+    console.log(`📝 Request body:`, body)
     
     if (!company_id) {
       return NextResponse.json(
@@ -16,14 +18,19 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    if (!stage) {
-      return NextResponse.json(
-        { error: 'stage is required (Early Stage, Main Stage, or Growth Stage)' },
-        { status: 400 }
-      )
+    // Handle PDF listing request
+    if (action === 'list_pdfs') {
+      console.log(`📁 Listing PDFs for company ${company_id}`)
+    } else {
+      // Handle KPI analysis request
+      if (!stage) {
+        return NextResponse.json(
+          { error: 'stage is required for KPI analysis (Early Stage, Main Stage, or Growth Stage)' },
+          { status: 400 }
+        )
+      }
+      console.log(`📊 Analyzing KPIs for company ${company_id}, stage: ${stage}`)
     }
-    
-    console.log(`📊 Analyzing KPIs for company ${company_id}, stage: ${stage}`)
     
     // Validate AWS credentials
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
@@ -45,9 +52,13 @@ export async function POST(request: NextRequest) {
     
     // Prepare Lambda payload
     const payload = {
-      action: 'analyze_kpis',
-      company_id: parseInt(company_id),
-      stage: stage
+      action: action || 'analyze_kpis',
+      company_id: parseInt(company_id)
+    }
+    
+    // Add stage for KPI analysis
+    if (stage) {
+      payload.stage = stage
     }
     
     console.log(`📤 Invoking Lambda with payload:`, payload)
