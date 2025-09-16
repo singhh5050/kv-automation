@@ -212,6 +212,9 @@ def lambda_handler(event, context):
     elif event.get('action') == 'analyze_kpis':
         print("📊 Processing KPI analysis request")
         return handle_kpi_analysis_request(event, context)
+    elif event.get('action') == 'list_pdfs':
+        print("📁 Processing PDF listing request")
+        return handle_kpi_analysis_request(event, context)
     elif event.get('action') == 'create_async_kpi_job':
         print("🚀 Creating async KPI analysis job")
         return handle_create_async_job(event, context)
@@ -238,7 +241,6 @@ def lambda_handler(event, context):
 def list_company_pdfs(company_id: int) -> dict:
     """
     List available PDF files for a company in S3
-    Uses the same search strategy as the analysis function
     """
     try:
         import boto3
@@ -247,18 +249,15 @@ def list_company_pdfs(company_id: int) -> dict:
         
         print(f"📁 Listing PDFs for company {company_id}")
         
-        pdf_files = []
-        
-        # First search in the company folder
+        # List objects in the company folder
         prefix = f"company-{company_id}/"
-        print(f"🔍 Searching in company folder: {prefix}")
-        
         response = s3_client.list_objects_v2(
             Bucket=bucket_name,
             Prefix=prefix,
             MaxKeys=1000
         )
         
+        pdf_files = []
         if 'Contents' in response:
             for obj in response['Contents']:
                 key = obj['Key']
@@ -271,53 +270,10 @@ def list_company_pdfs(company_id: int) -> dict:
                         'last_modified': obj['LastModified'].isoformat()
                     })
         
-        print(f"📊 Found {len(pdf_files)} PDFs in company folder")
-        
-        # If no files found in company folder, search the entire bucket
-        if len(pdf_files) == 0:
-            print(f"🔍 No files in company folder, searching entire bucket...")
-            
-            response = s3_client.list_objects_v2(
-                Bucket=bucket_name,
-                MaxKeys=1000
-            )
-            
-            if 'Contents' in response:
-                print(f"🔍 Found {len(response['Contents'])} total objects in bucket")
-                pdf_count = 0
-                for obj in response['Contents']:
-                    key = obj['Key']
-                    if key.lower().endswith('.pdf'):
-                        pdf_count += 1
-                        # Look for PDFs that might belong to this company
-                        if (f"company-{company_id}" in key.lower() or 
-                            f"company{company_id}" in key.lower() or
-                            str(company_id) in key):
-                            
-                            # Extract a clean filename
-                            file_name = key.split('/')[-1] if '/' in key else key
-                            pdf_files.append({
-                                'key': key,
-                                'name': file_name,
-                                'size': obj['Size'],
-                                'last_modified': obj['LastModified'].isoformat()
-                            })
-                            print(f"📄 Matched PDF: {key}")
-                
-                print(f"🔍 Found {pdf_count} total PDFs in bucket, {len(pdf_files)} matched company {company_id}")
-            else:
-                print(f"⚠️ No 'Contents' in S3 response - bucket might be empty or inaccessible")
-        
-        print(f"📊 Total found: {len(pdf_files)} PDFs after comprehensive search")
-        
         # Sort by last modified (newest first)
         pdf_files.sort(key=lambda x: x['last_modified'], reverse=True)
         
-        # Debug: Print first few files found
-        for i, file in enumerate(pdf_files[:3]):
-            print(f"📄 File {i+1}: {file['key']} ({file['name']})")
-        
-        print(f"✅ Returning {len(pdf_files)} PDF files for company {company_id}")
+        print(f"✅ Found {len(pdf_files)} PDF files for company {company_id}")
         return {
             'success': True,
             'files': pdf_files
