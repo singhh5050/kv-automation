@@ -1129,7 +1129,7 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
     - Report metrics across available time periods
     - Note data sources and periods clearly
     - Include percentage changes between periods where calculable
-    - Flag missing or unclear data points
+    - Flag missing or unclear data points{f" - Additional context: {custom_config.get('previousIssues', '').strip()}" if custom_config.get('previousIssues', '').strip() else ""}
 
     ## OUTPUT FORMAT
     1. 📋 **KPI Data Table** (MANDATORY)

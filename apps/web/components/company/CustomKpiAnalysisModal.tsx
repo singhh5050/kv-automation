@@ -30,6 +30,8 @@ export default function CustomKpiAnalysisModal({
   const [unitEconomics, setUnitEconomics] = useState(true)
   const [customKpis, setCustomKpis] = useState('')
   const [scope, setScope] = useState('auto')
+  const [customScope, setCustomScope] = useState('')
+  const [additionalInfo, setAdditionalInfo] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,15 +48,18 @@ export default function CustomKpiAnalysisModal({
       targetKpis.push(customKpis.trim())
     }
 
+    // Determine the final scope value
+    const finalScope = scope === 'custom' ? customScope.trim() || 'Auto (best available)' : scope
+
     const config: KpiAnalysisConfig = {
       targetKpis: targetKpis.join(', '),
       tableFormat: 'KPIs as columns, time periods as rows, include percentage changes between periods',
       analysisMood: 'balanced',
-      previousIssues: '',
+      previousIssues: additionalInfo.trim(),
       previousPlan: '',
       competitiveContext: '',
       customPrompt: '',
-      scope: scope
+      scope: finalScope
     }
 
     onSubmit(config)
@@ -145,6 +150,32 @@ export default function CustomKpiAnalysisModal({
                 </label>
               ))}
             </div>
+            
+            {/* Custom scope input */}
+            {scope === 'custom' && (
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={customScope}
+                  onChange={(e) => setCustomScope(e.target.value)}
+                  placeholder="e.g., Last 6 months, Q1-Q3 2024, Since Series A..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Additional Info */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Additional Info / What went wrong last time (Optional)
+            </label>
+            <textarea
+              value={additionalInfo}
+              onChange={(e) => setAdditionalInfo(e.target.value)}
+              placeholder="e.g., Last analysis missed seasonal trends, didn't account for pricing changes, focus on unit economics..."
+              className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            />
           </div>
 
           {/* Action Buttons */}
