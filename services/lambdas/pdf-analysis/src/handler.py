@@ -192,7 +192,7 @@ def lambda_handler(event, context):
     # Log the incoming event for debugging
     print(f"Lambda invoked with event: {json.dumps(event)[:500]}...")
     
-    # Enhanced event type detection
+    # Enhanced event type detection - S3 events first
     if 'Records' in event and event['Records'][0].get('eventSource') == 'aws:s3':
         print("🔄 Processing S3 event (new architecture)")
         return handle_s3_event(event, context)
@@ -209,30 +209,70 @@ def lambda_handler(event, context):
                 'received_event_type': 'ELB'
             })
         }
-    elif event.get('action') == 'analyze_kpis':
-        print("📊 Processing KPI analysis request")
-        return handle_kpi_analysis_request(event, context)
-    elif event.get('action') == 'list_pdfs':
+    
+    # Robust body parsing for API Gateway/Lambda invocations
+    payload = {}
+    raw = event.get("body")
+    if raw:
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+        if event.get("isBase64Encoded"):
+            import base64
+            raw = base64.b64decode(raw or "").decode("utf-8")
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception as e:
+            print(f"⚠️ Failed to parse body as JSON: {e}")
+            payload = {}
+    
+    # Also check direct event fields (for direct Lambda invocations)
+    if not payload:
+        payload = event
+    
+    # Unify access to action parameter
+    qs = event.get("queryStringParameters") or {}
+    action = payload.get("action") or qs.get("action") or event.get("action")
+    
+    print(f"🎯 Detected action: {action}")
+    print(f"🔍 Payload keys: {list(payload.keys())}")
+    
+    # Handle CORS preflight
+    if event.get("httpMethod") == "OPTIONS":
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
+            'body': ''
+        }
+    
+    # Route based on action
+    if action == 'list_pdfs':
         print("📁 Processing PDF listing request")
-        return handle_kpi_analysis_request(event, context)
-    elif event.get('action') == 'create_async_kpi_job':
+        return handle_kpi_analysis_request(payload, context)
+    elif action == 'analyze_kpis':
+        print("📊 Processing KPI analysis request")
+        return handle_kpi_analysis_request(payload, context)
+    elif action == 'create_async_kpi_job':
         print("🚀 Creating async KPI analysis job")
-        return handle_create_async_job(event, context)
-    elif event.get('action') == 'get_job_status':
+        return handle_create_async_job(payload, context)
+    elif action == 'get_job_status':
         print("🔍 Getting job status")
-        return handle_get_job_status(event, context)
-    elif event.get('action') == 'get_latest_completed_job':
+        return handle_get_job_status(payload, context)
+    elif action == 'get_latest_completed_job':
         print("🔍 Getting latest completed job")
-        return handle_get_latest_completed_job(event, context)
-    elif event.get('action') == 'process_async_kpi_job':
+        return handle_get_latest_completed_job(payload, context)
+    elif action == 'process_async_kpi_job':
         print("⚡ Processing async KPI analysis job")
-        return handle_process_async_job(event, context)
-    elif event.get('action') == 'health_check':
+        return handle_process_async_job(payload, context)
+    elif action == 'health_check':
         print("🏥 Processing health check request")
-        return handle_health_check_request(event, context)
-    elif event.get('action') == 'get_health_check':
+        return handle_health_check_request(payload, context)
+    elif action == 'get_health_check':
         print("🔍 Getting latest health check")
-        return handle_get_health_check_request(event, context)
+        return handle_get_health_check_request(payload, context)
     else:
         print("📡 Processing API Gateway event (legacy architecture)")
         return handle_api_gateway_event(event, context)

@@ -457,31 +457,29 @@ export async function listCompanyPDFs(companyId: number) {
     }
     console.log(`🔍 Request body:`, requestBody)
     
-    const response = await fetch('/api/analyze-kpis', {
+    // Use direct backend API call instead of Next.js proxy
+    const { data, error } = await apiRequest('/analyze-kpis', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(requestBody),
     })
-
-    console.log(`📡 Response status: ${response.status}`)
-    console.log(`📡 Response headers:`, Object.fromEntries(response.headers.entries()))
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ Response error body:`, errorText)
-      throw new Error(`Failed to list PDFs: ${response.status} - ${errorText}`)
+    
+    if (error) {
+      console.error('❌ Backend API error:', error)
+      return { success: false, files: [], error }
     }
 
-    const result = await response.json()
-    console.log(`📄 Full response result:`, result)
-    console.log(`✅ Retrieved ${result.files?.length || 0} PDF files`)
+    console.log(`📄 Full response result:`, data)
     
-    return {
-      success: result.success,
-      files: result.files || [],
-      error: result.error
+    // Accept both shapes: {files: [...]} or {data:{files:[...]}}
+    const files = data?.files ?? data?.data?.files ?? []
+    const success = data?.success ?? data?.status === 'success'
+    
+    console.log(`✅ Retrieved ${files.length} PDF files`)
+    
+    return { 
+      success, 
+      files, 
+      error: data?.error 
     }
   } catch (error) {
     console.error('❌ Failed to list company PDFs:', error)
