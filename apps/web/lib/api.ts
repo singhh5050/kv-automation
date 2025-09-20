@@ -193,7 +193,7 @@ export async function createOrGetCompany(companyName: string): Promise<{ company
   }
 }
 
-export const createDatabaseSchema = () => post('/api/schema');
+export const createDatabaseSchema = () => post('/schema');
 
 export const testDatabaseConnection = () => op('test_connection');
 
@@ -216,7 +216,7 @@ export const getCompanyOverview = (companyId: string) =>
 export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: string }, companyName?: string) {
   const body: any = { operation: 'process_cap_table_xlsx', ...xlsxData };
   if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
-  return post('/api/process-cap-table', body);
+  return post('/process-cap-table', body);
 }
 
 export const getCompetitiveLandscape = (_financialData: any) =>
@@ -308,13 +308,13 @@ export const getAllCompanyData = (companyId: string) =>
 /** ---------------- Enrichment ---------------- */
 
 export const enrichCompany = (companyId: string, identifier: { key: string; value: string }) =>
-  post('/api/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
+  post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
 
 export const getCompanyEnrichment = (companyId: string) =>
-  post('/api/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
+  post('/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
 
 export const enrichPerson = (personUrn: string) =>
-  post('/api/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
+  post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
 
 /** ---------------- Deletions / names ---------------- */
 
