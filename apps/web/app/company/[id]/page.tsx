@@ -999,6 +999,9 @@ export default function CompanyDetailPage() {
     setHealthCheckLoading(true)
     setHealthCheckError(null)
     setHealthCheckResult(null)
+    
+    // Close modal immediately after starting analysis
+    setShowHealthCheckModal(false)
 
     try {
       console.log('🏥 Starting health check analysis...')
@@ -1021,7 +1024,6 @@ export default function CompanyDetailPage() {
       setHealthCheckError(error instanceof Error ? error.message : 'Health check failed')
     } finally {
       setHealthCheckLoading(false)
-      setShowHealthCheckModal(false)
     }
   }
 
