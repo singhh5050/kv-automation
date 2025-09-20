@@ -600,9 +600,6 @@ def handle_api_gateway_event(event, context):
         }
 
 
-
-
-
 def normalize_analysis_for_db(d: dict) -> dict:
     """Normalize analysis result for database compatibility."""
     # Ensure required fields exist
@@ -643,14 +640,6 @@ def normalize_analysis_for_db(d: dict) -> dict:
             d['runway'] = None
 
     return d
-
-
-
-
-
-
-
-
 
 def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_only: bool = False,
                                     company_name_override: str = None, user_provided_name: bool = False):
@@ -2826,7 +2815,7 @@ Analyze the company's health using:
 ## OUTPUT REQUIREMENTS
 Provide a health score assessment:
 
-**HEALTH SCORE**: Choose exactly one:
+**HEALTH SCORE**: Choose exactly one and make it exactly the first word in the response: ex. "GREEN", "YELLOW", "RED"
 - GREEN: Company is healthy with strong fundamentals
 - YELLOW: Company has manageable concerns but is stable
 - RED: Company faces significant challenges requiring attention
