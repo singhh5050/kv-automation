@@ -21,6 +21,13 @@ const SCOPE_OPTIONS = [
   { value: 'custom', label: 'Custom…' }
 ]
 
+// Helper function to strip timestamp prefix from filename for display
+function stripTimestampFromFilename(filename: string): string {
+  // Pattern matches: YYYY-MM-DDTHH-MM-SS-sssZ- at the start of filename
+  const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-/;
+  return filename.replace(timestampPattern, '');
+}
+
 export default function CustomKpiAnalysisModal({ 
   isOpen, 
   onClose, 
@@ -247,7 +254,9 @@ export default function CustomKpiAnalysisModal({
                       className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium text-gray-900 break-all">{file.name}</span>
+                      <span className="text-sm font-medium text-gray-900 break-all">
+                        {stripTimestampFromFilename(file.name)}
+                      </span>
                       <div className="text-xs text-gray-500">
                         {new Date(file.last_modified).toLocaleDateString()} • {Math.round(file.size / 1024)} KB
                       </div>
