@@ -1,156 +1,109 @@
 /**
- * API client for connecting to the AWS Lambda backend
+ * Thin API client for AWS Lambda + Next API
  */
 
-// Get backend URL from environment
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL
-if (!BACKEND_URL) {
-  throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set')
-}
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+if (!BACKEND_URL) throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set');
 
 interface ApiResponse<T = any> {
-  data?: T
-  error?: string
-  metadata?: any
+  data?: T;
+  error?: string;
+  metadata?: any;
 }
 
-/**
- * Base API request function for Lambda endpoints
- */
+const JSON_HDR = { 'Content-Type': 'application/json' as const };
+
+const withJson = (body?: any, headers?: HeadersInit) => ({
+  headers: { ...JSON_HDR, ...headers },
+  ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+});
+
 async function apiRequest<T = any>(
-  endpoint: string,
+  path: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
-    const url = `${BACKEND_URL}${endpoint}`
-    
-    const response = await fetch(url, {
+    const res = await fetch(`${BACKEND_URL}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
+      headers: { ...JSON_HDR, ...options.headers },
+    });
+    const json = await res.json().catch(() => ({}));
 
-    const responseData = await response.json()
+    if (!res.ok) throw new Error(json?.error || `HTTP error! status: ${res.status}`);
 
-    if (!response.ok) {
-      throw new Error(responseData.error || `HTTP error! status: ${response.status}`)
-    }
-
-    // Handle Lambda response structure - unwrap the nested data
-    if (responseData.status === 'success' && responseData.data) {
-      return { data: responseData }
-    }
-    
-    return { data: responseData }
-  } catch (error) {
-    console.error('API request error:', error)
-    return { error: error instanceof Error ? error.message : 'Unknown error' }
+    // Preserve original behavior: always wrap as { data: json }
+    return { data: json };
+  } catch (e: any) {
+    console.error('API request error:', e);
+    return { error: e instanceof Error ? e.message : 'Unknown error' };
   }
 }
 
-/**
- * Extract and analyze PDF content using OpenAI
- */
+// Convenience helpers
+const post = <T = any>(path: string, body?: any, headers?: HeadersInit) =>
+  apiRequest<T>(path, { method: 'POST', ...withJson(body, headers) });
+
+const op = <T = any>(operation: string, args?: Record<string, any>) =>
+  post<T>('/financial', { operation, ...(args || {}) });
+
+/** ---------------- Core features ---------------- */
+
 export async function extractPdf(pdfData: string, filename: string, companyName?: string) {
-  const requestBody: any = {
-    pdf_data: pdfData,
-    filename,
-  }
-  
-  // Add company name and user_provided_name flag if provided
-  if (companyName) {
-    requestBody.company_name_override = companyName
-    requestBody.user_provided_name = true
-  }
-  
-  return apiRequest('/analyze-pdf', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  })
+  const body: any = { pdf_data: pdfData, filename };
+  if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
+  return post('/analyze-pdf', body);
 }
 
-/**
- * Upload file for processing - converts to base64 and calls PDF analysis
- */
 export async function uploadFile(file: File, companyName?: string) {
   try {
-    // Convert file to base64
-    const base64Data = await fileToBase64(file)
-    
-    // Remove the data:application/pdf;base64, prefix if present
-    const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/, '')
-    
-    // Call the PDF analysis Lambda function with optional company name
-    return await extractPdf(cleanBase64, file.name, companyName)
-  } catch (error) {
-    console.error('File upload error:', error)
-    return { error: error instanceof Error ? error.message : 'File upload failed' }
+    const base64 = await fileToBase64(file);
+    const clean = base64.replace(/^data:application\/pdf;base64,/, '');
+    return await extractPdf(clean, file.name, companyName);
+  } catch (e: any) {
+    console.error('File upload error:', e);
+    return { error: e instanceof Error ? e.message : 'File upload failed' };
   }
 }
 
-/**
- * Direct S3 Upload via Presigned URLs
- * Browser uploads directly to S3, bypassing server size limits (supports up to 5GB)
- */
+/** Direct S3 upload via presigned URL (Next API -> S3) */
 export async function uploadToS3(file: File, companyId?: number, companyName?: string) {
   try {
-    console.log(`🚀 Starting direct S3 upload for ${file.name}`)
-    console.log(`📋 Company ID: ${companyId}, Company Name: ${companyName}`)
-    console.log(`📊 File size: ${(file.size / 1024 / 1024).toFixed(2)}MB`)
-    
-    // Step 1: Get presigned URL from our API
-    console.log(`🔗 Requesting presigned URL...`)
-    const presignResponse = await fetch('/api/presign-s3', {
+    console.log(`🚀 Direct S3 upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+    console.log(`📋 Company ID: ${companyId}, Company Name: ${companyName}`);
+
+    const presignRes = await fetch('/api/presign-s3', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+      ...withJson({
         fileName: file.name,
         fileType: file.type || 'application/pdf',
         companyId,
         companyName,
       }),
-    })
-    
-    if (!presignResponse.ok) {
-      const presignError = await presignResponse.json()
-      throw new Error(presignError.error || `Failed to get presigned URL: ${presignResponse.status}`)
+    });
+
+    if (!presignRes.ok) {
+      const err = await presignRes.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to get presigned URL: ${presignRes.status}`);
     }
-    
-    const presignData = await presignResponse.json()
-    console.log(`✅ Presigned URL obtained for key: ${presignData.s3Key}`)
-    
-    // Step 2: Upload directly to S3 using presigned URL
-    console.log(`📤 Uploading directly to S3...`)
-    const uploadResponse = await fetch(presignData.presignedUrl, {
+
+    const presignData = await presignRes.json();
+    console.log(`✅ Presigned URL obtained for key: ${presignData.s3Key}`);
+
+    const up = await fetch(presignData.presignedUrl, {
       method: 'PUT',
       body: file,
-      headers: {
-        'Content-Type': file.type || 'application/pdf',
-      },
-    })
-    
-    if (!uploadResponse.ok) {
-      // S3 errors are typically not JSON, but plain text
-      let errorMessage = `S3 upload failed (${uploadResponse.status})`
-      try {
-        const errorText = await uploadResponse.text()
-        errorMessage += `: ${errorText.slice(0, 200)}`
-      } catch {
-        // If we can't read the error text, use the status
-      }
-      throw new Error(errorMessage)
+      headers: { 'Content-Type': file.type || 'application/pdf' },
+    });
+
+    if (!up.ok) {
+      let msg = `S3 upload failed (${up.status})`;
+      try { msg += `: ${(await up.text()).slice(0, 200)}`; } catch {}
+      throw new Error(msg);
     }
-    
-    console.log(`✅ Direct S3 upload successful!`)
-    console.log(`🆔 S3 ETag: ${uploadResponse.headers.get('ETag')}`)
-    
+
+    const etag = up.headers.get('ETag');
+    console.log('✅ Direct S3 upload successful!', '🆔 ETag:', etag);
+
     return {
       data: {
         success: true,
@@ -158,139 +111,57 @@ export async function uploadToS3(file: File, companyId?: number, companyName?: s
         bucket: presignData.bucket,
         message: 'PDF uploaded successfully to S3. Processing will begin automatically.',
         processingNote: 'Results will appear in the database shortly.',
-        etag: uploadResponse.headers.get('ETag'),
-        uploadMethod: 'direct-s3'
-      }
-    }
-    
-  } catch (error) {
-    console.error('❌ Direct S3 upload error:', error)
-    console.error('❌ Error type:', error?.constructor?.name)
-    
-    return { 
-      error: error instanceof Error ? error.message : 'S3 upload failed',
+        etag,
+        uploadMethod: 'direct-s3',
+      },
+    };
+  } catch (e: any) {
+    console.error('❌ Direct S3 upload error:', e, 'type:', e?.constructor?.name);
+    return {
+      error: e instanceof Error ? e.message : 'S3 upload failed',
       fallbackSuggestion: 'Try refreshing and uploading again. Contact support if the issue persists.',
-      errorDetails: error
-    }
+      errorDetails: e,
+    };
   }
 }
 
-/**
- * Helper function to convert file to base64 (legacy method)
- */
+/** Utilities */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = error => reject(error)
-  })
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
 }
 
-/**
- * Save financial report to database
- */
-export async function saveFinancialReport(reportData: any) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'save_financial_report',
-      ...reportData,
-    }),
-  })
-}
+/** ---------------- Financial ops ---------------- */
 
-/**
- * Get all companies from database
- */
-export async function getCompanies() {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_companies',
-    }),
-  })
-}
+export const saveFinancialReport = (reportData: any) =>
+  op('save_financial_report', reportData);
 
-/**
- * Get optimized portfolio summary (for homepage cards)
- * Returns only essential fields instead of full company overviews
- */
-export async function getPortfolioSummary() {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_portfolio_summary',
-    }),
-  })
-}
+export const getCompanies = () => op('get_companies');
 
-/**
- * Get reports for a specific company
- */
-export async function getCompanyReports(companyId: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_reports',
-      company_id: companyId,
-    }),
-  })
-}
+export const getPortfolioSummary = () => op('get_portfolio_summary');
 
-/**
- * Get company by name
- */
-export async function getCompanyByName(companyName: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_by_name',
-      company_name: companyName,
-    }),
-  })
-}
+export const getCompanyReports = (companyId: string) =>
+  op('get_company_reports', { company_id: companyId });
 
-/**
- * Create or get a company by name
- * Returns company ID for use in uploads
- */
+export const getCompanyByName = (companyName: string) =>
+  op('get_company_by_name', { company_name: companyName });
+
 export async function createOrGetCompany(companyName: string): Promise<{ companyId: number; companyName: string; error?: string }> {
   try {
-    // First try to find existing company
-    const existingResult = await getCompanyByName(companyName)
-    
-    if (existingResult.data?.data?.found !== false) {
-      // Company exists, return its ID
-      return {
-        companyId: existingResult.data.data.id,
-        companyName: existingResult.data.data.name
-      }
+    const existing = await getCompanyByName(companyName);
+    if (existing.data?.data?.found !== false) {
+      return { companyId: existing.data.data.id, companyName: existing.data.data.name };
     }
-    
-    // Company doesn't exist, create it by saving a minimal financial report
-    // This leverages the existing logic that creates companies automatically
-    const dummyReport = {
-      companyName: companyName,
+    const dummy = {
+      companyName,
       reportDate: new Date().toISOString().split('T')[0],
       reportPeriod: 'Placeholder',
       filename: '_company_creation_placeholder.pdf',
-      sector: 'healthcare', // default sector
+      sector: 'healthcare',
       cashOnHand: null,
       monthlyBurnRate: null,
       cashOutDate: null,
@@ -302,651 +173,199 @@ export async function createOrGetCompany(companyName: string): Promise<{ company
       keyRisks: 'N/A',
       personnelUpdates: 'N/A',
       nextMilestones: 'N/A',
-      user_provided_name: true
+      user_provided_name: true,
+    };
+    const created = await saveFinancialReport(dummy);
+    if (created.error) return { companyId: 0, companyName: '', error: created.error };
+
+    const fetched = await getCompanyByName(companyName);
+    if (fetched.data?.data?.id) {
+      return { companyId: fetched.data.data.id, companyName: fetched.data.data.name };
     }
-    
-    const createResult = await saveFinancialReport(dummyReport)
-    
-    if (createResult.error) {
-      return { companyId: 0, companyName: '', error: createResult.error }
-    }
-    
-    // Now get the company ID
-    const newCompanyResult = await getCompanyByName(companyName)
-    
-    if (newCompanyResult.data?.data?.id) {
-      // Delete the placeholder report since we only created it to get the company
-      // Note: We could add a delete operation, but for now leaving it as a marker
-      
-      return {
-        companyId: newCompanyResult.data.data.id,
-        companyName: newCompanyResult.data.data.name
-      }
-    } else {
-      return { companyId: 0, companyName: '', error: 'Failed to create company' }
-    }
-    
-  } catch (error) {
-    console.error('Error creating/getting company:', error)
-    return { 
-      companyId: 0, 
-      companyName: '', 
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }
+    return { companyId: 0, companyName: '', error: 'Failed to create company' };
+  } catch (e: any) {
+    console.error('Error creating/getting company:', e);
+    return { companyId: 0, companyName: '', error: e instanceof Error ? e.message : 'Unknown error' };
   }
 }
 
-/**
- * Create database schema
- */
-export async function createDatabaseSchema() {
-  return apiRequest('/schema', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
-}
+export const createDatabaseSchema = () => post('/schema');
 
-/**
- * Test database connection
- */
-export async function testDatabaseConnection() {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'test_connection',
-    }),
-  })
-}
+export const testDatabaseConnection = () => op('test_connection');
 
-/**
- * Health check
- */
 export async function healthCheck() {
   try {
-    const response = await fetch(`${BACKEND_URL}/test`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    return response.ok
+    const res = await fetch(`${BACKEND_URL}/test`, { method: 'POST', headers: JSON_HDR });
+    return res.ok;
   } catch {
-    return false
+    return false;
   }
 }
 
-/**
- * Save cap table round data
- */
-export async function saveCapTableRound(capTableData: any) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'save_cap_table_round',
-      ...capTableData,
-    }),
-  })
+export const saveCapTableRound = (capTableData: any) =>
+  op('save_cap_table_round', capTableData);
+
+export const getCompanyOverview = (companyId: string) =>
+  op('get_company_overview', { company_id: companyId });
+
+export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: string }, companyName?: string) {
+  const body: any = { operation: 'process_cap_table_xlsx', ...xlsxData };
+  if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
+  return post('/process-cap-table', body);
 }
 
-/**
- * Get complete company overview (cap table + financial reports)
- */
-export async function getCompanyOverview(companyId: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_overview',
-      company_id: companyId,
-    }),
-  })
-}
+export const getCompetitiveLandscape = (_financialData: any) =>
+  ({ error: 'Competitive landscape analysis not yet implemented in Lambda backend' });
 
-/**
- * Process cap table XLSX file and extract data
- */
-export async function processCapTableXlsx(xlsxData: { xlsx_data: string, filename: string }, companyName?: string) {
-  const requestBody: any = {
-    operation: 'process_cap_table_xlsx',
-    ...xlsxData,
-  }
-  
-  // Add company name and user_provided_name flag if provided
-  if (companyName) {
-    requestBody.company_name_override = companyName
-    requestBody.user_provided_name = true
-  }
-  
-  return apiRequest('/process-cap-table', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  })
-}
+/** ---------------- KPI / Files ---------------- */
 
-/**
- * Get competitive landscape (if needed for future use)
- */
-export async function getCompetitiveLandscape(financialData: any) {
-  // This would need to be implemented as a separate Lambda function if needed
-  return { error: 'Competitive landscape analysis not yet implemented in Lambda backend' }
-}
-
-/**
- * List available PDF files for a company
- */
 export async function listCompanyPDFs(companyId: number) {
   try {
-    console.log(`📁 Listing PDF files for company ${companyId} (type: ${typeof companyId})`)
-    
-    const requestBody = {
-      action: 'list_pdfs',
-      company_id: companyId
-    }
-    console.log(`🔍 Request body:`, requestBody)
-    
-    // Use direct backend API call instead of Next.js proxy
-    const { data, error } = await apiRequest('/analyze-kpis', {
-      method: 'POST',
-      body: JSON.stringify(requestBody),
-    })
-    
-    if (error) {
-      console.error('❌ Backend API error:', error)
-      return { success: false, files: [], error }
-    }
+    console.log(`📁 Listing PDF files for company ${companyId}`);
+    const { data, error } = await post('/analyze-kpis', { action: 'list_pdfs', company_id: companyId });
+    if (error) return { success: false, files: [], error };
 
-    console.log(`📄 Full response result:`, data)
-    
-    // Accept both shapes: {files: [...]} or {data:{files:[...]}}
-    const files = data?.files ?? data?.data?.files ?? []
-    const success = data?.success ?? data?.status === 'success'
-    
-    console.log(`✅ Retrieved ${files.length} PDF files`)
-    
-    return { 
-      success, 
-      files, 
-      error: data?.error 
-    }
-  } catch (error) {
-    console.error('❌ Failed to list company PDFs:', error)
-    return {
-      success: false,
-      files: [],
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }
+    const files = data?.files ?? data?.data?.files ?? [];
+    const success = data?.success ?? data?.status === 'success';
+    console.log(`✅ Retrieved ${files.length} PDF files`);
+    return { success, files, error: data?.error };
+  } catch (e: any) {
+    console.error('❌ Failed to list company PDFs:', e);
+    return { success: false, files: [], error: e instanceof Error ? e.message : 'Unknown error' };
   }
 }
 
-/**
- * Multi-PDF KPI Analysis (Synchronous - Legacy)
- * Analyzes the 4 most recent PDFs for a company to extract KPIs based on sector and stage
- */
 export async function analyzeCompanyKPIs(companyId: number, stage: string) {
   try {
-    console.log(`🔍 Starting KPI analysis for company ${companyId}, stage: ${stage}`)
-    
-    // Direct Lambda invocation for KPI analysis
-    const response = await fetch('/api/analyze-kpis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: stage
-      }),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `KPI analysis failed: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    console.log('✅ KPI analysis completed successfully')
-    
-    return { data: result }
-  } catch (error) {
-    console.error('❌ KPI analysis error:', error)
-    return { error: error instanceof Error ? error.message : 'KPI analysis failed' }
+    console.log(`🔍 KPI analysis (sync) for company ${companyId}, stage: ${stage}`);
+    const res = await fetch('/api/analyze-kpis', { method: 'POST', ...withJson({ company_id: companyId, stage }) });
+    if (!res.ok) throw new Error((await res.json()).error || `KPI analysis failed: ${res.status}`);
+    return { data: await res.json() };
+  } catch (e: any) {
+    console.error('❌ KPI analysis error:', e);
+    return { error: e instanceof Error ? e.message : 'KPI analysis failed' };
   }
 }
 
-/**
- * Multi-PDF KPI Analysis (Asynchronous - New)
- * Submits an async analysis job and returns job ID immediately
- */
 export async function analyzeCompanyKPIsAsync(companyId: number, stage: string, customConfig?: any) {
   try {
-    console.log(`🚀 Starting async KPI analysis for company ${companyId}, stage: ${stage}`, customConfig ? '(custom)' : '(standard)')
-    
-    const requestBody: any = {
-      company_id: companyId,
-      stage: stage
-    }
-    
-    // Add custom config if provided
-    if (customConfig) {
-      requestBody.custom_config = customConfig
-    }
-    
-    const response = await fetch('/api/analyze-kpis-async', {
+    console.log(`🚀 KPI analysis (async) for company ${companyId}, stage: ${stage}`, customConfig ? '(custom)' : '(standard)');
+    const res = await fetch('/api/analyze-kpis-async', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `Async KPI analysis failed: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    console.log(`✅ Async KPI analysis job created: ${result.job_id}`)
-    
-    return { data: result }
-  } catch (error) {
-    console.error('❌ Async KPI analysis error:', error)
-    return { error: error instanceof Error ? error.message : 'Async KPI analysis failed' }
+      ...withJson({ company_id: companyId, stage, ...(customConfig ? { custom_config: customConfig } : {}) }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `Async KPI analysis failed: ${res.status}`);
+    const json = await res.json();
+    console.log(`✅ Async job created: ${json.job_id}`);
+    return { data: json };
+  } catch (e: any) {
+    console.error('❌ Async KPI analysis error:', e);
+    return { error: e instanceof Error ? e.message : 'Async KPI analysis failed' };
   }
 }
 
-/**
- * Get Analysis Job Status
- * Polls the status of an async analysis job
- */
 export async function getAnalysisJobStatus(jobId: string) {
   try {
-    const response = await fetch(`/api/job-status/${jobId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `Failed to get job status: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    return { data: result }
-  } catch (error) {
-    console.error('❌ Job status error:', error)
-    return { error: error instanceof Error ? error.message : 'Failed to get job status' }
+    const res = await fetch(`/api/job-status/${jobId}`, { method: 'GET', headers: JSON_HDR });
+    if (!res.ok) throw new Error((await res.json()).error || `Failed to get job status: ${res.status}`);
+    return { data: await res.json() };
+  } catch (e: any) {
+    console.error('❌ Job status error:', e);
+    return { error: e instanceof Error ? e.message : 'Failed to get job status' };
   }
-} 
-
-/**
- * Update financial metrics for a specific report
- */
-export async function updateFinancialMetrics(reportId: number, updates: Record<string, any>) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'update_financial_metrics',
-      report_id: reportId,
-      updates: updates,
-    }),
-  })
 }
 
-/**
- * Update company information
- */
-export async function updateCompany(companyId: number, updates: Record<string, any>) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'update_company',
-      company_id: companyId,
-      updates: updates,
-    }),
-  })
-}
+/** ---------------- Updates ---------------- */
 
-/**
- * Update cap table round information
- */
-export async function updateCapTableRound(roundId: number, updates: Record<string, any>) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'update_cap_table_round',
-      round_id: roundId,
-      updates: updates,
-    }),
-  })
-}
+export const updateFinancialMetrics = (reportId: number, updates: Record<string, any>) =>
+  op('update_financial_metrics', { report_id: reportId, updates });
 
-/**
- * Update cap table investor information
- */
-export async function updateCapTableInvestor(investorId: number, updates: Record<string, any>) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'update_cap_table_investor',
-      investor_id: investorId,
-      updates: updates,
-    }),
-  })
-}
+export const updateCompany = (companyId: number, updates: Record<string, any>) =>
+  op('update_company', { company_id: companyId, updates });
 
-/**
- * Get all database data for a company (comprehensive editing view)
- */
-export async function getAllCompanyData(companyId: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_all_company_data',
-      company_id: companyId,
-    }),
-  })
-}
+export const updateCapTableRound = (roundId: number, updates: Record<string, any>) =>
+  op('update_cap_table_round', { round_id: roundId, updates });
 
-/**
- * Enrich company data using Harmonic AI
- */
-export async function enrichCompany(companyId: string, identifier: { key: string; value: string }) {
-  return apiRequest('/harmonic-enrichment', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      company_id: companyId,
-      [identifier.key]: identifier.value,
-    }),
-  })
-}
+export const updateCapTableInvestor = (investorId: number, updates: Record<string, any>) =>
+  op('update_cap_table_investor', { investor_id: investorId, updates });
 
-/**
- * Get existing enrichment data for a company
- */
-export async function getCompanyEnrichment(companyId: string) {
-  return apiRequest('/harmonic-enrichment', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_enrichment',
-      company_id: companyId,
-    }),
-  })
-}
+export const getAllCompanyData = (companyId: string) =>
+  op('get_all_company_data', { company_id: companyId });
 
-/**
- * Enrich person data using Harmonic AI (secure backend call)
- */
-export async function enrichPerson(personUrn: string) {
-  return apiRequest('/harmonic-enrichment', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'enrich_person',
-      person_urn: personUrn,
-    }),
-  })
-}
+/** ---------------- Enrichment ---------------- */
 
-/**
- * Delete a company and all its associated data
- */
-export async function deleteCompany(companyId: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'delete_company',
-      company_id: companyId,
-    }),
-  })
-}
+export const enrichCompany = (companyId: string, identifier: { key: string; value: string }) =>
+  post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
 
-/**
- * Get company names for dropdown selection
- */
-export async function getCompanyNames() {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_names',
-    }),
-  })
-}
+export const getCompanyEnrichment = (companyId: string) =>
+  post('/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
 
-// ────────────────────────────────────────────────────────────
-// COMPANY NOTES API FUNCTIONS
-// ────────────────────────────────────────────────────────────
+export const enrichPerson = (personUrn: string) =>
+  post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
 
-/**
- * Get all notes for a specific company
- */
-export async function getCompanyNotes(companyId: string) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_notes',
-      company_id: companyId,
-    }),
-  })
-}
+/** ---------------- Deletions / names ---------------- */
 
-/**
- * Create a new note for a company
- */
-export async function createCompanyNote(companyId: string, noteData: { subject: string; content: string }) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'create_company_note',
-      company_id: companyId,
-      ...noteData,
-    }),
-  })
-}
+export const deleteCompany = (companyId: string) =>
+  op('delete_company', { company_id: companyId });
 
-/**
- * Update an existing company note
- */
-export async function updateCompanyNote(noteId: number, updates: { subject?: string; content?: string }) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'update_company_note',
-      note_id: noteId,
-      updates,
-    }),
-  })
-}
+export const getCompanyNames = () => op('get_company_names');
 
-/**
- * Delete a company note
- */
-export async function deleteCompanyNote(noteId: number) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'delete_company_note',
-      note_id: noteId,
-    }),
-  })
-}
+/** ---------------- Notes ---------------- */
 
-/**
- * Delete a financial report
- */
+export const getCompanyNotes = (companyId: string) =>
+  op('get_company_notes', { company_id: companyId });
+
+export const createCompanyNote = (companyId: string, noteData: { subject: string; content: string }) =>
+  op('create_company_note', { company_id: companyId, ...noteData });
+
+export const updateCompanyNote = (noteId: number, updates: { subject?: string; content?: string }) =>
+  op('update_company_note', { note_id: noteId, updates });
+
+export const deleteCompanyNote = (noteId: number) =>
+  op('delete_company_note', { note_id: noteId });
+
+/** ---------------- Reports ---------------- */
+
 export async function deleteFinancialReport(reportId: number) {
   try {
-    console.log(`🗑️ Deleting financial report ${reportId}`)
-    
-    const response = await fetch('/api/delete-financial-report', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        reportId: reportId
-      }),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `Delete failed: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    console.log('✅ Financial report deleted successfully')
-    
-    return result
-  } catch (error) {
-    console.error('❌ Delete financial report error:', error)
-    return { error: error instanceof Error ? error.message : 'Delete failed' }
+    console.log(`🗑️ Deleting financial report ${reportId}`);
+    const res = await fetch('/api/delete-financial-report', { method: 'POST', ...withJson({ reportId }) });
+    if (!res.ok) throw new Error((await res.json()).error || `Delete failed: ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Delete financial report error:', e);
+    return { error: e instanceof Error ? e.message : 'Delete failed' };
   }
 }
 
-/**
- * Get saved KPI analysis for a company
- */
-export async function getCompanyKpiAnalysis(companyId: number) {
-  return apiRequest('/financial', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      operation: 'get_company_kpi_analysis',
-      company_id: companyId,
-    }),
-  })
-}
+/** ---------------- KPI cache / latest ---------------- */
 
-/**
- * Get the latest completed async KPI analysis for a company
- */
-export async function getLatestAsyncKpiAnalysis(companyId: number) {
-  return apiRequest('/job-status/latest', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      company_id: companyId,
-    }),
-  })
-}
+export const getCompanyKpiAnalysis = (companyId: number) =>
+  op('get_company_kpi_analysis', { company_id: companyId });
 
-/**
- * Run health check analysis for a company
- */
+export const getLatestAsyncKpiAnalysis = (companyId: number) =>
+  post('/job-status/latest', { company_id: companyId });
+
+/** ---------------- Health checks ---------------- */
+
 export async function runHealthCheck(companyId: number, criticality_level?: number, manual_score?: 'GREEN' | 'YELLOW' | 'RED') {
   try {
-    const response = await fetch('/api/health-check', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        company_id: companyId,
-        criticality_level,
-        manual_score,
-      }),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `Health check failed: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    console.log('✅ Health check completed successfully')
-    
-    return result
-  } catch (error) {
-    console.error('❌ Health check error:', error)
-    return { error: error instanceof Error ? error.message : 'Health check failed' }
+    const res = await fetch('/api/health-check', { method: 'POST', ...withJson({ company_id: companyId, criticality_level, manual_score }) });
+    if (!res.ok) throw new Error((await res.json()).error || `Health check failed: ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Health check error:', e);
+    return { error: e instanceof Error ? e.message : 'Health check failed' };
   }
 }
 
-/**
- * Get the latest health check for a company
- */
 export async function getLatestHealthCheck(companyId: number) {
   try {
-    const response = await fetch('/api/get-health-check', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        company_id: companyId,
-      }),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `Get health check failed: ${response.status}`)
-    }
-    
-    const result = await response.json()
-    console.log('✅ Latest health check retrieved successfully')
-    
-    return result
-  } catch (error) {
-    console.error('❌ Get health check error:', error)
-    return { error: error instanceof Error ? error.message : 'Get health check failed' }
+    const res = await fetch('/api/get-health-check', { method: 'POST', ...withJson({ company_id: companyId }) });
+    if (!res.ok) throw new Error((await res.json()).error || `Get health check failed: ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Get health check error:', e);
+    return { error: e instanceof Error ? e.message : 'Get health check failed' };
   }
-} 
+}
