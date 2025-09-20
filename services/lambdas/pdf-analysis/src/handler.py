@@ -186,7 +186,7 @@ def delete_placeholder_pdfs_direct(company_id: int) -> int:
 def lambda_handler(event, context):
     """
     Lambda function for PDF extraction and OpenAI analysis
-    Supports both S3 events (new), API Gateway requests (legacy), and KPI analysis requests
+    Supports S3 events, KPI analysis requests, and health check requests
     """
     
     # Log the incoming event for debugging
@@ -274,8 +274,17 @@ def lambda_handler(event, context):
         print("🔍 Getting latest health check")
         return handle_get_health_check_request(payload, context)
     else:
-        print("📡 Processing API Gateway event (legacy architecture)")
-        return handle_api_gateway_event(event, context)
+        print(f"❌ Unknown action: {action}")
+        return {
+            'statusCode': 400,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+            },
+            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check'})
+        }
 
 
 def list_company_pdfs(company_id: int) -> dict:
@@ -409,7 +418,6 @@ def handle_kpi_analysis_request(event, context):
             })
         }
 
-
 def handle_s3_event(event, context):
     """
     New S3 event handler using GPT-5 + Responses API + evidence tracking
@@ -512,91 +520,6 @@ def handle_s3_event(event, context):
         return {
             'statusCode': 500,
             'body': json.dumps({'status': 'error', 'message': str(e)})
-        }
-
-
-def handle_api_gateway_event(event, context):
-    """
-    Legacy handler for API Gateway requests with base64 PDFs
-    """
-    # CORS headers for all responses
-    cors_headers = {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
-    }
-    
-    # Handle CORS preflight requests (check multiple possible fields)
-    http_method = event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method')
-    if http_method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': cors_headers,
-            'body': json.dumps({'message': 'CORS preflight OK'})
-        }
-    
-    # Parse the request
-    try:
-        if isinstance(event.get('body'), str):
-            body = json.loads(event['body'])
-        else:
-            body = event.get('body', {})
-            
-        # Handle direct Lambda invoke (no HTTP wrapper)
-        if not body and 'pdf_b64' in event:
-            body = event
-            
-    except json.JSONDecodeError:
-        return {
-            'statusCode': 400,
-            'headers': cors_headers,
-            'body': json.dumps({'error': 'Invalid JSON in request body'})
-        }
-    
-    # Get PDF data (support both parameter names)
-    pdf_base64 = body.get('pdf_data') or body.get('pdf_b64')
-    filename = body.get('filename', 'document.pdf')
-    company_name_override = body.get('company_name_override')
-    user_provided_name = body.get('user_provided_name', False)  # NEW: Flag for user-provided names
-    compressed = body.get('compressed', False)
-    
-    if not pdf_base64:
-        return {
-            'statusCode': 400,
-            'headers': cors_headers,
-            'body': json.dumps({'error': 'No PDF data provided'})
-        }
-    
-    try:
-        print(f"Starting PDF processing for: {filename}")
-        
-        # Decode base64 PDF with optional gzip decompression
-        if compressed:
-            import gzip
-            pdf_bytes = gzip.decompress(base64.b64decode(pdf_base64))
-            print(f"Decompressed PDF, size: {len(pdf_bytes)} bytes")
-        else:
-            pdf_bytes = base64.b64decode(pdf_base64)
-            print(f"Decoded PDF, size: {len(pdf_bytes)} bytes")
-        
-        # Analyze with GPT-5 Responses API (direct PDF upload)
-        analysis_result = analyze_with_gpt5_responses_api(pdf_bytes, filename, is_text_only=False, company_name_override=company_name_override, user_provided_name=user_provided_name)
-        
-        return {
-            'statusCode': 200,
-            'headers': cors_headers,
-            'body': json.dumps(analysis_result)
-        }
-        
-    except Exception as e:
-        print(f"Error processing PDF: {str(e)}")
-        print(f"Full traceback: {traceback.format_exc()}")
-        
-        return {
-            'statusCode': 500,
-            'headers': cors_headers,
-            'body': json.dumps({'error': f'Error processing PDF: {str(e)}'})
         }
 
 
