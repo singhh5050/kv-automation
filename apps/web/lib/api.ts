@@ -23,7 +23,11 @@ async function apiRequest<T = any>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
-    const res = await fetch(`${BACKEND_URL}${path}`, {
+    // Use relative URLs for Next.js API routes (paths starting with /api)
+    // Use BACKEND_URL for external API calls (paths not starting with /api)
+    const url = path.startsWith('/api') ? path : `${BACKEND_URL}${path}`;
+    
+    const res = await fetch(url, {
       ...options,
       headers: { ...JSON_HDR, ...options.headers },
     });
@@ -195,6 +199,7 @@ export const testDatabaseConnection = () => op('test_connection');
 
 export async function healthCheck() {
   try {
+    // Use BACKEND_URL for external health check endpoint (not a Next.js API route)
     const res = await fetch(`${BACKEND_URL}/test`, { method: 'POST', headers: JSON_HDR });
     return res.ok;
   } catch {
@@ -222,7 +227,7 @@ export const getCompetitiveLandscape = (_financialData: any) =>
 export async function listCompanyPDFs(companyId: number) {
   try {
     console.log(`📁 Listing PDF files for company ${companyId}`);
-    console.log(`🔍 Making request to: ${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analyze-kpis`);
+    console.log(`🔍 Making request to: /api/analyze-kpis (relative URL)`);
     console.log(`🔍 Request payload:`, { action: 'list_pdfs', company_id: companyId });
     
     const { data, error } = await post('/api/analyze-kpis', { action: 'list_pdfs', company_id: companyId });

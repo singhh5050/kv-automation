@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,22 +12,51 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Call the Lambda function to get the latest completed job
-    const lambdaResponse = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL + '/job-status/latest', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        company_id: company_id,
-      }),
-    })
-
-    if (!lambdaResponse.ok) {
-      throw new Error(`Lambda request failed: ${lambdaResponse.status}`)
+    // Validate AWS credentials
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      console.error('❌ AWS credentials not found in server environment')
+      return NextResponse.json(
+        { error: 'AWS credentials not configured' },
+        { status: 500 }
+      )
     }
 
-    const result = await lambdaResponse.json()
+    // Initialize Lambda client
+    const lambdaClient = new LambdaClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    })
+
+    // Call the Lambda function directly
+    const command = new InvokeCommand({
+      FunctionName: 'kv-automation-pdf-analysis',
+      Payload: JSON.stringify({
+        action: 'get_latest_completed_job',
+        company_id: parseInt(company_id)
+      }),
+      InvocationType: 'RequestResponse'
+    })
+
+    const lambdaResponse = await lambdaClient.send(command)
+    
+    if (!lambdaResponse.Payload) {
+      throw new Error('No payload returned from Lambda')
+    }
+
+    // Parse Lambda response
+    const responseString = new TextDecoder().decode(lambdaResponse.Payload)
+    const lambdaResult = JSON.parse(responseString)
+
+    if (lambdaResult.statusCode !== 200) {
+      const errorBody = JSON.parse(lambdaResult.body)
+      throw new Error(errorBody.error || 'Lambda execution failed')
+    }
+
+    // Parse the successful response
+    const result = JSON.parse(lambdaResult.body)
     
     return NextResponse.json(result)
   } catch (error) {
