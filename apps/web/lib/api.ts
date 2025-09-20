@@ -189,7 +189,7 @@ export async function createOrGetCompany(companyName: string): Promise<{ company
   }
 }
 
-export const createDatabaseSchema = () => post('/schema');
+export const createDatabaseSchema = () => post('/api/schema');
 
 export const testDatabaseConnection = () => op('test_connection');
 
@@ -211,7 +211,7 @@ export const getCompanyOverview = (companyId: string) =>
 export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: string }, companyName?: string) {
   const body: any = { operation: 'process_cap_table_xlsx', ...xlsxData };
   if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
-  return post('/process-cap-table', body);
+  return post('/api/process-cap-table', body);
 }
 
 export const getCompetitiveLandscape = (_financialData: any) =>
@@ -222,13 +222,21 @@ export const getCompetitiveLandscape = (_financialData: any) =>
 export async function listCompanyPDFs(companyId: number) {
   try {
     console.log(`📁 Listing PDF files for company ${companyId}`);
-    const { data, error } = await post('/analyze-kpis', { action: 'list_pdfs', company_id: companyId });
+    console.log(`🔍 Making request to: ${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analyze-kpis`);
+    console.log(`🔍 Request payload:`, { action: 'list_pdfs', company_id: companyId });
+    
+    const { data, error } = await post('/api/analyze-kpis', { action: 'list_pdfs', company_id: companyId });
+    
+    console.log(`🔍 API response - data:`, data);
+    console.log(`🔍 API response - error:`, error);
+    
     if (error) return { success: false, files: [], error };
 
     const files = data?.files ?? data?.data?.files ?? [];
-    const success = data?.success ?? data?.status === 'success';
+    const success = data?.success ?? data?.data?.success ?? data?.status === 'success';
     console.log(`✅ Retrieved ${files.length} PDF files`);
-    return { success, files, error: data?.error };
+    console.log(`🔍 Final files array:`, files);
+    return { success, files, error: data?.error ?? data?.data?.error };
   } catch (e: any) {
     console.error('❌ Failed to list company PDFs:', e);
     return { success: false, files: [], error: e instanceof Error ? e.message : 'Unknown error' };
@@ -295,13 +303,13 @@ export const getAllCompanyData = (companyId: string) =>
 /** ---------------- Enrichment ---------------- */
 
 export const enrichCompany = (companyId: string, identifier: { key: string; value: string }) =>
-  post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
+  post('/api/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
 
 export const getCompanyEnrichment = (companyId: string) =>
-  post('/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
+  post('/api/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
 
 export const enrichPerson = (personUrn: string) =>
-  post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
+  post('/api/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
 
 /** ---------------- Deletions / names ---------------- */
 
@@ -344,7 +352,7 @@ export const getCompanyKpiAnalysis = (companyId: number) =>
   op('get_company_kpi_analysis', { company_id: companyId });
 
 export const getLatestAsyncKpiAnalysis = (companyId: number) =>
-  post('/job-status/latest', { company_id: companyId });
+  post('/api/job-status/latest', { company_id: companyId });
 
 /** ---------------- Health checks ---------------- */
 
