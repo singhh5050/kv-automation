@@ -1959,6 +1959,64 @@ def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
                                     'title': person_result[3],
                                     'extracted_data': person_result[4]
                                 }
+                
+                # Apply manual overrides to CEO and leadership data
+                cursor.execute("""
+                    SELECT field_name, field_value 
+                    FROM company_manual_overrides 
+                    WHERE company_id = %s AND (field_name LIKE 'ceo_%' OR field_name LIKE 'leadership_%')
+                """, [company_id])
+                
+                overrides = cursor.fetchall()
+                for field_name, field_value in overrides:
+                    if field_name.startswith('ceo_'):
+                        # Ensure CEO structure exists
+                        if not extracted_data.get('ceo'):
+                            extracted_data['ceo'] = {}
+                        if not extracted_data['ceo'].get('enriched_person'):
+                            extracted_data['ceo']['enriched_person'] = {}
+                        
+                        # Apply CEO overrides
+                        if field_name == 'ceo_name':
+                            extracted_data['ceo']['enriched_person']['full_name'] = field_value
+                        elif field_name == 'ceo_title':
+                            extracted_data['ceo']['title'] = field_value
+                        elif field_name == 'ceo_linkedin_url':
+                            if not extracted_data['ceo']['enriched_person'].get('contact'):
+                                extracted_data['ceo']['enriched_person']['contact'] = {}
+                            extracted_data['ceo']['enriched_person']['contact']['linkedin_url'] = field_value
+                    
+                    elif field_name.startswith('leadership_'):
+                        # Parse leadership index from field name (e.g., leadership_0_name)
+                        parts = field_name.split('_')
+                        if len(parts) >= 3:
+                            try:
+                                index = int(parts[1])
+                                field_type = parts[2]
+                                
+                                # Ensure leadership array exists and has enough entries
+                                if not extracted_data.get('leadership'):
+                                    extracted_data['leadership'] = []
+                                
+                                # Extend array if needed
+                                while len(extracted_data['leadership']) <= index:
+                                    extracted_data['leadership'].append({})
+                                
+                                # Ensure enriched_person structure exists
+                                if not extracted_data['leadership'][index].get('enriched_person'):
+                                    extracted_data['leadership'][index]['enriched_person'] = {}
+                                
+                                # Apply leadership overrides
+                                if field_type == 'name':
+                                    extracted_data['leadership'][index]['enriched_person']['full_name'] = field_value
+                                elif field_type == 'title':
+                                    extracted_data['leadership'][index]['title'] = field_value
+                                elif field_type == 'linkedin':
+                                    if not extracted_data['leadership'][index]['enriched_person'].get('contact'):
+                                        extracted_data['leadership'][index]['enriched_person']['contact'] = {}
+                                    extracted_data['leadership'][index]['enriched_person']['contact']['linkedin_url'] = field_value
+                            except (ValueError, IndexError):
+                                print(f"Invalid leadership field format: {field_name}")
         
         cursor.close()
         conn.close()

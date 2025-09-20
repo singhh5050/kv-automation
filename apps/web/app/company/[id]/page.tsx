@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
+import EditablePersonField from '@/components/company/EditablePersonField'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
@@ -1636,38 +1637,30 @@ export default function CompanyDetailPage() {
                       <h4 className="text-xs font-medium text-gray-900">Key Executives</h4>
                     </div>
                     <div className="space-y-2">
-                      {/* CEO - Highlighted */}
-                      {enrichmentData?.enrichment?.extracted?.ceo && (
+                      {/* CEO - Editable */}
+                      {enrichmentData?.enrichment?.extracted?.ceo ? (
                         <div className="p-2 rounded-lg border-2 border-blue-200 bg-blue-50">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center space-x-1">
-                              <span className="text-xs bg-blue-600 text-white px-1 py-0.5 rounded font-medium">CEO</span>
-                              {enrichmentData.enrichment.extracted.ceo.enriched_person?.contact?.linkedin_url ? (
-                                <a 
-                                  href={enrichmentData.enrichment.extracted.ceo.enriched_person.contact.linkedin_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline truncate"
-                                >
-                                  {enrichmentData.enrichment.extracted.ceo.enriched_person?.full_name || enrichmentData.enrichment.extracted.ceo.title}
-                                </a>
-                              ) : (
-                                <p className="text-xs font-bold text-gray-900 truncate">
-                                  {enrichmentData.enrichment.extracted.ceo.enriched_person?.full_name || enrichmentData.enrichment.extracted.ceo.title}
-                                </p>
-                              )}
-                            </div>
-                            {enrichmentData.enrichment.extracted.ceo.enriched_person?.contact?.linkedin_url && (
-                              <span className="text-xs text-blue-600">🔗</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-blue-700 truncate">
-                            {enrichmentData.enrichment.extracted.ceo.enriched_person?.current_position?.title || enrichmentData.enrichment.extracted.ceo.title}
-                          </p>
+                          <EditablePersonField
+                            label="CEO"
+                            person={enrichmentData.enrichment.extracted.ceo}
+                            companyId={companyId}
+                            fieldPrefix="ceo"
+                            onUpdate={refreshAllData}
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-lg border-2 border-gray-200 bg-gray-50">
+                          <EditablePersonField
+                            label="CEO"
+                            person={null}
+                            companyId={companyId}
+                            fieldPrefix="ceo"
+                            onUpdate={refreshAllData}
+                          />
                         </div>
                       )}
 
-                      {/* Other Leadership - Compact */}
+                      {/* Other Leadership - Editable */}
                       {enrichmentData?.enrichment?.extracted?.leadership && enrichmentData.enrichment.extracted.leadership.length > 0 ? (
                         <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                           {enrichmentData.enrichment.extracted.leadership
@@ -1678,28 +1671,14 @@ export default function CompanyDetailPage() {
                             })
                             .map((leader: any, index: number) => (
                               <div key={index} className="p-1.5 rounded border border-gray-100">
-                                <div className="flex items-center justify-between">
-                                  {leader.enriched_person?.contact?.linkedin_url ? (
-                                    <a 
-                                      href={leader.enriched_person.contact.linkedin_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs font-medium text-blue-700 hover:text-blue-900 hover:underline truncate"
-                                    >
-                                      {leader.enriched_person?.full_name || leader.title}
-                                    </a>
-                                  ) : (
-                                    <p className="text-xs font-medium text-gray-900 truncate">
-                                      {leader.enriched_person?.full_name || leader.title}
-                                    </p>
-                                  )}
-                                  {leader.enriched_person?.contact?.linkedin_url && (
-                                    <span className="text-xs text-blue-600 ml-1">🔗</span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-600 truncate">
-                                  {leader.enriched_person?.current_position?.title || leader.title}
-                                </p>
+                                <EditablePersonField
+                                  label={`Executive ${index + 1}`}
+                                  person={leader}
+                                  companyId={companyId}
+                                  fieldPrefix="leadership"
+                                  index={index}
+                                  onUpdate={refreshAllData}
+                                />
                               </div>
                             ))}
                         </div>
@@ -1707,6 +1686,16 @@ export default function CompanyDetailPage() {
                         // Fallback when there is no enrichment data
                         <div className="p-1.5 rounded border border-gray-100">
                           <p className="text-xs text-gray-600">No leadership data found</p>
+                          <div className="mt-2">
+                            <EditablePersonField
+                              label="Add Executive"
+                              person={null}
+                              companyId={companyId}
+                              fieldPrefix="leadership"
+                              index={0}
+                              onUpdate={refreshAllData}
+                            />
+                          </div>
                         </div>
                       ) : null}
                     </div>

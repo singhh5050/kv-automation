@@ -316,6 +316,9 @@ export const getCompanyEnrichment = (companyId: string) =>
 export const enrichPerson = (personUrn: string) =>
   post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
 
+export const saveCompanyManualOverride = (companyId: string, fieldName: string, fieldValue: string) =>
+  op('save_company_manual_override', { company_id: companyId, field_name: fieldName, field_value: fieldValue });
+
 /** ---------------- Deletions / names ---------------- */
 
 export const deleteCompany = (companyId: string) =>
