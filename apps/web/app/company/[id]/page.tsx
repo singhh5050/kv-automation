@@ -1330,6 +1330,7 @@ export default function CompanyDetailPage() {
             <option value="reports">📄 Financial Reports ({company.financial_reports.length})</option>
             <option value="database">🗄️ Database</option>
             <option value="notes">📝 Notes</option>
+            <option value="health">🏥 Health Check</option>
           </select>
         </div>
 
