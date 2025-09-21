@@ -319,6 +319,9 @@ export const enrichPerson = (personUrn: string) =>
 export const saveCompanyManualOverride = (companyId: string, fieldName: string, fieldValue: string) =>
   op('save_company_manual_override', { company_id: companyId, field_name: fieldName, field_value: fieldValue });
 
+export const deleteCompanyManualOverride = (companyId: string, fieldName: string) =>
+  op('delete_company_manual_override', { company_id: companyId, field_name: fieldName });
+
 /** ---------------- Deletions / names ---------------- */
 
 export const deleteCompany = (companyId: string) =>

@@ -6,6 +6,7 @@ import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, 
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import EditablePersonField from '@/components/company/EditablePersonField'
+import EditableLeadershipList from '@/components/company/EditableLeadershipList'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
@@ -1646,6 +1647,7 @@ export default function CompanyDetailPage() {
                             person={enrichmentData.enrichment.extracted.ceo}
                             companyId={companyId}
                             fieldPrefix="ceo"
+                            allowDelete={true}
                             onUpdate={refreshAllData}
                           />
                         </div>
@@ -1661,44 +1663,14 @@ export default function CompanyDetailPage() {
                         </div>
                       )}
 
-                      {/* Other Leadership - Editable */}
-                      {enrichmentData?.enrichment?.extracted?.leadership && enrichmentData.enrichment.extracted.leadership.length > 0 ? (
-                        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                          {enrichmentData.enrichment.extracted.leadership
-                            .filter((leader: any) => !leader.title?.toLowerCase().includes('ceo') && !leader.title?.toLowerCase().includes('chief executive'))
-                            .filter((leader: any) => {
-                              const titleRaw = (leader.enriched_person?.current_position?.title || leader.title || '').toLowerCase()
-                              return !(/\binvestor\b|\bboard\b/i.test(titleRaw))
-                            })
-                            .map((leader: any, index: number) => (
-                              <div key={index} className="p-1.5 rounded border border-gray-100">
-                                <EditablePersonField
-                                  label={`Executive ${index + 1}`}
-                                  person={leader}
-                                  companyId={companyId}
-                                  fieldPrefix="leadership"
-                                  index={index}
-                                  onUpdate={refreshAllData}
-                                />
-                              </div>
-                            ))}
-                        </div>
-                      ) : !enrichmentData?.enrichment?.extracted?.ceo ? (
-                        // Fallback when there is no enrichment data
-                        <div className="p-1.5 rounded border border-gray-100">
-                          <p className="text-xs text-gray-600">No leadership data found</p>
-                          <div className="mt-2">
-                            <EditablePersonField
-                              label="Add Executive"
-                              person={null}
-                              companyId={companyId}
-                              fieldPrefix="leadership"
-                              index={0}
-                              onUpdate={refreshAllData}
-                            />
-                          </div>
-                        </div>
-                      ) : null}
+                      {/* Other Leadership - Editable with Add/Delete */}
+                      <div className="max-h-80 overflow-y-auto pr-1">
+                        <EditableLeadershipList
+                          leadership={enrichmentData?.enrichment?.extracted?.leadership || []}
+                          companyId={companyId}
+                          onUpdate={refreshAllData}
+                        />
+                      </div>
                     </div>
                     
                     {!enrichmentData?.enrichment?.extracted && (

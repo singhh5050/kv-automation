@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { saveCompanyManualOverride } from '@/lib/api'
+import { saveCompanyManualOverride, deleteCompanyManualOverride } from '@/lib/api'
 
 interface EditablePersonFieldProps {
   label: string
@@ -10,6 +10,8 @@ interface EditablePersonFieldProps {
   fieldPrefix: string
   onUpdate: () => void
   index?: number // For leadership members
+  allowDelete?: boolean // Whether to show delete button
+  onDelete?: () => void // Custom delete handler
 }
 
 export default function EditablePersonField({ 
@@ -18,7 +20,9 @@ export default function EditablePersonField({
   companyId, 
   fieldPrefix, 
   onUpdate,
-  index 
+  index,
+  allowDelete = false,
+  onDelete
 }: EditablePersonFieldProps) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -86,6 +90,39 @@ export default function EditablePersonField({
     setError('')
   }
 
+  const handleDelete = async () => {
+    if (!confirm(`Are you sure you want to delete this ${label.toLowerCase()}?`)) {
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    
+    try {
+      // Determine field name prefix based on whether this is CEO or leadership
+      const prefix = fieldPrefix === 'ceo' ? 'ceo' : `leadership_${index}`
+      
+      // Delete all related fields
+      const deletePromises = [
+        deleteCompanyManualOverride(companyId, `${prefix}_name`),
+        deleteCompanyManualOverride(companyId, `${prefix}_title`),
+        deleteCompanyManualOverride(companyId, `${prefix}_linkedin`)
+      ]
+      
+      await Promise.all(deletePromises)
+      
+      if (onDelete) {
+        onDelete()
+      } else {
+        onUpdate()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!editing) {
     return (
       <div className="group">
@@ -93,13 +130,25 @@ export default function EditablePersonField({
           <span className="text-xs bg-blue-600 text-white px-1 py-0.5 rounded font-medium">
             {label}
           </span>
-          <button 
-            onClick={handleEdit}
-            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 text-xs"
-            title="Edit"
-          >
-            ✏️
-          </button>
+          <div className="flex items-center space-x-1">
+            <button 
+              onClick={handleEdit}
+              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 text-xs"
+              title="Edit"
+            >
+              ✏️
+            </button>
+            {allowDelete && (currentName || currentTitle) && (
+              <button 
+                onClick={handleDelete}
+                disabled={saving}
+                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 text-xs disabled:opacity-50"
+                title="Delete"
+              >
+                🗑️
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center space-x-1">
           {currentLinkedinUrl ? (
