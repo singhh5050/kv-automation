@@ -88,11 +88,20 @@ export default function EditablePersonField({
 
   if (!editing) {
     return (
-      <div className="flex items-center justify-between group">
-        <div className="flex items-center space-x-1 flex-1">
+      <div className="group">
+        <div className="flex items-center justify-between mb-1">
           <span className="text-xs bg-blue-600 text-white px-1 py-0.5 rounded font-medium">
             {label}
           </span>
+          <button 
+            onClick={handleEdit}
+            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 text-xs"
+            title="Edit"
+          >
+            ✏️
+          </button>
+        </div>
+        <div className="flex items-center space-x-1">
           {currentLinkedinUrl ? (
             <a 
               href={currentLinkedinUrl}
@@ -111,13 +120,6 @@ export default function EditablePersonField({
             <span className="text-xs text-blue-600">🔗</span>
           )}
         </div>
-        <button 
-          onClick={handleEdit}
-          className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 ml-2 text-xs"
-          title="Edit"
-        >
-          ✏️
-        </button>
       </div>
     )
   }

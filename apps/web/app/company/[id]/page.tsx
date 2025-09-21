@@ -1214,12 +1214,13 @@ export default function CompanyDetailPage() {
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
               <div className="p-3 rounded-md bg-gray-50">
-              <p className="text-xs font-medium text-gray-500 mb-1">👤 CEO</p>
-              <p className="text-sm font-bold text-gray-900">
-                {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 
-                 enrichmentData?.enrichment?.extracted?.ceo?.title || 
-                 'Not found'}
-              </p>
+              <EditablePersonField
+                label="👤 CEO"
+                person={enrichmentData?.enrichment?.extracted?.ceo || null}
+                companyId={companyId}
+                fieldPrefix="ceo"
+                onUpdate={refreshAllData}
+              />
             </div>
             
             <div className="p-3 rounded-md bg-gray-50">
