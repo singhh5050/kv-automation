@@ -312,9 +312,26 @@ def list_company_pdfs(company_id: int) -> dict:
                 key = obj['Key']
                 if key.lower().endswith('.pdf') and key != prefix:  # Exclude folder itself
                     file_name = key.replace(prefix, '')  # Remove prefix to get just filename
+                    
+                    # Try to extract report period from filename if it follows timestamp pattern
+                    # Format: YYYY-MM-DDTHH-MM-SS-sssZ-originalname.pdf
+                    import re
+                    timestamp_match = re.match(r'^(\d{4}-\d{2}-\d{2})T\d{2}-\d{2}-\d{2}-\d{3}Z-(.+)\.pdf$', file_name)
+                    if timestamp_match:
+                        upload_date = timestamp_match.group(1)
+                        original_name = timestamp_match.group(2)
+                        # Try to extract period from original name (e.g., "Q1-2024", "2024-Q2", etc.)
+                        period_match = re.search(r'(Q[1-4][-\s]*20\d{2}|20\d{2}[-\s]*Q[1-4]|20\d{2})', original_name, re.IGNORECASE)
+                        report_period = period_match.group(0) if period_match else 'Unknown Period'
+                    else:
+                        upload_date = obj['LastModified'].strftime('%Y-%m-%d')
+                        report_period = 'Unknown Period'
+                    
                     pdf_files.append({
-                        'key': key,
-                        'name': file_name,
+                        's3_key': key,  # Frontend expects 's3_key'
+                        'file_name': file_name,  # Frontend expects 'file_name'
+                        'report_period': report_period,  # Frontend expects 'report_period'
+                        'upload_date': obj['LastModified'].isoformat(),  # Frontend expects 'upload_date'
                         'size': obj['Size'],
                         'last_modified': obj['LastModified'].isoformat()
                     })
