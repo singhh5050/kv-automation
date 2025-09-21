@@ -96,14 +96,9 @@ export interface FinancialReport {
   }
 
   export interface KpiAnalysisConfig {
-    targetKpis: string
-    tableFormat: string
-    analysisMood: string
-    previousIssues: string
-    previousPlan: string
-    competitiveContext: string
-    customPrompt?: string  // Optional prompt override
-    scope: string  // Scope selection (auto, ttm, all, custom)
+    whatToLookFor: string  // "What should the AI look for with these document(s)?"
+    responseStructure: string  // "How would you like your response structured?"
+    useBulletPoints: boolean  // Checkbox for bullet points vs prose
     selected_files?: string[]  // Optional array of S3 keys for selected files
   }
 

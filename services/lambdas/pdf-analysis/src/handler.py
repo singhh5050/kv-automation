@@ -1093,8 +1093,8 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
 
 def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector: str, stage: str, custom_config: dict) -> str:
     """
-    Use OpenAI to analyze multiple PDFs with custom user-defined prompts and requirements
-    Returns detailed markdown analysis based on user specifications
+    Use OpenAI to analyze multiple PDFs with simplified user-defined requirements
+    Returns analysis based on what user wants to look for and how they want it structured
     """
     import os, tempfile, concurrent.futures
     
@@ -1155,93 +1155,33 @@ def analyze_multi_pdf_kpis_custom(pdf_contents: list, company_name: str, sector:
         # Create file list for the prompt
         file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
         
-        # Get mood-specific tone
-        mood_instructions = get_mood_instructions(custom_config.get('analysisMood', 'balanced'))
+        # Extract the simplified configuration
+        what_to_look_for = custom_config.get('whatToLookFor', '').strip()
+        response_structure = custom_config.get('responseStructure', '').strip()
+        use_bullet_points = custom_config.get('useBulletPoints', True)
         
-        # Check if user provided a custom prompt override
-        if custom_config.get('customPrompt'):
-            print(f"🎯 Using custom user-provided prompt ({len(custom_config['customPrompt'])} chars)")
-            custom_template = custom_config['customPrompt']
-            
-            # Create variables dictionary for substitution
-            template_vars = {
-                'company_name': company_name,
-                'sector': sector, 
-                'stage': stage,
-                'len(pdf_contents)': len(pdf_contents),
-                'len(uploaded_files)': len(uploaded_files),
-                'mood_instructions': mood_instructions,
-                'file_list': file_list,
-                "custom_config.get('targetKpis', 'Standard financial metrics')": custom_config.get('targetKpis', 'Standard financial metrics'),
-                "custom_config.get('tableFormat', 'KPIs as columns, time as rows')": custom_config.get('tableFormat', 'KPIs as columns, time as rows'),
-                "custom_config.get('previousPlan', 'No previous plan provided')": custom_config.get('previousPlan', 'No previous plan provided'),
-                "custom_config.get('competitiveContext', 'General market context')": custom_config.get('competitiveContext', 'General market context'),
-                "custom_config.get('previousIssues', 'None')": custom_config.get('previousIssues', 'None')
-            }
-            
-            # Perform variable substitution
-            try:
-                system_prompt = custom_template.format(**template_vars)
-                print(f"✅ Template variable substitution successful")
-            except KeyError as e:
-                print(f"⚠️ Template variable substitution failed: {e}")
-                print(f"⚠️ Using custom template as-is without substitution")
-                # Fallback to custom template as-is if substitution fails
-                system_prompt = custom_template
-        else:
-            # Create the simplified data-focused analysis prompt
-            system_prompt = f"""You are a KV financial data analyst. Extract and report financial metrics from {len(pdf_contents)} reports for {company_name} ({sector}, {stage}).
+        # Build the simplified system prompt
+        system_prompt = f"""You are a financial data analyst helping with document analysis for {company_name} ({sector}, {stage}).
 
-    ## OBJECTIVE
-    Extract and report numbers with minimal interpretation. Focus on data extraction and clear presentation of metrics.
+## WHAT TO ANALYZE
+{what_to_look_for if what_to_look_for else "Extract key financial metrics and trends from the provided documents."}
 
-    ## TARGET METRICS
-    **Extract these KPIs:** {custom_config.get('targetKpis', 'Standard financial metrics')}
-    **Scope:** {custom_config.get('scope', 'Auto (best available)')}
+## HOW TO STRUCTURE YOUR RESPONSE
+{response_structure if response_structure else "Provide a clear summary of the key findings with supporting data."}
 
-    ## DATA EXTRACTION REQUIREMENTS
-    - Extract exact numbers as they appear in the documents
-    - Report metrics across available time periods
-    - Note data sources and periods clearly
-    - Include percentage changes between periods where calculable
-    - Flag missing or unclear data points{f" - Additional context: {custom_config.get('previousIssues', '').strip()}" if custom_config.get('previousIssues', '').strip() else ""}
+## FORMAT REQUIREMENTS
+{"- Use bullet points and lists for clarity and easy scanning" if use_bullet_points else "- Use prose format with clear paragraphs and flowing narrative"}
+- Include specific numbers and data points from the documents
+- Reference which document each piece of information comes from
+- Be precise and factual
 
-    ## OUTPUT FORMAT
-    1. 📋 **KPI Data Table** (MANDATORY)
-       - KPIs as columns, time periods as rows
-       - Use exact numbers from documents
-       - Include source document/section references
-       - Mark missing data as "N/A" or "Not Reported"
-    
-    Example:
-    | Period | Revenue | COGS | Gross Profit | EBITDA | Source |
-    |--------|---------|------|--------------|--------|---------|
-    | Q1 2024 | $1.2M | $400K | $800K | $200K | Board Deck Q1 |
-    | Q2 2024 | $1.5M | $500K | $1.0M | $350K | Board Deck Q2 |
+## FILES TO ANALYZE
+{file_list}
 
-    2. 📊 **Data Summary**
-       - Key metrics extracted: List what was found
-       - Data completeness: What periods/metrics are available
-       - Notable data gaps or inconsistencies
+Focus on extracting accurate information that directly addresses what the user is looking for, structured exactly as they requested."""
 
-    3. 📈 **Basic Trends** (numbers only)
-       - Period-over-period changes (e.g., "Revenue grew 25% Q1 to Q2")
-       - Simple trend direction indicators (📈📉➡️)
-       - No strategic interpretation - just mathematical observations
-
-    ## FILES ANALYZED
-    {file_list}
-
-    **Focus on data extraction over analysis. Report what the numbers say, not what they mean strategically.**"""
-
-        # Build a single user message with text + N input_file parts (Responses API)
-        if custom_config.get('customPrompt'):
-            # If using custom prompt, send minimal user message to avoid overriding instructions
-            user_text = f"Please process these {len(uploaded_files)} files for {company_name}."
-            print(f"🎯 Using minimal user message due to custom prompt")
-        else:
-            # Use focused data extraction message
-            user_text = f"Extract financial metrics from these {len(uploaded_files)} reports for {company_name}. Focus on data extraction and clear presentation as specified in the instructions."
+        # Build a simple user message
+        user_text = f"Please analyze these {len(uploaded_files)} financial documents for {company_name} according to the requirements specified in the system prompt."
         
         user_content = [
             {"type": "input_text", "text": user_text}
@@ -2128,7 +2068,9 @@ def handle_process_async_job(event, context):
         
         # Perform the analysis (this is the heavy work that was timing out)
         try:
-            result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config)
+            # Extract selected_files from custom_config if provided
+            selected_files = custom_config.get('selected_files') if custom_config else None
+            result = analyze_recent_pdfs_for_kpis(company_id, stage, custom_config, selected_files)
             
             if result['success']:
                 # Store results and mark job as completed

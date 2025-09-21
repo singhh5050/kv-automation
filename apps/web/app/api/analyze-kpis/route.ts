@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     })
     
     // Prepare Lambda payload
-    const payload = {
+    const payload: any = {
       action: action || 'analyze_kpis',
       company_id: parseInt(company_id)
     }
