@@ -2675,51 +2675,42 @@ def analyze_company_health(company_id: int, criticality_level: int = 5, manual_s
             10: "Extremely critical - maximum scrutiny, find all issues"
         }
         
-        system_prompt = f"""You are a KV financial analyst conducting a health check for {company_name}.
+        system_prompt = f"""KV financial analyst health check for {company_name}.
 
-CRITICALITY LEVEL: {criticality_level}/10 - {criticality_descriptions[criticality_level]}
+**CRITICALITY**: {criticality_level}/10 - {criticality_descriptions[criticality_level]}
 
-## ANALYSIS APPROACH
-Based on the criticality level {criticality_level}, adjust your analysis accordingly:
-- Levels 1-3: Focus on strengths, downplay risks, optimistic interpretation
-- Levels 4-6: Balanced perspective, equal weight to positives and negatives  
-- Levels 7-10: Emphasize risks, scrutinize assumptions, pessimistic interpretation
+**ANALYSIS STYLE**:
+• Level 1-3: Optimistic, focus on strengths
+• Level 4-6: Balanced perspective  
+• Level 7-10: Critical, emphasize risks
 
-## YOUR TASK
-Analyze the company's health using:
-1. Most recent board deck (PDF attached)
-2. Comprehensive historical financial data from last 10 reports
-3. Cash position, burn rate, and runway trends
-4. Budget performance and sector-specific highlights
-5. Personnel updates and milestone progress
-6. Key risks and business performance indicators
+**DATA SOURCES**:
+• Recent board deck (attached PDF)
+• Historical financial data (10 reports)
+• Cash/burn/runway trends
+• Budget vs actual performance
 
-## OUTPUT REQUIREMENTS
-Provide a health score assessment:
+**OUTPUT FORMAT**:
 
 **HEALTH SCORE**: Choose exactly one and make it exactly the first word in the response: ex. "GREEN", "YELLOW", "RED"
 - GREEN: Company is healthy with strong fundamentals
 - YELLOW: Company has manageable concerns but is stable
 - RED: Company faces significant challenges requiring attention
 
-**JUSTIFICATION**: Provide 2-3 paragraphs explaining your reasoning, including:
-- Key financial metrics and trends over time
-- Budget vs actual performance patterns
-- Major strengths or concerns
-- Personnel and operational updates impact
-- Risk factors and their severity
-- Sector-specific performance indicators
-- Overall trajectory and outlook based on milestones
+**JUSTIFICATION**: Concise bullet points covering:
+• **Financial trends**: Key metrics, cash position, burn rate changes
+• **Performance**: Budget vs actual, sector-specific indicators
+• **Operations**: Personnel changes, milestone progress, risk factors
+• **Outlook**: Overall trajectory and critical issues
 
-## COMPREHENSIVE FINANCIAL CONTEXT
-Historical data from last 10 reports for trend analysis:
+**HISTORICAL CONTEXT**:
 {financial_context}
 
-Focus on recent trends, cash management, business performance, and risk factors. Adjust your assessment based on the criticality level specified above."""
+Keep analysis concise, factual, and bullet-point focused."""
 
         # Create user content with PDF if available
         user_content = [
-            {"type": "input_text", "text": f"Please analyze the health of {company_name} based on the attached board deck and financial data. Provide a clear health score (GREEN/YELLOW/RED) with detailed justification."}
+            {"type": "input_text", "text": f"Analyze {company_name} health. Start with GREEN/YELLOW/RED, then provide concise bullet-point justification."}
         ]
         
         # Upload PDF to OpenAI if available
