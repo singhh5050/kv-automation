@@ -311,7 +311,7 @@ export const enrichCompany = (companyId: string, identifier: { key: string; valu
   post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
 
 export const getCompanyEnrichment = (companyId: string) =>
-  post('/harmonic-enrichment', { operation: 'get_company_enrichment', company_id: companyId });
+  op('get_company_enrichment', { company_id: companyId });
 
 export const enrichPerson = (personUrn: string) =>
   post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });

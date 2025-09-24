@@ -21,43 +21,44 @@ export default function EditableLeadershipList({
   })
 
   // Filter out CEO and board members from leadership
-  const filteredLeadership = leadership?.filter((leader: any) => {
-    const titleLower = (leader.title || '').toLowerCase()
-    const enrichedTitleLower = (leader.enriched_person?.current_position?.title || leader.title || '').toLowerCase()
-    
-    return !titleLower.includes('ceo') && 
-           !titleLower.includes('chief executive') &&
-           !(/\binvestor\b|\bboard\b/i.test(enrichedTitleLower))
-  }) || []
-
+  const filteredLeadership = (leadership || [])
+    .map((leader: any, originalIndex: number) => ({ leader, originalIndex }))
+    .filter(({ leader }) => {
+      const titleLower = (leader.title || '').toLowerCase()
+      const enrichedTitleLower = (leader.enriched_person?.current_position?.title || leader.title || '').toLowerCase()
+      return !titleLower.includes('ceo') &&
+             !titleLower.includes('chief executive') &&
+             !(/\binvestor\b|\bboard\b/i.test(enrichedTitleLower))
+    })
+  
   const handleAddExecutive = () => {
     // This will be handled by creating a new EditablePersonField with the next available index
     setNextIndex(prev => prev + 1)
   }
-
+  
   const handleDeleteExecutive = (index: number) => {
     // After deletion, refresh the data
     onUpdate()
   }
-
+  
   return (
     <div className="space-y-2">
       {/* Existing Leadership */}
-      {filteredLeadership.map((leader: any, index: number) => (
-        <div key={index} className="p-1.5 rounded border border-gray-100">
+      {filteredLeadership.map(({ leader, originalIndex }: any, displayIndex: number) => (
+        <div key={originalIndex} className="p-1.5 rounded border border-gray-100">
           <EditablePersonField
-            label={`Executive ${index + 1}`}
+            label={`Executive ${displayIndex + 1}`}
             person={leader}
             companyId={companyId}
             fieldPrefix="leadership"
-            index={index}
+            index={originalIndex}
             allowDelete={true}
             onUpdate={onUpdate}
-            onDelete={() => handleDeleteExecutive(index)}
+            onDelete={() => handleDeleteExecutive(originalIndex)}
           />
         </div>
       ))}
-
+      
       {/* Add New Executive Button */}
       <div className="p-1.5 rounded border border-dashed border-gray-300 bg-gray-50">
         <EditablePersonField
@@ -65,7 +66,7 @@ export default function EditableLeadershipList({
           person={null}
           companyId={companyId}
           fieldPrefix="leadership"
-          index={filteredLeadership.length}
+          index={nextIndex}
           onUpdate={() => {
             handleAddExecutive()
             onUpdate()

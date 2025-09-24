@@ -607,7 +607,7 @@ export default function CompanyDetailPage() {
               saved_to_db: true
             }
             
-            // Enrich person data for leadership
+            // Enrich person data for leadership (merge without overwriting manual overrides)
             if (transformedData.enrichment.extracted.leadership) {
               console.log('Leadership data found:', transformedData.enrichment.extracted.leadership)
               for (let leader of transformedData.enrichment.extracted.leadership) {
@@ -618,7 +618,10 @@ export default function CompanyDetailPage() {
                     const personData = await enrichPersonData(leader.person_urn)
                     console.log('Person data received:', personData)
                     if (personData) {
-                      leader.enriched_person = personData
+                      leader.enriched_person = {
+                        ...(leader.enriched_person || {}),
+                        ...personData
+                      }
                       console.log('Enriched person data attached:', leader.enriched_person)
                     }
                   } catch (error) {
@@ -630,12 +633,15 @@ export default function CompanyDetailPage() {
               }
             }
             
-            // Enrich CEO data
+            // Enrich CEO data (merge without overwriting manual overrides)
             if (transformedData.enrichment.extracted.ceo?.person_urn) {
               try {
                 const personData = await enrichPersonData(transformedData.enrichment.extracted.ceo.person_urn)
                 if (personData) {
-                  transformedData.enrichment.extracted.ceo.enriched_person = personData
+                  transformedData.enrichment.extracted.ceo.enriched_person = {
+                    ...(transformedData.enrichment.extracted.ceo.enriched_person || {}),
+                    ...personData
+                  }
                 }
               } catch (error) {
                 console.error('Error enriching CEO data:', error)
