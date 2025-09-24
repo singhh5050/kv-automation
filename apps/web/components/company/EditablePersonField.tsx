@@ -63,7 +63,8 @@ export default function EditablePersonField({
         promises.push(saveCompanyManualOverride(companyId, `${prefix}_title`, title))
       }
       if (linkedinUrl !== currentLinkedinUrl) {
-        promises.push(saveCompanyManualOverride(companyId, `${prefix}_linkedin`, linkedinUrl))
+        const linkedinField = fieldPrefix === 'ceo' ? `${prefix}_linkedin_url` : `${prefix}_linkedin`
+        promises.push(saveCompanyManualOverride(companyId, linkedinField, linkedinUrl))
       }
       
       // Wait for all saves to complete
@@ -103,10 +104,11 @@ export default function EditablePersonField({
       const prefix = fieldPrefix === 'ceo' ? 'ceo' : `leadership_${index}`
       
       // Delete all related fields
+      const linkedinField = fieldPrefix === 'ceo' ? `${prefix}_linkedin_url` : `${prefix}_linkedin`
       const deletePromises = [
         deleteCompanyManualOverride(companyId, `${prefix}_name`),
         deleteCompanyManualOverride(companyId, `${prefix}_title`),
-        deleteCompanyManualOverride(companyId, `${prefix}_linkedin`)
+        deleteCompanyManualOverride(companyId, linkedinField)
       ]
       
       await Promise.all(deletePromises)
