@@ -150,23 +150,40 @@ export default function EditablePersonField({
             )}
           </div>
         </div>
-        <div className="flex items-center space-x-1">
-          {currentLinkedinUrl ? (
-            <a 
-              href={currentLinkedinUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline truncate"
-            >
-              {currentName || currentTitle}
-            </a>
-          ) : (
-            <span className="text-xs font-bold text-gray-900 truncate">
-              {currentName || currentTitle || 'No data'}
-            </span>
+        <div className="space-y-1">
+          {/* Name */}
+          <div className="flex items-center space-x-1">
+            {currentLinkedinUrl ? (
+              <a 
+                href={currentLinkedinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline truncate"
+              >
+                {currentName || 'No name'}
+              </a>
+            ) : (
+              <span className="text-xs font-bold text-gray-900 truncate">
+                {currentName || 'No name'}
+              </span>
+            )}
+            {currentLinkedinUrl && (
+              <span className="text-xs text-blue-600">🔗</span>
+            )}
+          </div>
+          
+          {/* Title */}
+          {currentTitle && (
+            <div className="text-xs text-gray-600 truncate">
+              {currentTitle}
+            </div>
           )}
-          {currentLinkedinUrl && (
-            <span className="text-xs text-blue-600">🔗</span>
+          
+          {/* Show "No data" only if both name and title are missing */}
+          {!currentName && !currentTitle && (
+            <div className="text-xs text-gray-400 italic">
+              No data
+            </div>
           )}
         </div>
       </div>
