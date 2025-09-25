@@ -592,9 +592,12 @@ export default function CompanyDetailPage() {
     
       console.log('Loading existing enrichment data for company:', companyId)
     try {
+      console.log('🔍 Loading enrichment for company:', companyId)
       const result = await getCompanyEnrichment(companyId)
+      console.log('🔍 getCompanyEnrichment result:', result)
           if (result.data?.data) {
             console.log('Found existing enrichment data:', result.data.data)
+            console.log('🔍 Extracted data:', result.data.data.extracted_data)
             // Transform the financial-crud response to match expected structure
             const dbData = result.data.data
             const transformedData = {

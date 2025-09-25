@@ -47,8 +47,11 @@ async function apiRequest<T = any>(
 const post = <T = any>(path: string, body?: any, headers?: HeadersInit) =>
   apiRequest<T>(path, { method: 'POST', ...withJson(body, headers) });
 
-const op = <T = any>(operation: string, args?: Record<string, any>) =>
-  post<T>('/financial', { operation, ...(args || {}) });
+const op = <T = any>(operation: string, args?: Record<string, any>) => {
+  const payload = { operation, ...(args || {}) };
+  console.log('🔶 API.op:', operation, payload);
+  return post<T>('/financial', payload);
+};
 
 /** ---------------- Core features ---------------- */
 
@@ -316,8 +319,10 @@ export const getCompanyEnrichment = (companyId: string) =>
 export const enrichPerson = (personUrn: string) =>
   post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
 
-export const saveCompanyManualOverride = (companyId: string, fieldName: string, fieldValue: string) =>
-  op('save_company_manual_override', { company_id: companyId, field_name: fieldName, field_value: fieldValue });
+export const saveCompanyManualOverride = (companyId: string, fieldName: string, fieldValue: string) => {
+  console.log('🔷 API.saveCompanyManualOverride:', { companyId, fieldName, fieldValue });
+  return op('save_company_manual_override', { company_id: companyId, field_name: fieldName, field_value: fieldValue });
+};
 
 export const deleteCompanyManualOverride = (companyId: string, fieldName: string) =>
   op('delete_company_manual_override', { company_id: companyId, field_name: fieldName });

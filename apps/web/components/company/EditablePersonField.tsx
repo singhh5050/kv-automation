@@ -53,33 +53,55 @@ export default function EditablePersonField({
       // Determine field name prefix based on whether this is CEO or leadership
       const prefix = fieldPrefix === 'ceo' ? 'ceo' : `leadership_${index}`
       
+      console.log('🔵 EditablePersonField.handleSave:', {
+        companyId,
+        fieldPrefix,
+        index,
+        prefix,
+        currentValues: { currentName, currentTitle, currentLinkedinUrl },
+        newValues: { name, title, linkedinUrl }
+      })
+      
       // Save each field as a manual override (only if changed)
       const promises = []
       
       if (name !== currentName) {
+        console.log(`📝 Saving ${prefix}_name:`, name)
         promises.push(saveCompanyManualOverride(companyId, `${prefix}_name`, name))
       }
       if (title !== currentTitle) {
+        console.log(`📝 Saving ${prefix}_title:`, title)
         promises.push(saveCompanyManualOverride(companyId, `${prefix}_title`, title))
       }
       if (linkedinUrl !== currentLinkedinUrl) {
         const linkedinField = fieldPrefix === 'ceo' ? `${prefix}_linkedin_url` : `${prefix}_linkedin`
+        console.log(`📝 Saving ${linkedinField}:`, linkedinUrl)
         promises.push(saveCompanyManualOverride(companyId, linkedinField, linkedinUrl))
+      }
+      
+      if (promises.length === 0) {
+        console.log('⚠️ No changes to save')
+        setEditing(false)
+        return
       }
       
       // Wait for all saves to complete
       const results = await Promise.all(promises)
+      console.log('📥 Save results:', results)
       
       // Check for errors
       const errors = results.filter(result => result.error)
       if (errors.length > 0) {
+        console.error('❌ Save errors:', errors)
         setError(errors.map(e => e.error).join(', '))
         return
       }
       
+      console.log('✅ Save successful, calling onUpdate')
       setEditing(false)
       onUpdate()
     } catch (err) {
+      console.error('❌ Save exception:', err)
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
