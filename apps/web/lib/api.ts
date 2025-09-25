@@ -327,6 +327,24 @@ export const saveCompanyManualOverride = (companyId: string, fieldName: string, 
 export const deleteCompanyManualOverride = (companyId: string, fieldName: string) =>
   op('delete_company_manual_override', { company_id: companyId, field_name: fieldName });
 
+/** ---------------- Executives (New Simplified System) ---------------- */
+
+export const getCompanyExecutives = (companyId: string) =>
+  op('get_company_executives', { company_id: companyId });
+
+export const saveCompanyExecutive = (data: {
+  company_id: string;
+  id?: number;
+  full_name?: string;
+  title?: string;
+  linkedin_url?: string;
+  display_order?: number;
+  is_ceo?: boolean;
+}) => op('save_company_executive', data);
+
+export const deleteCompanyExecutive = (executiveId: number) =>
+  op('delete_company_executive', { executive_id: executiveId });
+
 /** ---------------- Deletions / names ---------------- */
 
 export const deleteCompany = (companyId: string) =>

@@ -595,6 +595,113 @@ def save_enrichment_to_database(company_id: str, enrichment_data: Dict[str, Any]
         
         # Commit the transaction
         conn.commit()
+        
+        # Populate executives table with the enriched data directly
+        print(f"📋 Populating executives table for company {company_id}")
+        try:
+            # Prepare the enrichment data with person enrichments
+            enriched_extracted = extracted_data.copy()
+            
+            # Add person enrichments to CEO
+            if enriched_extracted.get('ceo') and ceo_data:
+                enriched_extracted['ceo']['enriched_person'] = {
+                    'full_name': ceo_data.get('full_name'),
+                    'title': ceo_data.get('title'),
+                    'contact': {'linkedin_url': ceo_data.get('linkedin_url')}
+                }
+            
+            # Add person enrichments to leadership
+            if enriched_extracted.get('leadership'):
+                for i, leader in enumerate(enriched_extracted['leadership'][:3]):
+                    if leader.get('person_urn'):
+                        # Query for person enrichment
+                        cursor.execute("""
+                            SELECT full_name, title, extracted_data
+                            FROM person_enrichments
+                            WHERE person_urn = %s
+                            ORDER BY enriched_at DESC
+                            LIMIT 1
+                        """, [leader['person_urn']])
+                        
+                        person_result = cursor.fetchone()
+                        if person_result:
+                            person_data = person_result[2] if person_result[2] else {}
+                            leader['enriched_person'] = {
+                                'full_name': person_result[0],
+                                'title': person_result[1] or leader.get('title'),
+                                'contact': {
+                                    'linkedin_url': person_data.get('contact', {}).get('linkedin_url')
+                                }
+                            }
+            
+            # Populate executives directly here
+            display_order = 0
+            
+            # Add CEO if exists
+            if enriched_extracted.get('ceo'):
+                ceo = enriched_extracted['ceo']
+                if ceo.get('enriched_person'):
+                    cursor.execute("""
+                        INSERT INTO company_executives 
+                        (company_id, full_name, title, linkedin_url, display_order, 
+                         is_ceo, harmonic_person_urn, source, created_by)
+                        VALUES (%s, %s, %s, %s, %s, TRUE, %s, 'harmonic', 'system')
+                        ON CONFLICT (company_id, display_order) 
+                        DO UPDATE SET 
+                            full_name = EXCLUDED.full_name,
+                            title = EXCLUDED.title,
+                            linkedin_url = EXCLUDED.linkedin_url,
+                            is_active = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                    """, [
+                        company_id,
+                        ceo['enriched_person'].get('full_name'),
+                        ceo.get('title') or ceo['enriched_person'].get('title'),
+                        ceo['enriched_person'].get('contact', {}).get('linkedin_url'),
+                        display_order,
+                        ceo.get('person_urn')
+                    ])
+                    display_order += 1
+                    print(f"✅ Added CEO to executives table")
+            
+            # Add other leadership
+            if enriched_extracted.get('leadership'):
+                for leader in enriched_extracted['leadership']:
+                    # Skip if it's another CEO or board member
+                    title = (leader.get('title') or '').lower()
+                    if 'ceo' in title or 'chief executive' in title or 'board' in title:
+                        continue
+                    
+                    if leader.get('enriched_person'):
+                        cursor.execute("""
+                            INSERT INTO company_executives 
+                            (company_id, full_name, title, linkedin_url, display_order, 
+                             is_ceo, harmonic_person_urn, source, created_by)
+                            VALUES (%s, %s, %s, %s, %s, FALSE, %s, 'harmonic', 'system')
+                            ON CONFLICT (company_id, display_order) 
+                            DO UPDATE SET 
+                                full_name = EXCLUDED.full_name,
+                                title = EXCLUDED.title,
+                                linkedin_url = EXCLUDED.linkedin_url,
+                                is_active = TRUE,
+                                updated_at = CURRENT_TIMESTAMP
+                        """, [
+                            company_id,
+                            leader['enriched_person'].get('full_name'),
+                            leader.get('title') or leader['enriched_person'].get('title'),
+                            leader['enriched_person'].get('contact', {}).get('linkedin_url'),
+                            display_order,
+                            leader.get('person_urn')
+                        ])
+                        display_order += 1
+                        print(f"✅ Added {leader['enriched_person'].get('full_name')} to executives table")
+            
+            print(f"✅ Populated {display_order} executives for company {company_id}")
+                
+        except Exception as e:
+            print(f"⚠️ Failed to populate executives table: {e}")
+            # Don't fail the whole enrichment if executive population fails
+        
         cursor.close()
         conn.close()
         

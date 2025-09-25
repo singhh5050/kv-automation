@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, enrichPerson, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
-import EditablePersonField from '@/components/company/EditablePersonField'
-import EditableLeadershipList from '@/components/company/EditableLeadershipList'
+import SimpleExecutivesList from '@/components/company/SimpleExecutivesList'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
 import CompanyNotes from '@/components/company/CompanyNotes'
@@ -611,60 +610,8 @@ export default function CompanyDetailPage() {
               saved_to_db: true
             }
             
-            // Enrich person data for leadership (merge without overwriting manual overrides)
-            if (transformedData.enrichment.extracted.leadership) {
-              console.log('Leadership data found:', transformedData.enrichment.extracted.leadership)
-              for (let leader of transformedData.enrichment.extracted.leadership) {
-                console.log('Processing leader:', leader)
-                if (leader.person_urn) {
-                  console.log('Found person_urn for leader:', leader.person_urn)
-                  try {
-                    const personData = await enrichPersonData(leader.person_urn)
-                    console.log('Person data received:', personData)
-                    if (personData) {
-                      console.log('🔧 BEFORE merge - leader.enriched_person:', leader.enriched_person)
-                      console.log('🔧 BEFORE merge - personData:', personData)
-                      console.log('🔧 BEFORE merge - leader.title:', leader.title)
-                      
-                      // Preserve the manual override title at the leader level
-                      const originalTitle = leader.title
-                      
-                      leader.enriched_person = {
-                        ...personData,
-                        ...(leader.enriched_person || {})
-                      }
-                      
-                      // Restore the manual override title if it existed
-                      if (originalTitle) {
-                        leader.title = originalTitle
-                      }
-                      
-                      console.log('🔧 AFTER merge - leader.enriched_person:', leader.enriched_person)
-                      console.log('🔧 AFTER merge - leader.title:', leader.title)
-                    }
-                  } catch (error) {
-                    console.error('Error enriching person data:', error)
-                  }
-                } else {
-                  console.log('No person_urn found for leader:', leader.title)
-                }
-              }
-            }
-            
-            // Enrich CEO data (merge without overwriting manual overrides)
-            if (transformedData.enrichment.extracted.ceo?.person_urn) {
-              try {
-                const personData = await enrichPersonData(transformedData.enrichment.extracted.ceo.person_urn)
-                if (personData) {
-                  transformedData.enrichment.extracted.ceo.enriched_person = {
-                    ...personData,
-                    ...(transformedData.enrichment.extracted.ceo.enriched_person || {})
-                  }
-                }
-              } catch (error) {
-                console.error('Error enriching CEO data:', error)
-              }
-            }
+            // Note: Executive data now comes from dedicated company_executives table
+            // No complex merging needed - SimpleExecutivesList handles everything
             
             console.log('Final enrichment data being set:', transformedData)
             setEnrichmentData(transformedData)
@@ -676,21 +623,7 @@ export default function CompanyDetailPage() {
     }
   }
 
-  // Function to enrich person data via secure backend API
-  const enrichPersonData = async (personUrn: string) => {
-    try {
-      const result = await enrichPerson(personUrn)
-      if (result.data && result.data.success) {
-        return result.data.data.extracted_data
-      } else {
-        console.error('Person enrichment failed:', result.error || result.data?.error)
-        return null
-      }
-    } catch (error) {
-      console.error('Error fetching person data:', error)
-      return null
-    }
-  }
+  // Note: Person enrichment logic removed - executives now managed via SimpleExecutivesList
 
   // Function to translate company URN to readable name
   const translateCompanyUrn = (urn: string | any): string => {
@@ -1239,14 +1172,11 @@ export default function CompanyDetailPage() {
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
               <div className="p-3 rounded-md bg-gray-50">
-              <EditablePersonField
-                label="👤 CEO"
-                person={enrichmentData?.enrichment?.extracted?.ceo || null}
-                companyId={companyId}
-                fieldPrefix="ceo"
-                onUpdate={refreshAllData}
-              />
-            </div>
+                <p className="text-xs font-medium text-gray-500 mb-1">👤 CEO</p>
+                <p className="text-sm font-bold text-gray-900">
+                  {enrichmentData?.enrichment?.extracted?.ceo?.enriched_person?.full_name || 'N/A'}
+                </p>
+              </div>
             
             <div className="p-3 rounded-md bg-gray-50">
               <p className="text-xs font-medium text-gray-500 mb-1">📈 Stage</p>
@@ -1662,40 +1592,8 @@ export default function CompanyDetailPage() {
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-medium text-gray-900">Key Executives</h4>
                     </div>
-                    <div className="space-y-2">
-                      {/* CEO - Editable */}
-                      {enrichmentData?.enrichment?.extracted?.ceo ? (
-                        <div className="p-2 rounded-lg border-2 border-blue-200 bg-blue-50">
-                          <EditablePersonField
-                            label="CEO"
-                            person={enrichmentData.enrichment.extracted.ceo}
-                            companyId={companyId}
-                            fieldPrefix="ceo"
-                            allowDelete={true}
-                            onUpdate={refreshAllData}
-                          />
-                        </div>
-                      ) : (
-                        <div className="p-2 rounded-lg border-2 border-gray-200 bg-gray-50">
-                          <EditablePersonField
-                            label="CEO"
-                            person={null}
-                            companyId={companyId}
-                            fieldPrefix="ceo"
-                            onUpdate={refreshAllData}
-                          />
-                        </div>
-                      )}
-
-                      {/* Other Leadership - Editable with Add/Delete */}
-                      <div className="max-h-80 overflow-y-auto pr-1">
-                        <EditableLeadershipList
-                          leadership={enrichmentData?.enrichment?.extracted?.leadership || []}
-                          companyId={companyId}
-                          onUpdate={refreshAllData}
-                        />
-                      </div>
-                    </div>
+                    {/* New Simplified Executives System */}
+                    <SimpleExecutivesList companyId={companyId} />
                     
                     {!enrichmentData?.enrichment?.extracted && (
                       <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-100">

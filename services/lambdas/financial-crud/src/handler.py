@@ -121,6 +121,12 @@ def lambda_handler(event, context):
         result = delete_company_manual_override(db_config, body)
     elif operation == "delete_placeholder_pdfs":
         result = delete_placeholder_pdfs(db_config, body.get("company_id"))
+    elif operation == "get_company_executives":
+        result = get_company_executives(db_config, body.get("company_id"))
+    elif operation == "save_company_executive":
+        result = save_company_executive(db_config, body)
+    elif operation == "delete_company_executive":
+        result = delete_company_executive(db_config, body.get("executive_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -3061,6 +3067,291 @@ def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to delete placeholder PDFs: {str(e)}'
+        }
+
+def get_company_executives(db_config: Dict, company_id: int) -> Dict[str, Any]:
+    """
+    Get all executives for a company from the dedicated executives table
+    """
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, full_name, title, linkedin_url, display_order, 
+                   is_ceo, is_active, harmonic_person_urn, source,
+                   created_at, updated_at, created_by
+            FROM company_executives
+            WHERE company_id = %s AND is_active = TRUE
+            ORDER BY is_ceo DESC, display_order ASC
+        """, [company_id])
+        
+        rows = cursor.fetchall()
+        
+        executives = []
+        for row in rows:
+            executives.append({
+                'id': row[0],
+                'full_name': row[1],
+                'title': row[2],
+                'linkedin_url': row[3],
+                'display_order': row[4],
+                'is_ceo': row[5],
+                'is_active': row[6],
+                'harmonic_person_urn': row[7],
+                'source': row[8],
+                'created_at': row[9].isoformat() if row[9] else None,
+                'updated_at': row[10].isoformat() if row[10] else None,
+                'created_by': row[11]
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': executives
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get executives: {str(e)}'
+        }
+
+def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Save or update a company executive
+    """
+    company_id = data.get('company_id')
+    executive_id = data.get('id')  # If provided, update existing
+    full_name = data.get('full_name')
+    title = data.get('title')
+    linkedin_url = data.get('linkedin_url')
+    display_order = data.get('display_order', 0)
+    is_ceo = data.get('is_ceo', False)
+    harmonic_person_urn = data.get('harmonic_person_urn')
+    created_by = data.get('created_by', 'user')
+    
+    if not company_id:
+        return {
+            'success': False,
+            'error': 'company_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        if executive_id:
+            # Update existing executive
+            cursor.execute("""
+                UPDATE company_executives
+                SET full_name = %s, title = %s, linkedin_url = %s,
+                    display_order = %s, is_ceo = %s, 
+                    updated_at = CURRENT_TIMESTAMP, created_by = %s
+                WHERE id = %s AND company_id = %s
+                RETURNING id
+            """, [full_name, title, linkedin_url, display_order, 
+                  is_ceo, created_by, executive_id, company_id])
+        else:
+            # Insert new executive
+            cursor.execute("""
+                INSERT INTO company_executives 
+                (company_id, full_name, title, linkedin_url, display_order, 
+                 is_ceo, harmonic_person_urn, source, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'manual', %s)
+                RETURNING id
+            """, [company_id, full_name, title, linkedin_url, display_order,
+                  is_ceo, harmonic_person_urn, created_by])
+        
+        result = cursor.fetchone()
+        saved_id = result[0] if result else None
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'id': saved_id,
+                'company_id': company_id
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to save executive: {str(e)}'
+        }
+
+def delete_company_executive(db_config: Dict, executive_id: int) -> Dict[str, Any]:
+    """
+    Delete (soft delete) a company executive
+    """
+    if not executive_id:
+        return {
+            'success': False,
+            'error': 'executive_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Soft delete by setting is_active to false
+        cursor.execute("""
+            UPDATE company_executives
+            SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, company_id
+        """, [executive_id])
+        
+        result = cursor.fetchone()
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return {
+                'success': True,
+                'data': {
+                    'deleted_id': result[0],
+                    'company_id': result[1]
+                }
+            }
+        else:
+            return {
+                'success': False,
+                'error': 'Executive not found'
+            }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to delete executive: {str(e)}'
+        }
+
+def populate_executives_from_enrichment(db_config: Dict, company_id: int, enrichment_data: Dict) -> Dict[str, Any]:
+    """
+    Populate company_executives table from harmonic enrichment data
+    Called after successful enrichment
+    """
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Clear existing harmonic-sourced executives (keep manual ones)
+        cursor.execute("""
+            UPDATE company_executives 
+            SET is_active = FALSE 
+            WHERE company_id = %s AND source = 'harmonic'
+        """, [company_id])
+        
+        executives_added = []
+        display_order = 0
+        
+        # Add CEO if exists
+        if enrichment_data.get('ceo'):
+            ceo = enrichment_data['ceo']
+            if ceo.get('enriched_person'):
+                cursor.execute("""
+                    INSERT INTO company_executives 
+                    (company_id, full_name, title, linkedin_url, display_order, 
+                     is_ceo, harmonic_person_urn, source, created_by)
+                    VALUES (%s, %s, %s, %s, %s, TRUE, %s, 'harmonic', 'system')
+                    ON CONFLICT (company_id, display_order) 
+                    DO UPDATE SET 
+                        full_name = EXCLUDED.full_name,
+                        title = EXCLUDED.title,
+                        linkedin_url = EXCLUDED.linkedin_url,
+                        is_active = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id
+                """, [
+                    company_id,
+                    ceo['enriched_person'].get('full_name'),
+                    ceo.get('title') or ceo['enriched_person'].get('title'),
+                    ceo['enriched_person'].get('contact', {}).get('linkedin_url'),
+                    display_order,
+                    ceo.get('person_urn')
+                ])
+                display_order += 1
+                executives_added.append('CEO')
+        
+        # Add other leadership
+        if enrichment_data.get('leadership'):
+            for leader in enrichment_data['leadership']:
+                # Skip if it's another CEO or board member
+                title = (leader.get('title') or '').lower()
+                if 'ceo' in title or 'chief executive' in title or 'board' in title:
+                    continue
+                
+                if leader.get('enriched_person'):
+                    cursor.execute("""
+                        INSERT INTO company_executives 
+                        (company_id, full_name, title, linkedin_url, display_order, 
+                         is_ceo, harmonic_person_urn, source, created_by)
+                        VALUES (%s, %s, %s, %s, %s, FALSE, %s, 'harmonic', 'system')
+                        ON CONFLICT (company_id, display_order) 
+                        DO UPDATE SET 
+                            full_name = EXCLUDED.full_name,
+                            title = EXCLUDED.title,
+                            linkedin_url = EXCLUDED.linkedin_url,
+                            is_active = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING id
+                    """, [
+                        company_id,
+                        leader['enriched_person'].get('full_name'),
+                        leader.get('title') or leader['enriched_person'].get('title'),
+                        leader['enriched_person'].get('contact', {}).get('linkedin_url'),
+                        display_order,
+                        leader.get('person_urn')
+                    ])
+                    display_order += 1
+                    executives_added.append(leader['enriched_person'].get('full_name'))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'data': {
+                'executives_added': len(executives_added),
+                'names': executives_added
+            }
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to populate executives: {str(e)}'
         }
 
 

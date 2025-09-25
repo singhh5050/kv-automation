@@ -254,35 +254,49 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating async_analysis_jobs table: {e}")
         raise e
 
-    # ---- SAFE: Add company_manual_overrides table if it doesn't exist ----
-    print("🔧 Creating company_manual_overrides table...")
+    # ---- SAFE: Add company_executives table if it doesn't exist ----
+    print("🔧 Creating company_executives table...")
     try:
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS company_manual_overrides (
+        CREATE TABLE IF NOT EXISTS company_executives (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            field_name VARCHAR(255) NOT NULL,
-            field_value TEXT,
-            override_source VARCHAR(100) DEFAULT 'manual',
-            edited_by VARCHAR(100) DEFAULT 'user',
+            
+            -- Core fields (user-editable)
+            full_name VARCHAR(255),
+            title VARCHAR(255),
+            linkedin_url VARCHAR(500),
+            
+            -- Metadata
+            display_order INTEGER DEFAULT 0,
+            is_ceo BOOLEAN DEFAULT FALSE,
+            is_active BOOLEAN DEFAULT TRUE,
+            
+            -- Source tracking
+            harmonic_person_urn VARCHAR(255),
+            source VARCHAR(50) DEFAULT 'manual', -- 'harmonic', 'manual', 'pdf'
+            
+            -- Audit
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(company_id, field_name)
+            created_by VARCHAR(100) DEFAULT 'system',
+            
+            UNIQUE(company_id, display_order)
         );
         """)
-        print("✅ Company manual overrides table created successfully")
+        print("✅ Company executives table created successfully")
         
         # Add indexes for efficient queries
         cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_company_manual_overrides_company_id ON company_manual_overrides(company_id);
+        CREATE INDEX IF NOT EXISTS idx_company_executives_company_id ON company_executives(company_id);
         """)
         cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_company_manual_overrides_field_name ON company_manual_overrides(field_name);
+        CREATE INDEX IF NOT EXISTS idx_company_executives_is_active ON company_executives(is_active);
         """)
-        print("✅ Company manual overrides table indexes created successfully")
+        print("✅ Company executives table indexes created successfully")
         
     except Exception as e:
-        print(f"⚠️ Error creating company_manual_overrides table: {e}")
+        print(f"⚠️ Error creating company_executives table: {e}")
         raise e
 
     # ---- COMMENTED OUT: Table recreation (safe mode) -----------------
@@ -336,11 +350,11 @@ def create_database_schema(conn):
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, and company_manual_overrides tables created safely",
-        "operation": "add_evidence_field_notes_kpi_health_and_manual_overrides_tables",
-        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_manual_overrides"],
+        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, and company_executives tables created safely",
+        "operation": "add_evidence_field_notes_kpi_health_and_executives_tables",
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_manual_overrides"]
+        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives"]
     }
 
 
