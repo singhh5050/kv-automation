@@ -624,11 +624,23 @@ export default function CompanyDetailPage() {
                     if (personData) {
                       console.log('🔧 BEFORE merge - leader.enriched_person:', leader.enriched_person)
                       console.log('🔧 BEFORE merge - personData:', personData)
+                      console.log('🔧 BEFORE merge - leader.title:', leader.title)
+                      
+                      // Preserve the manual override title at the leader level
+                      const originalTitle = leader.title
+                      
                       leader.enriched_person = {
                         ...personData,
                         ...(leader.enriched_person || {})
                       }
+                      
+                      // Restore the manual override title if it existed
+                      if (originalTitle) {
+                        leader.title = originalTitle
+                      }
+                      
                       console.log('🔧 AFTER merge - leader.enriched_person:', leader.enriched_person)
+                      console.log('🔧 AFTER merge - leader.title:', leader.title)
                     }
                   } catch (error) {
                     console.error('Error enriching person data:', error)
