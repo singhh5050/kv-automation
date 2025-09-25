@@ -598,6 +598,7 @@ export default function CompanyDetailPage() {
           if (result.data?.data) {
             console.log('Found existing enrichment data:', result.data.data)
             console.log('🔍 Extracted data:', result.data.data.extracted_data)
+            console.log('🔍 Leadership from backend (before person enrichment):', result.data.data.extracted_data?.leadership)
             // Transform the financial-crud response to match expected structure
             const dbData = result.data.data
             const transformedData = {
@@ -621,11 +622,13 @@ export default function CompanyDetailPage() {
                     const personData = await enrichPersonData(leader.person_urn)
                     console.log('Person data received:', personData)
                     if (personData) {
+                      console.log('🔧 BEFORE merge - leader.enriched_person:', leader.enriched_person)
+                      console.log('🔧 BEFORE merge - personData:', personData)
                       leader.enriched_person = {
                         ...personData,
                         ...(leader.enriched_person || {})
                       }
-                      console.log('Enriched person data attached:', leader.enriched_person)
+                      console.log('🔧 AFTER merge - leader.enriched_person:', leader.enriched_person)
                     }
                   } catch (error) {
                     console.error('Error enriching person data:', error)

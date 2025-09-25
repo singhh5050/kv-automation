@@ -1968,6 +1968,7 @@ def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
                 """, [company_id])
                 
                 overrides = cursor.fetchall()
+                print(f"🔍 Manual overrides found for company {company_id}: {overrides}")
                 for field_name, field_value in overrides:
                     if field_name.startswith('ceo_'):
                         # Ensure CEO structure exists
@@ -2017,6 +2018,8 @@ def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
                                     extracted_data['leadership'][index]['enriched_person']['contact']['linkedin_url'] = field_value
                             except (ValueError, IndexError):
                                 print(f"Invalid leadership field format: {field_name}")
+                
+                print(f"🔍 Final extracted_data after applying overrides: {extracted_data}")
         
         cursor.close()
         conn.close()
