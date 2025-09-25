@@ -622,8 +622,8 @@ export default function CompanyDetailPage() {
                     console.log('Person data received:', personData)
                     if (personData) {
                       leader.enriched_person = {
-                        ...(leader.enriched_person || {}),
-                        ...personData
+                        ...personData,
+                        ...(leader.enriched_person || {})
                       }
                       console.log('Enriched person data attached:', leader.enriched_person)
                     }
@@ -642,8 +642,8 @@ export default function CompanyDetailPage() {
                 const personData = await enrichPersonData(transformedData.enrichment.extracted.ceo.person_urn)
                 if (personData) {
                   transformedData.enrichment.extracted.ceo.enriched_person = {
-                    ...(transformedData.enrichment.extracted.ceo.enriched_person || {}),
-                    ...personData
+                    ...personData,
+                    ...(transformedData.enrichment.extracted.ceo.enriched_person || {})
                   }
                 }
               } catch (error) {
