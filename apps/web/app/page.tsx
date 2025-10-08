@@ -574,19 +574,26 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
     }
   }
 
-  // Filter milestones
-  const filteredMilestones = milestones.filter(milestone => {
-    if (!showCompleted && milestone.completed) return false
-    if (filterPriority && milestone.priority !== filterPriority) return false
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      return (
-        milestone.company_name?.toLowerCase().includes(query) ||
-        milestone.description?.toLowerCase().includes(query)
-      )
-    }
-    return true
-  })
+  // Filter and sort milestones (oldest first, future last)
+  const filteredMilestones = milestones
+    .filter(milestone => {
+      if (!showCompleted && milestone.completed) return false
+      if (filterPriority && milestone.priority !== filterPriority) return false
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        return (
+          milestone.company_name?.toLowerCase().includes(query) ||
+          milestone.description?.toLowerCase().includes(query)
+        )
+      }
+      return true
+    })
+    .sort((a, b) => {
+      // Sort by milestone_date in ascending order (oldest to newest)
+      const dateA = new Date(a.milestone_date).getTime()
+      const dateB = new Date(b.milestone_date).getTime()
+      return dateA - dateB
+    })
 
   // Get priority badge styling
   const getPriorityBadge = (priority: string) => {
