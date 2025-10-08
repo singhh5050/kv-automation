@@ -308,7 +308,6 @@ export default function CompanyDetailPage() {
   const [activeOverviewSection, setActiveOverviewSection] = useState<'key' | 'sector' | 'details'>('key')
   const [uploadingPdfs, setUploadingPdfs] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
 
   // KPI Analysis state (async version)
   const asyncAnalysis = useAsyncAnalysis()
@@ -749,7 +748,6 @@ export default function CompanyDetailPage() {
   const handleUploadPdfs = async (files: File[], companyName?: string, providedCompanyId?: number) => {
     setUploadingPdfs(true)
     setUploadError(null)
-    setUploadSuccess(null)
     let successCount = 0
     let errorCount = 0
     
@@ -833,20 +831,24 @@ export default function CompanyDetailPage() {
     // Show success/error messages and refresh data
     if (successCount > 0) {
       const successMsg = `✅ Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}!
+
+🔄 Processing in background - Financial data will be extracted and analyzed automatically within 2-3 minutes. You'll see the results appear in the company dashboard once processing is complete.
+
+Click OK to reload the page and see updated data, or Cancel to continue without reloading.`
       
-🔄 Processing in background - Financial data will be extracted and analyzed automatically within 2-3 minutes. You'll see the results appear in the company dashboard once processing is complete.`
-      setUploadSuccess(successMsg)
+      const shouldReload = confirm(successMsg)
       
-      // Clear success message after 8 seconds to give users time to read processing info
-      setTimeout(() => setUploadSuccess(null), 8000)
+      if (shouldReload) {
+        window.location.reload()
+      } else {
+        // Force refresh the page data
+        await loadCompanyData()
+      }
       
       // Clear any error if we had complete success
       if (errorCount === 0) {
         setUploadError(null)
       }
-      
-      // Force refresh the page data
-      await loadCompanyData()
       
       console.log(`Successfully uploaded ${successCount} PDF${successCount > 1 ? 's' : ''} to ${displayName}`)
     }
@@ -1015,9 +1017,12 @@ export default function CompanyDetailPage() {
       // Force refresh of database editor by updating refresh key
       setRefreshKey(prev => prev + 1)
       
-      // Clear success message after 3 seconds
-      setUploadSuccess(`Successfully deleted ${reportToDelete.file_name}`)
-      setTimeout(() => setUploadSuccess(null), 3000)
+      // Show success message with confirm dialog
+      const shouldReload = confirm(`Successfully deleted ${reportToDelete.file_name}\n\nClick OK to reload the page, or Cancel to continue.`)
+      
+      if (shouldReload) {
+        window.location.reload()
+      }
       
     } catch (error) {
       console.error('❌ Delete failed:', error)
@@ -1077,11 +1082,6 @@ export default function CompanyDetailPage() {
                 <CapTableUpload onUpload={async (success) => { if (success) await loadCompanyData() }} isLoading={false} forceCompanyName={displayName} />
               </div>
               {/* Upload Messages */}
-              {uploadSuccess && (
-                <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-1 rounded">
-                  {uploadSuccess}
-                </div>
-              )}
               {uploadError && (
                 <div className="bg-red-50 border border-red-200 text-red-800 text-sm px-3 py-1 rounded">
                   {uploadError}
