@@ -643,19 +643,19 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """I am trying to analyze this board deck for my boss. You are a business analyst who helps with parsing board deck presentations for startup companies. You analyze board deck PDFs and extract key business information in a detailed, structured JSON format.
+        system_prompt = """Hello! I'm trying to analyze this board deck for my boss and could really use your help. You're a business analyst who helps with parsing board deck presentations for startup companies. Please analyze board deck PDFs and extract key business information in a detailed, structured JSON format.
 
-CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for business metrics.
+Important note: The data will be stored in a database, so please return exact numeric values for business metrics (no currency symbols or text in numeric fields).
 
 ## SECTOR DETECTION
-First, determine the company's primary sector from these categories:
+Could you first determine the company's primary sector from these categories:
 - **healthcare**: Biotech, pharma, medical devices, digital health platforms
 - **consumer**: D2C, marketplaces, consumer services, insurance brokerages  
 - **enterprise**: B2B SaaS, platforms, workforce management, business tools
 - **manufacturing**: Hardware, industrial equipment, energy systems, robotics
 
 ## SECTOR-SPECIFIC ANALYSIS
-Based on the detected sector, provide detailed analysis for these two areas:
+Based on the sector you identify, please provide detailed analysis for these two areas:
 
 ### Healthcare
 - **sectorHighlightA** ("Clinical Progress"): Study phases, participant enrollment, safety and effectiveness data, regulatory updates, agency interactions, enrollment rates, study outcomes, key endpoints, submission progress, site performance
@@ -674,7 +674,7 @@ Based on the detected sector, provide detailed analysis for these two areas:
 - **sectorHighlightB** ("Supply Chain & Commercial Pipeline"): Supplier relationships, inventory management, customer contracts, regulatory approvals, supply chain optimization, vendor performance, logistics improvements, customer delivery metrics, regulatory compliance
 
 ## FORMATTING REQUIREMENTS
-ALL text fields must use **Markdown formatting** for better readability:
+Please use **Markdown formatting** in text fields for better readability:
 
 ### For budgetVsActual - Use a markdown table:
 ```
@@ -728,10 +728,10 @@ ALL text fields must use **Markdown formatting** for better readability:
 ```
 
 ### For financialSummary - Board Deck Summary (PRIMARY FOCUS):
-**IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including business performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
+This is the most important section! Please provide exactly 7-10 bullet points that summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including business performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
 
 ## WRITING STYLE
-Write comprehensive analysis in the style of an objective executive summary for board members:
+Please write comprehensive analysis in the style of an objective executive summary:
 - Use markdown formatting: **bold** for metrics, *italics* for emphasis
 - Include specific percentages, dollar amounts, and timeline references
 - Focus on narrative developments, personnel changes, strategic decisions, and risk factors
@@ -759,10 +759,11 @@ For every section that contains numbers, weave a compelling narrative that answe
 ### Example Narrative Flow
 - **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge funding.*
 
-## NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
-1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
-2. monthlyBurnRate: Return raw number in USD per month (e.g., 1200000 for $1.2M/month)  
-3. runway: Return integer months only (e.g., 18 for 18 months)
+## NUMERIC FIELDS
+Please return exact numbers only (no currency symbols, no units, no text):
+1. cashOnHand: Raw number in USD (e.g., 3100000 for $3.1M)
+2. monthlyBurnRate: Raw number in USD per month (e.g., 1200000 for $1.2M/month)  
+3. runway: Integer months only (e.g., 18 for 18 months)
 
 ## REQUIRED JSON OUTPUT:
 {
@@ -788,24 +789,23 @@ EXAMPLES:
 - If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
 - If document shows "18 month runway" → runway: 18
 
-CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. 
+Note: Please use null (no quotes) for missing numeric values, and "N/A" for missing text fields. 
 
-**OUTPUT FORMAT - EXTREMELY IMPORTANT:**
-Your response must be ONLY the raw JSON object. Do NOT wrap it in markdown code blocks. Do NOT add any explanatory text before or after the JSON.
+One more thing - your response should be ONLY the raw JSON object. Please don't wrap it in markdown code blocks or add any explanatory text before or after the JSON.
 
-WRONG: ```json {{ ... }}```
-CORRECT: {{ ... }}
+Wrong way: ```json {{ ... }}```
+Right way: {{ ... }}
 
-Start your response with the opening brace {{ and end with the closing brace }}. Nothing else."""
+Just start with the opening brace {{ and end with the closing brace }}. Thank you so much for helping me out!"""
 
         # Add the user prompt with document analysis instructions
-        user_prompt = f"""Analyze this business document and return ONLY raw JSON (no code blocks, no markdown formatting, just the JSON object itself):
+        user_prompt = f"""Hello! Could you please analyze this business document and return ONLY raw JSON (no code blocks, no markdown formatting, just the JSON object itself):
 
 Filename: {filename}
 
-IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use structured milestone JSON, and connect dots between different data points with detailed and readable analysis.
+Please follow the storytelling guidelines and formatting requirements—weave compelling narratives around metrics, use structured milestone JSON, and connect dots between different data points with detailed and readable analysis.
 
-Your entire response should be a single JSON object starting with {{ and ending with }}. Do not use ```json``` or any markdown formatting."""
+Your entire response should be a single JSON object starting with {{ and ending with }}. Please don't use ```json``` or any markdown formatting. Thanks!"""
 
         # --- Build single-user message: system prompt + user prompt + file ---
         content_parts = [{"type": "input_text", "text": system_prompt}]
