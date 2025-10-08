@@ -3132,13 +3132,13 @@ def get_company_executives(db_config: Dict, company_id: int) -> Dict[str, Any]:
 def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
     """
     Save or update a company executive
+    Handles display_order conflicts and CEO management automatically
     """
     company_id = data.get('company_id')
     executive_id = data.get('id')  # If provided, update existing
     full_name = data.get('full_name')
     title = data.get('title')
     linkedin_url = data.get('linkedin_url')
-    display_order = data.get('display_order', 0)
     is_ceo = data.get('is_ceo', False)
     harmonic_person_urn = data.get('harmonic_person_urn')
     created_by = data.get('created_by', 'user')
@@ -3157,30 +3157,51 @@ def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
         
+        # If marking as CEO, unmark any existing CEOs
+        if is_ceo:
+            cursor.execute("""
+                UPDATE company_executives
+                SET is_ceo = FALSE, updated_at = CURRENT_TIMESTAMP
+                WHERE company_id = %s AND is_ceo = TRUE AND is_active = TRUE
+            """ + (f" AND id != {executive_id}" if executive_id else ""), [company_id])
+            print(f"Unmarked existing CEOs for company {company_id}")
+        
         if executive_id:
-            # Update existing executive
+            # Update existing executive - don't touch display_order to avoid conflicts
             cursor.execute("""
                 UPDATE company_executives
                 SET full_name = %s, title = %s, linkedin_url = %s,
-                    display_order = %s, is_ceo = %s, 
+                    is_ceo = %s, 
                     updated_at = CURRENT_TIMESTAMP, created_by = %s
                 WHERE id = %s AND company_id = %s
-                RETURNING id
-            """, [full_name, title, linkedin_url, display_order, 
-                  is_ceo, created_by, executive_id, company_id])
+                RETURNING id, display_order
+            """, [full_name, title, linkedin_url, is_ceo, created_by, executive_id, company_id])
+            
+            result = cursor.fetchone()
+            saved_id = result[0] if result else None
+            
         else:
-            # Insert new executive
+            # Insert new executive - auto-assign display_order
+            # Get the max display_order for this company
+            cursor.execute("""
+                SELECT COALESCE(MAX(display_order), -1) + 1
+                FROM company_executives
+                WHERE company_id = %s AND is_active = TRUE
+            """, [company_id])
+            
+            next_order = cursor.fetchone()[0]
+            
             cursor.execute("""
                 INSERT INTO company_executives 
                 (company_id, full_name, title, linkedin_url, display_order, 
                  is_ceo, harmonic_person_urn, source, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'manual', %s)
                 RETURNING id
-            """, [company_id, full_name, title, linkedin_url, display_order,
+            """, [company_id, full_name, title, linkedin_url, next_order,
                   is_ceo, harmonic_person_urn, created_by])
-        
-        result = cursor.fetchone()
-        saved_id = result[0] if result else None
+            
+            result = cursor.fetchone()
+            saved_id = result[0] if result else None
         
         conn.commit()
         cursor.close()

@@ -48,10 +48,8 @@ export default function SimpleExecutivesList({ companyId }: SimpleExecutivesList
   }
 
   const handleAdd = () => {
-    const maxOrder = Math.max(...executives.map(e => e.display_order || 0), -1)
     setEditingId('new')
     setEditForm({
-      display_order: maxOrder + 1,
       is_ceo: false
     })
   }
@@ -276,3 +274,4 @@ export default function SimpleExecutivesList({ companyId }: SimpleExecutivesList
     </div>
   )
 }
+

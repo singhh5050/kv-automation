@@ -574,24 +574,77 @@ def save_enrichment_to_database(company_id: str, enrichment_data: Dict[str, Any]
         
         enrichment_id = cursor.fetchone()[0]
         
-        # Enrich CEO/leadership if available
+        # Enrich CEO/leadership if available - BLOCKING to ensure data is ready for executives table
         ceo_data = extracted.get('ceo')
         leadership_data = extracted.get('leadership', [])
         
-        if ceo_data and ceo_data.get('person_urn'):
-            # Enrich CEO in background (non-blocking)
-            try:
-                enrich_person_background(ceo_data['person_urn'], company_id, ceo_data.get('title', 'CEO'))
-            except Exception as e:
-                print(f"CEO enrichment failed (non-blocking): {e}")
+        # Store enriched person data for immediate use
+        enriched_ceo_data = None
+        enriched_leadership_data = []
         
-        # Enrich top 3 leadership members
-        for leader in leadership_data[:3]:
+        if ceo_data and ceo_data.get('person_urn'):
+            # Enrich CEO synchronously (blocking)
+            print(f"🔄 Enriching CEO person: {ceo_data.get('person_urn')}")
+            try:
+                # Check if already enriched recently
+                if not is_person_recently_enriched(ceo_data['person_urn']):
+                    person_result = enrich_person_with_harmonic(ceo_data['person_urn'])
+                    if person_result and not person_result.get('error'):
+                        save_person_enrichment(ceo_data['person_urn'], company_id, ceo_data.get('title', 'CEO'), person_result)
+                        enriched_ceo_data = person_result
+                        print(f"✅ CEO enrichment complete: {person_result.get('full_name')}")
+                    else:
+                        print(f"⚠️ CEO enrichment failed: {person_result.get('error') if person_result else 'Unknown error'}")
+                else:
+                    print(f"✅ CEO already enriched recently, using cached data")
+                    # Fetch from database
+                    cursor.execute("""
+                        SELECT harmonic_data FROM person_enrichments
+                        WHERE person_urn = %s
+                        ORDER BY enriched_at DESC LIMIT 1
+                    """, [ceo_data['person_urn']])
+                    result = cursor.fetchone()
+                    if result and result[0]:
+                        enriched_ceo_data = result[0] if isinstance(result[0], dict) else json.loads(result[0])
+            except Exception as e:
+                print(f"⚠️ CEO enrichment failed: {e}")
+        
+        # Enrich top 5 leadership members synchronously
+        for i, leader in enumerate(leadership_data[:5]):
             if leader.get('person_urn'):
+                print(f"🔄 Enriching leadership person {i+1}: {leader.get('person_urn')}")
                 try:
-                    enrich_person_background(leader['person_urn'], company_id, leader.get('title', 'Executive'))
+                    # Check if already enriched recently
+                    if not is_person_recently_enriched(leader['person_urn']):
+                        person_result = enrich_person_with_harmonic(leader['person_urn'])
+                        if person_result and not person_result.get('error'):
+                            save_person_enrichment(leader['person_urn'], company_id, leader.get('title', 'Executive'), person_result)
+                            enriched_leadership_data.append({
+                                'index': i,
+                                'person_urn': leader['person_urn'],
+                                'data': person_result
+                            })
+                            print(f"✅ Leadership enrichment complete: {person_result.get('full_name')}")
+                        else:
+                            print(f"⚠️ Leadership enrichment failed: {person_result.get('error') if person_result else 'Unknown error'}")
+                    else:
+                        print(f"✅ Leadership already enriched recently, using cached data")
+                        # Fetch from database
+                        cursor.execute("""
+                            SELECT harmonic_data FROM person_enrichments
+                            WHERE person_urn = %s
+                            ORDER BY enriched_at DESC LIMIT 1
+                        """, [leader['person_urn']])
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            person_data = result[0] if isinstance(result[0], dict) else json.loads(result[0])
+                            enriched_leadership_data.append({
+                                'index': i,
+                                'person_urn': leader['person_urn'],
+                                'data': person_data
+                            })
                 except Exception as e:
-                    print(f"Leadership enrichment failed (non-blocking): {e}")
+                    print(f"⚠️ Leadership enrichment failed: {e}")
         
         # Commit the transaction
         conn.commit()
@@ -599,107 +652,92 @@ def save_enrichment_to_database(company_id: str, enrichment_data: Dict[str, Any]
         # Populate executives table with the enriched data directly
         print(f"📋 Populating executives table for company {company_id}")
         try:
-            # Prepare the enrichment data with person enrichments
-            enriched_extracted = extracted_data.copy()
-            
-            # Add person enrichments to CEO
-            if enriched_extracted.get('ceo') and ceo_data:
-                enriched_extracted['ceo']['enriched_person'] = {
-                    'full_name': ceo_data.get('full_name'),
-                    'title': ceo_data.get('title'),
-                    'contact': {'linkedin_url': ceo_data.get('linkedin_url')}
-                }
-            
-            # Add person enrichments to leadership
-            if enriched_extracted.get('leadership'):
-                for i, leader in enumerate(enriched_extracted['leadership'][:3]):
-                    if leader.get('person_urn'):
-                        # Query for person enrichment
-                        cursor.execute("""
-                            SELECT full_name, title, extracted_data
-                            FROM person_enrichments
-                            WHERE person_urn = %s
-                            ORDER BY enriched_at DESC
-                            LIMIT 1
-                        """, [leader['person_urn']])
-                        
-                        person_result = cursor.fetchone()
-                        if person_result:
-                            person_data = person_result[2] if person_result[2] else {}
-                            leader['enriched_person'] = {
-                                'full_name': person_result[0],
-                                'title': person_result[1] or leader.get('title'),
-                                'contact': {
-                                    'linkedin_url': person_data.get('contact', {}).get('linkedin_url')
-                                }
-                            }
+            # Clear existing harmonic-sourced executives (reset on re-enrichment)
+            cursor.execute("""
+                DELETE FROM company_executives 
+                WHERE company_id = %s AND source = 'harmonic'
+            """, [int(company_id)])
+            print(f"🗑️ Cleared existing Harmonic executives for company {company_id}")
             
             # Populate executives directly here
             display_order = 0
+            executives_added = 0
             
-            # Add CEO if exists
-            if enriched_extracted.get('ceo'):
-                ceo = enriched_extracted['ceo']
-                if ceo.get('enriched_person'):
+            # Add CEO if exists and was successfully enriched
+            if ceo_data and enriched_ceo_data:
+                full_name = enriched_ceo_data.get('full_name') or enriched_ceo_data.get('name')
+                linkedin_url = None
+                if enriched_ceo_data.get('socials', {}).get('LINKEDIN', {}).get('url'):
+                    linkedin_url = enriched_ceo_data['socials']['LINKEDIN']['url']
+                elif enriched_ceo_data.get('contact', {}).get('linkedin_url'):
+                    linkedin_url = enriched_ceo_data['contact']['linkedin_url']
+                
+                title = ceo_data.get('title', 'CEO')
+                
+                if full_name:  # Only add if we have a name
                     cursor.execute("""
                         INSERT INTO company_executives 
                         (company_id, full_name, title, linkedin_url, display_order, 
                          is_ceo, harmonic_person_urn, source, created_by)
                         VALUES (%s, %s, %s, %s, %s, TRUE, %s, 'harmonic', 'system')
-                        ON CONFLICT (company_id, display_order) 
-                        DO UPDATE SET 
-                            full_name = EXCLUDED.full_name,
-                            title = EXCLUDED.title,
-                            linkedin_url = EXCLUDED.linkedin_url,
-                            is_active = TRUE,
-                            updated_at = CURRENT_TIMESTAMP
                     """, [
-                        company_id,
-                        ceo['enriched_person'].get('full_name'),
-                        ceo.get('title') or ceo['enriched_person'].get('title'),
-                        ceo['enriched_person'].get('contact', {}).get('linkedin_url'),
+                        int(company_id),
+                        full_name,
+                        title,
+                        linkedin_url,
                         display_order,
-                        ceo.get('person_urn')
+                        ceo_data.get('person_urn')
                     ])
                     display_order += 1
-                    print(f"✅ Added CEO to executives table")
+                    executives_added += 1
+                    print(f"✅ Added CEO {full_name} to executives table")
             
             # Add other leadership
-            if enriched_extracted.get('leadership'):
-                for leader in enriched_extracted['leadership']:
-                    # Skip if it's another CEO or board member
-                    title = (leader.get('title') or '').lower()
-                    if 'ceo' in title or 'chief executive' in title or 'board' in title:
-                        continue
-                    
-                    if leader.get('enriched_person'):
-                        cursor.execute("""
-                            INSERT INTO company_executives 
-                            (company_id, full_name, title, linkedin_url, display_order, 
-                             is_ceo, harmonic_person_urn, source, created_by)
-                            VALUES (%s, %s, %s, %s, %s, FALSE, %s, 'harmonic', 'system')
-                            ON CONFLICT (company_id, display_order) 
-                            DO UPDATE SET 
-                                full_name = EXCLUDED.full_name,
-                                title = EXCLUDED.title,
-                                linkedin_url = EXCLUDED.linkedin_url,
-                                is_active = TRUE,
-                                updated_at = CURRENT_TIMESTAMP
-                        """, [
-                            company_id,
-                            leader['enriched_person'].get('full_name'),
-                            leader.get('title') or leader['enriched_person'].get('title'),
-                            leader['enriched_person'].get('contact', {}).get('linkedin_url'),
-                            display_order,
-                            leader.get('person_urn')
-                        ])
-                        display_order += 1
-                        print(f"✅ Added {leader['enriched_person'].get('full_name')} to executives table")
+            for enriched_leader in enriched_leadership_data:
+                leader_index = enriched_leader['index']
+                leader_data = enriched_leader['data']
+                original_leader = leadership_data[leader_index] if leader_index < len(leadership_data) else {}
+                
+                # Skip if it's another CEO or board member
+                title = (original_leader.get('title') or '').lower()
+                if 'ceo' in title or 'chief executive' in title or 'board' in title:
+                    continue
+                
+                full_name = leader_data.get('full_name') or leader_data.get('name')
+                linkedin_url = None
+                if leader_data.get('socials', {}).get('LINKEDIN', {}).get('url'):
+                    linkedin_url = leader_data['socials']['LINKEDIN']['url']
+                elif leader_data.get('contact', {}).get('linkedin_url'):
+                    linkedin_url = leader_data['contact']['linkedin_url']
+                
+                title = original_leader.get('title', 'Executive')
+                
+                if full_name:  # Only add if we have a name
+                    cursor.execute("""
+                        INSERT INTO company_executives 
+                        (company_id, full_name, title, linkedin_url, display_order, 
+                         is_ceo, harmonic_person_urn, source, created_by)
+                        VALUES (%s, %s, %s, %s, %s, FALSE, %s, 'harmonic', 'system')
+                    """, [
+                        int(company_id),
+                        full_name,
+                        title,
+                        linkedin_url,
+                        display_order,
+                        enriched_leader['person_urn']
+                    ])
+                    display_order += 1
+                    executives_added += 1
+                    print(f"✅ Added {full_name} to executives table")
             
-            print(f"✅ Populated {display_order} executives for company {company_id}")
+            # Commit the executives changes
+            conn.commit()
+            print(f"✅ Successfully populated {executives_added} executives for company {company_id}")
                 
         except Exception as e:
             print(f"⚠️ Failed to populate executives table: {e}")
+            import traceback
+            traceback.print_exc()
             # Don't fail the whole enrichment if executive population fails
         
         cursor.close()
