@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { processCapTableXlsx, getCompanyNames } from '@/lib/api'
 
@@ -18,38 +18,8 @@ interface CapTableUploadProps {
 
 export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }: CapTableUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false)
-  const [showNamePrompt, setShowNamePrompt] = useState(false)
-  const [pendingFiles, setPendingFiles] = useState<File[]>([])
-  const [selectedOption, setSelectedOption] = useState('')
-  const [customName, setCustomName] = useState('')
-  const [companies, setCompanies] = useState<Company[]>([])
-  const [loadingCompanies, setLoadingCompanies] = useState(false)
 
-  // Load companies when modal opens
-  useEffect(() => {
-    if (showNamePrompt) {
-      setLoadingCompanies(true)
-      getCompanyNames().then(result => {
-        console.log('getCompanyNames result:', result)
-        // The companies are nested: result.data.data (API response structure)
-        const companiesArray = result.data?.data || result.data
-        if (Array.isArray(companiesArray)) {
-          console.log('Companies loaded:', companiesArray.length, 'companies')
-          setCompanies(companiesArray)
-        } else {
-          console.log('No valid data array in result:', result)
-          setCompanies([]) // Fallback to empty array
-        }
-        setLoadingCompanies(false)
-      }).catch(error => {
-        console.error('Failed to load companies:', error)
-        setCompanies([]) // Fallback to empty array
-        setLoadingCompanies(false)
-      })
-    }
-  }, [showNamePrompt])
-
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
     
     // If a company is forced, bypass the prompt and process immediately
@@ -57,8 +27,9 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
       processFiles(acceptedFiles, forceCompanyName)
       return
     }
-    setPendingFiles(acceptedFiles)
-    setShowNamePrompt(true)
+    
+    // Use browser dialogs instead of modal
+    await handleCompanySelection(acceptedFiles)
   }, [forceCompanyName])
 
   const processFiles = async (files: File[], userCompanyName?: string) => {
@@ -105,7 +76,11 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
             message += `\n\nNote: These fixes ensure clean data reaches the database. Original file data may have had formatting issues.`
           }
           
-          alert(message)
+          const shouldReload = confirm(`${message}\n\nClick OK to reload the page and see updated data, or Cancel to continue without reloading.`)
+          
+          if (shouldReload) {
+            window.location.reload()
+          }
         }
       } catch (error) {
         console.error(`Error processing cap table ${file.name}:`, error)
@@ -116,36 +91,67 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
     
     setIsProcessing(false)
     onUpload(allSuccess)
-    setShowNamePrompt(false)
-    setPendingFiles([])
   }
 
-  const handleSubmit = () => {
-    let companyName: string | undefined
-    
-    if (selectedOption === 'create_new') {
-      companyName = customName.trim()
-      if (!companyName) {
-        alert('Please enter a company name.')
+  const handleCompanySelection = async (files: File[]) => {
+    try {
+      // Load companies first
+      const result = await getCompanyNames()
+      const companiesArray = result.data?.data || result.data || []
+      
+      if (!Array.isArray(companiesArray)) {
+        console.error('Failed to load companies')
+        alert('Failed to load companies. Please try again.')
         return
       }
-    } else if (selectedOption) {
-      const selectedCompany = companies.find(c => c.id.toString() === selectedOption)
-      companyName = selectedCompany?.name
-    } else {
-      alert('Please select a company or create a new one.')
-      return
+      
+      // Create options string for confirm dialog
+      let optionsText = 'Available companies:\n'
+      companiesArray.forEach((company, index) => {
+        optionsText += `${index + 1}. ${company.name}\n`
+      })
+      optionsText += `${companiesArray.length + 1}. Create new company\n\n`
+      
+      // Show selection dialog
+      const selection = prompt(
+        `${optionsText}Enter the number of your choice (1-${companiesArray.length + 1}):`
+      )
+      
+      if (!selection) {
+        // User cancelled
+        return
+      }
+      
+      const choiceNumber = parseInt(selection.trim())
+      
+      if (isNaN(choiceNumber) || choiceNumber < 1 || choiceNumber > companiesArray.length + 1) {
+        alert('Invalid selection. Please try again.')
+        return
+      }
+      
+      let companyName: string | undefined
+      
+      if (choiceNumber === companiesArray.length + 1) {
+        // Create new company
+        companyName = prompt('Enter new company name (or leave blank to auto-detect):')
+        if (companyName !== null) {
+          companyName = companyName.trim() || undefined
+        } else {
+          return // User cancelled
+        }
+      } else {
+        // Use existing company
+        const selectedCompany = companiesArray[choiceNumber - 1]
+        companyName = selectedCompany.name
+      }
+      
+      // Process the files
+      processFiles(files, companyName)
+      
+    } catch (error) {
+      console.error('Error loading companies:', error)
+      alert('Failed to load companies. Please try again.')
     }
-    
-    processFiles(pendingFiles, companyName)
-    handleCancel()
-  }
-
-  const handleCancel = () => {
-    setShowNamePrompt(false)
-    setPendingFiles([])
-    setSelectedOption('')
-    setCustomName('')
   }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -200,83 +206,6 @@ export default function CapTableUpload({ onUpload, isLoading, forceCompanyName }
         </div>
       </div>
 
-      {/* Company Name Prompt Modal */}
-      {(!forceCompanyName || !forceCompanyName.trim()) && showNamePrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md sm:max-w-lg">
-            <h3 className="text-lg font-semibold mb-4">Select Company</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Select an existing company or create a new one. Leave blank to auto-detect from the cap table.
-            </p>
-            
-            {loadingCompanies ? (
-              <div className="flex items-center justify-center py-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
-                <span className="ml-2 text-sm text-gray-600">Loading companies...</span>
-              </div>
-            ) : (
-              <>
-                <select
-                  value={selectedOption}
-                  onChange={(e) => setSelectedOption(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
-                  autoFocus
-                >
-                  <option value="">Select a company...</option>
-                  {Array.isArray(companies) && companies.map(company => (
-                    <option key={company.id} value={company.id.toString()}>
-                      {company.name}
-                    </option>
-                  ))}
-                  <option value="create_new">Create new company...</option>
-                </select>
-                
-                {selectedOption === 'create_new' && (
-                  <input
-                    type="text"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="Enter new company name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSubmit()
-                      if (e.key === 'Escape') handleCancel()
-                    }}
-                  />
-                )}
-              </>
-            )}
-            
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-              <p className="text-xs text-blue-800">
-                <strong>Note:</strong> If a company name isn&apos;t correct, you can edit it in the database. 
-                We don&apos;t have merge functionality yet - you&apos;d need to re-add files to the correct name.
-              </p>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row sm:justify-end gap-2 sm:gap-2">
-              <button
-                onClick={handleCancel}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 order-2 sm:order-1"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!selectedOption || (selectedOption === 'create_new' && !customName.trim())}
-                className={`px-4 py-2 text-white rounded-md order-1 sm:order-2 ${
-                  !selectedOption || (selectedOption === 'create_new' && !customName.trim())
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-green-600 hover:bg-green-700'
-                }`}
-              >
-                <span className="hidden sm:inline">Process {pendingFiles.length} XLSX file{pendingFiles.length !== 1 ? 's' : ''}</span>
-                <span className="sm:hidden">Process {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 } 

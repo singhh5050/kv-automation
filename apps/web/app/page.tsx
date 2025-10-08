@@ -309,15 +309,21 @@ export default function Home() {
           // Show user feedback about async processing with detailed timeline
           setErrorMessage(null) // Clear any previous errors
           
-          // Show success notification with processing timeline
-          alert(`✅ Upload successful! 
+          // Show success notification with processing timeline and reload option
+          const shouldReload = confirm(`✅ Upload successful! 
 
 🔄 Processing in background - Your PDF is being analyzed automatically. Financial data extraction and analysis will complete within 2-3 minutes.
 
-📊 Results will appear in the company dashboard once processing is complete. You can continue using the platform normally while this happens in the background.`)
+📊 Results will appear in the company dashboard once processing is complete.
+
+Click OK to reload the page and see updated company list, or Cancel to continue without reloading.`)
           
-          // Refresh companies list to show any new entries (in case this is a new company)
-          await loadCompanies(true)
+          if (shouldReload) {
+            window.location.reload()
+          } else {
+            // Refresh companies list to show any new entries (in case this is a new company)
+            await loadCompanies(true)
+          }
           
           // Note: No immediate database save - Lambda will handle this automatically
         } else {
