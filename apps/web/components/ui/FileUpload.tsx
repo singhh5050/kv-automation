@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { getCompanyNames } from '@/lib/api'
 
@@ -18,6 +18,13 @@ interface FileUploadProps {
 }
 
 export default function FileUpload({ onUpload, isLoading, forceCompanyName, forceCompanyId }: FileUploadProps) {
+  const [showModal, setShowModal] = useState(false)
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
+  const [newCompanyName, setNewCompanyName] = useState('')
+  const [isCreatingNew, setIsCreatingNew] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
@@ -33,79 +40,65 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
     }
     
     if (pdfFiles.length > 0) {
-      // If a forceCompanyName is provided, bypass the prompt entirely
+      // If a forceCompanyName is provided, bypass the modal entirely
       if (forceCompanyName && forceCompanyName.trim()) {
         onUpload(pdfFiles, forceCompanyName, forceCompanyId)
         return
       }
       
-      // Use browser dialogs instead of modal
-      await handleCompanySelection(pdfFiles)
+      // Show modal for company selection
+      setPendingFiles(pdfFiles)
+      await loadCompanies()
+      setShowModal(true)
     }
   }, [onUpload, forceCompanyName, forceCompanyId])
 
-  const handleCompanySelection = async (files: File[]) => {
+  const loadCompanies = async () => {
     try {
-      // Load companies first
       const result = await getCompanyNames()
       const companiesArray = result.data?.data || result.data || []
       
-      if (!Array.isArray(companiesArray)) {
-        console.error('Failed to load companies')
-        alert('Failed to load companies. Please try again.')
-        return
-      }
-      
-      // Create options string for confirm dialog
-      let optionsText = 'Available companies:\n'
-      companiesArray.forEach((company, index) => {
-        optionsText += `${index + 1}. ${company.name}\n`
-      })
-      optionsText += `${companiesArray.length + 1}. Create new company\n\n`
-      
-      // Show selection dialog
-      const selection = prompt(
-        `${optionsText}Enter the number of your choice (1-${companiesArray.length + 1}):`
-      )
-      
-      if (!selection) {
-        // User cancelled
-        return
-      }
-      
-      const choiceNumber = parseInt(selection.trim())
-      
-      if (isNaN(choiceNumber) || choiceNumber < 1 || choiceNumber > companiesArray.length + 1) {
-        alert('Invalid selection. Please try again.')
-        return
-      }
-      
-      let companyName: string | undefined
-      let companyId: number | undefined
-      
-      if (choiceNumber === companiesArray.length + 1) {
-        // Create new company
-        companyName = prompt('Enter new company name:')
-        if (!companyName || !companyName.trim()) {
-          alert('Company name is required.')
-          return
-        }
-        companyName = companyName.trim()
+      if (Array.isArray(companiesArray)) {
+        setCompanies(companiesArray)
       } else {
-        // Use existing company
-        const selectedCompany = companiesArray[choiceNumber - 1]
-        companyName = selectedCompany.name
-        companyId = selectedCompany.id
+        console.error('Failed to load companies')
+        setCompanies([])
       }
-      
-      // Process the upload
-      onUpload(files, companyName, companyId)
-      
     } catch (error) {
       console.error('Error loading companies:', error)
-      alert('Failed to load companies. Please try again.')
+      setCompanies([])
     }
   }
+
+  const handleSubmit = () => {
+    if (isCreatingNew) {
+      if (!newCompanyName.trim()) {
+        alert('Please enter a company name')
+        return
+      }
+      onUpload(pendingFiles, newCompanyName.trim())
+    } else {
+      if (!selectedCompany) {
+        alert('Please select a company')
+        return
+      }
+      onUpload(pendingFiles, selectedCompany.name, selectedCompany.id)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    setPendingFiles([])
+    setSelectedCompany(null)
+    setNewCompanyName('')
+    setIsCreatingNew(false)
+    setSearchQuery('')
+  }
+
+  const filteredCompanies = companies.filter(company =>
+    company.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -117,37 +110,135 @@ export default function FileUpload({ onUpload, isLoading, forceCompanyName, forc
 
   return (
     <>
-      <div className="relative">
-        <div
-          {...getRootProps()}
-          className={`
-            px-4 py-2 border border-dashed rounded cursor-pointer transition-colors
-            ${isDragActive 
-              ? 'border-blue-400 bg-blue-50' 
-              : 'border-gray-300 bg-white hover:border-gray-400'
-            }
-            ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
-          `}
-        >
-          <input {...getInputProps()} disabled={isLoading} />
-          <div className="flex items-center space-x-2">
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="text-sm font-medium text-gray-600">Uploading & queuing for analysis...</span>
-              </>
-            ) : (
-              <>
-                <span className="text-lg">+</span>
-                <span className="text-sm font-medium text-gray-700">
-                  {isDragActive ? 'Drop PDFs here' : 'Add PDFs'}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+      <div
+        {...getRootProps()}
+        className={`
+          w-full flex items-center px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors
+          ${isDragActive 
+            ? 'bg-blue-100 text-blue-900' 
+            : 'text-gray-700 hover:bg-gray-50'
+          }
+          ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
+        `}
+      >
+        <input {...getInputProps()} disabled={isLoading} />
+        {isLoading ? (
+          <>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+            <span>Uploading...</span>
+          </>
+        ) : (
+          <>
+            <span className="mr-3">📄</span>
+            <span>{isDragActive ? 'Drop here' : 'Add PDF'}</span>
+          </>
+        )}
       </div>
 
+      {/* Company Selection Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Select Company</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Choose a company to upload {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} to
+              </p>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Toggle between existing and new */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setIsCreatingNew(false)}
+                  className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                    !isCreatingNew
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Select Existing
+                </button>
+                <button
+                  onClick={() => setIsCreatingNew(true)}
+                  className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                    isCreatingNew
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Create New
+                </button>
+              </div>
+
+              {isCreatingNew ? (
+                /* Create New Company Form */
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Company Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="Enter company name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+              ) : (
+                /* Select Existing Company */
+                <div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search companies..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {filteredCompanies.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No companies found</p>
+                    ) : (
+                      filteredCompanies.map((company) => (
+                        <button
+                          key={company.id}
+                          onClick={() => setSelectedCompany(company)}
+                          className={`w-full text-left px-4 py-3 rounded-md border transition-colors ${
+                            selectedCompany?.id === company.id
+                              ? 'bg-blue-50 border-blue-300 text-blue-900'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="font-medium">{company.name}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 } 

@@ -727,7 +727,7 @@ export default function CompanyDetailPage() {
   
   // Adjustable panel weights (developer-friendly): cash | milestones | team
   // Edit these numbers to change horizontal proportions; they are treated as fr units
-  const PANEL_WEIGHTS = { cash: 6, milestones: 4, team: 2 }
+  const PANEL_WEIGHTS = { cash: 8, milestones: 6, team: 5 }
   const panelGridColumns = `${PANEL_WEIGHTS.cash}fr ${PANEL_WEIGHTS.milestones}fr ${PANEL_WEIGHTS.team}fr`
   
   // Get sector from company data or latest report
@@ -1301,13 +1301,13 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="metrics">💰 Summary</option>
-            <option value="financials">📊 Financials</option>
             <option value="overview">📈 Latest Updates</option>
-            <option value="captable">🏦 Cap Table</option>
-            <option value="reports">📄 Financial Reports ({company.financial_reports.length})</option>
-            <option value="database">🗄️ Database</option>
-            <option value="notes">📝 Notes</option>
             <option value="health">🏥 Health Check</option>
+            <option value="financials">📊 Financials</option>
+            <option value="captable">🏦 Cap Table</option>
+            <option value="notes">📝 Notes</option>
+            <option value="reports">📄 Reports ({company.financial_reports.length})</option>
+            <option value="database">🗄️ Database</option>
           </select>
         </div>
 
@@ -1326,17 +1326,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               <span>Summary</span>
             </button>
             <button
-              onClick={() => setActiveTab('financials')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
-                activeTab === 'financials'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span>📊</span>
-              <span>Financials</span>
-            </button>
-            <button
               onClick={() => setActiveTab('overview')}
               className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'overview'
@@ -1346,6 +1335,28 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             >
               <span>📈</span>
               <span>Latest Updates</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('health')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'health'
+                  ? 'bg-green-50 text-green-700 border border-green-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>🏥</span>
+              <span>Health Check</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('financials')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'financials'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>📊</span>
+              <span>Financials</span>
             </button>
             <button
               onClick={() => setActiveTab('captable')}
@@ -1359,6 +1370,17 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               <span>Cap Table</span>
             </button>
             <button
+              onClick={() => setActiveTab('notes')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'notes'
+                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>📝</span>
+              <span>Notes</span>
+            </button>
+            <button
               onClick={() => setActiveTab('reports')}
               className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
                 activeTab === 'reports'
@@ -1367,7 +1389,7 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               }`}
             >
               <span>📄</span>
-              <span>Financial Reports</span>
+              <span>Reports</span>
               <span className="ml-1 px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-semibold">
                 {company.financial_reports.length}
               </span>
@@ -1382,28 +1404,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             >
               <span>🗄️</span>
               <span>Database</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('notes')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
-                activeTab === 'notes'
-                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span>📝</span>
-              <span>Notes</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('health')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
-                activeTab === 'health'
-                  ? 'bg-green-50 text-green-700 border border-green-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span>🏥</span>
-              <span>Health Check</span>
             </button>
           </nav>
         </div>

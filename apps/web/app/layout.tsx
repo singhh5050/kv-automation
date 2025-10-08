@@ -11,8 +11,8 @@ import {
 import '../styles/globals.css'
 
 export const metadata: Metadata = {
-  title: 'PDF Finance Summarizer',
-  description: 'Upload PDFs and get AI-powered financial summaries',
+  title: 'KV Portfolio Management',
+  description: 'Khosla Ventures Portfolio Management System',
 }
 
 export default function RootLayout({

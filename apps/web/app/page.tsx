@@ -3,10 +3,11 @@
 // Trigger Vercel deployment - Database Editor fixes applied
 import React, { useState, useEffect } from 'react'
 import { useUser, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
 import CompanyCard from '@/components/company/CompanyCard'
-import { FinancialReport, Company, CompanyOverview, CapTableData, PortfolioSummary } from '@/types'
+import { FinancialReport, Company, CompanyOverview, CapTableData, PortfolioSummary, Milestone } from '@/types'
 import { 
   uploadFile, 
   uploadToS3,
@@ -18,10 +19,18 @@ import {
   healthCheck,
   testDatabaseConnection,
   createDatabaseSchema,
-  createOrGetCompany
+  createOrGetCompany,
+  getMilestones,
+  createMilestone,
+  updateMilestone,
+  deleteMilestone,
+  markMilestoneCompleted
 } from '@/lib/api'
 import { companiesCache } from '@/lib/companiesCache'
 import { detectCompanyStage } from '@/lib/stageDetection'
+import { cleanFileName } from '@/lib/utils'
+
+type ActiveView = 'portfolio' | 'milestones' | 'voice'
 
 
 
@@ -62,6 +71,8 @@ const convertPortfolioSummaryToFrontend = (portfolioData: any[]): Company[] => {
 
 export default function Home() {
   const { isSignedIn, user, isLoaded } = useUser()
+  const router = useRouter()
+  const [activeView, setActiveView] = useState<ActiveView>('portfolio')
   const [companies, setCompanies] = useState<Company[]>([])
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
   const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
@@ -71,6 +82,7 @@ export default function Home() {
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [showUploads, setShowUploads] = useState(false)
+  const [showSortMenu, setShowSortMenu] = useState(false)
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -79,13 +91,46 @@ export default function Home() {
     search: ''
   })
 
+  // Milestone states
+  const [milestones, setMilestones] = useState<Milestone[]>([])
+  const [filterPriority, setFilterPriority] = useState<string>('')
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [showCompleted, setShowCompleted] = useState(true)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailRecipient, setEmailRecipient] = useState('')
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  
+  // Milestone form state
+  const [formData, setFormData] = useState({
+    company_id: '',
+    milestone_date: '',
+    description: '',
+    priority: 'medium' as 'critical' | 'high' | 'medium' | 'low'
+  })
+
   // Load companies from cache or database only when user is authenticated
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       loadCompaniesWithCache()
+      loadMilestones()
       checkBackendHealth()
     }
   }, [isLoaded, isSignedIn])
+
+  // Close sort menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (showSortMenu && !target.closest('.sort-menu-container')) {
+        setShowSortMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSortMenu])
 
   // Apply filters whenever companies or filters change
   useEffect(() => {
@@ -372,6 +417,221 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
     setErrorMessage(null)
   }
 
+  // Milestone functions
+  const loadMilestones = async () => {
+    try {
+      const response = await getMilestones()
+      
+      if (response.error) {
+        setErrorMessage(response.error)
+        return
+      }
+      
+      const milestonesData = response.data?.data?.data?.milestones || response.data?.data?.milestones || []
+      setMilestones(milestonesData)
+      console.log(`✅ Loaded ${milestonesData.length} milestones`)
+    } catch (error) {
+      console.error('Failed to load milestones:', error)
+    }
+  }
+
+  const handleCreateMilestone = async () => {
+    if (!formData.company_id || !formData.milestone_date || !formData.description) {
+      alert('Please fill in all required fields')
+      return
+    }
+
+    try {
+      const result = await createMilestone({
+        company_id: parseInt(formData.company_id),
+        milestone_date: formData.milestone_date,
+        description: formData.description,
+        priority: formData.priority
+      })
+
+      if (result.error) {
+        alert(`Failed to create milestone: ${result.error}`)
+        return
+      }
+
+      setShowCreateModal(false)
+      resetMilestoneForm()
+      loadMilestones()
+    } catch (error) {
+      alert(`Failed to create milestone: ${error}`)
+    }
+  }
+
+  const handleUpdateMilestone = async () => {
+    if (!editingMilestone || !formData.milestone_date || !formData.description) {
+      alert('Please fill in all required fields')
+      return
+    }
+
+    try {
+      const result = await updateMilestone({
+        milestone_id: editingMilestone.id,
+        milestone_date: formData.milestone_date,
+        description: formData.description,
+        priority: formData.priority
+      })
+
+      if (result.error) {
+        alert(`Failed to update milestone: ${result.error}`)
+        return
+      }
+
+      setEditingMilestone(null)
+      resetMilestoneForm()
+      loadMilestones()
+    } catch (error) {
+      alert(`Failed to update milestone: ${error}`)
+    }
+  }
+
+  const handleDeleteMilestone = async (milestoneId: number) => {
+    if (!confirm('Are you sure you want to delete this milestone? This cannot be undone.')) {
+      return
+    }
+
+    try {
+      const result = await deleteMilestone(milestoneId)
+
+      if (result.error) {
+        alert(`Failed to delete milestone: ${result.error}`)
+        return
+      }
+
+      loadMilestones()
+    } catch (error) {
+      alert(`Failed to delete milestone: ${error}`)
+    }
+  }
+
+  const handleToggleCompleted = async (milestone: Milestone) => {
+    try {
+      const result = await markMilestoneCompleted(milestone.id, !milestone.completed)
+
+      if (result.error) {
+        alert(`Failed to update milestone: ${result.error}`)
+        return
+      }
+
+      loadMilestones()
+    } catch (error) {
+      alert(`Failed to update milestone: ${error}`)
+    }
+  }
+
+  const openEditModal = (milestone: Milestone) => {
+    setEditingMilestone(milestone)
+    setFormData({
+      company_id: milestone.company_id.toString(),
+      milestone_date: milestone.milestone_date,
+      description: milestone.description,
+      priority: milestone.priority
+    })
+  }
+
+  const resetMilestoneForm = () => {
+    setFormData({
+      company_id: '',
+      milestone_date: '',
+      description: '',
+      priority: 'medium'
+    })
+  }
+
+  const handleSendEmail = async () => {
+    if (!emailRecipient || !emailRecipient.includes('@')) {
+      alert('Please enter a valid email address')
+      return
+    }
+
+    setIsSendingEmail(true)
+    
+    try {
+      const response = await fetch('/api/send-milestone-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailRecipient })
+      })
+
+      const result = await response.json()
+
+      if (result.error) {
+        alert(`Failed to send email: ${result.error}`)
+        return
+      }
+
+      alert(`✅ Email sent successfully to ${emailRecipient}!`)
+      setShowEmailModal(false)
+      setEmailRecipient('')
+    } catch (error) {
+      alert(`Failed to send email: ${error}`)
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
+  // Filter milestones
+  const filteredMilestones = milestones.filter(milestone => {
+    if (!showCompleted && milestone.completed) return false
+    if (filterPriority && milestone.priority !== filterPriority) return false
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      return (
+        milestone.company_name?.toLowerCase().includes(query) ||
+        milestone.description?.toLowerCase().includes(query)
+      )
+    }
+    return true
+  })
+
+  // Get priority badge styling
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case 'critical':
+        return 'bg-red-100 text-red-700 border-red-200'
+      case 'high':
+        return 'bg-orange-100 text-orange-700 border-orange-200'
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200'
+      case 'low':
+        return 'bg-green-100 text-green-700 border-green-200'
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-200'
+    }
+  }
+
+  // Format date
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  // Check if date is in the past
+  const isPastDate = (dateString: string) => {
+    if (!dateString) return false
+    try {
+      const date = new Date(dateString)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      return date < today
+    } catch {
+      return false
+    }
+  }
+
   // Debug functions
   const testBackendConnection = async () => {
     setIsLoading(true)
@@ -452,6 +712,20 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
     )
   }
 
+  // Get page title based on active view
+  const getPageTitle = () => {
+    switch (activeView) {
+      case 'portfolio':
+        return 'Portfolio Management System'
+      case 'milestones':
+        return 'Milestone Tracking & Monitoring'
+      case 'voice':
+        return 'Database Intelligence'
+      default:
+        return 'Portfolio Management System'
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <SignedOut>
@@ -496,169 +770,650 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
       </SignedOut>
 
       <SignedIn>
-        {/* Protected content for authenticated users */}
-      {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                Portfolio Companies
-              </h1>
+        {/* Main Layout with Sidebar */}
+        <div className="flex h-screen overflow-hidden">
+          {/* Left Sidebar */}
+          <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+            {/* Logo */}
+            <div className="px-8 py-6 border-b border-gray-200">
+              <img 
+                src="/kv-logo.png" 
+                alt="Khosla Ventures" 
+                className="h-8 w-auto object-contain"
+              />
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+
+            {/* Navigation */}
+            <div className="flex-1 overflow-y-auto py-6">
+              {/* Agents Section */}
+              <div className="px-4 mb-8">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-3">
+                  Agents
+                </h2>
+                <nav className="space-y-1">
               <button
-                onClick={() => window.location.href = '/milestones'}
-                className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-              >
-                <span>🎯</span>
-                <span>Milestones</span>
+                    onClick={() => setActiveView('portfolio')}
+                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeView === 'portfolio'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="mr-3">📊</span>
+                    Portfolio
               </button>
+              <button
+                    onClick={() => setActiveView('milestones')}
+                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeView === 'milestones'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="mr-3">🎯</span>
+                    Milestones
+              </button>
+                <button
+                    onClick={() => setActiveView('voice')}
+                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                      activeView === 'voice'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="mr-3">🎤</span>
+                    Voice
+                </button>
+                </nav>
+              </div>
               
+              {/* Tools Section */}
+              <div className="px-4">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-3">
+                  Tools
+                </h2>
+                <nav className="space-y-1">
+                  <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
+                  <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
               <button
                 onClick={() => loadCompanies(true)}
                 disabled={isLoading}
-                className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                    className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors disabled:opacity-50"
               >
-                <span>🔄</span>
-                <span className="hidden sm:inline">Reload Cache</span>
-                <span className="sm:hidden">Reload</span>
+                    <span className="mr-3">🔄</span>
+                    Reload Cache
               </button>
               
-              {/* Upload Toggle Button (Mobile) */}
-              <div className="sm:hidden">
+                  {/* Sort/Filter Button */}
+                  <div className="relative sort-menu-container">
                 <button
-                  onClick={() => setShowUploads(!showUploads)}
-                  className="flex items-center justify-center space-x-2 w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-                >
-                  <span>📁</span>
-                  <span>Upload Files</span>
-                  <span className={`transform transition-transform ${showUploads ? 'rotate-180' : ''}`}>
-                    ▼
+                      onClick={() => setShowSortMenu(!showSortMenu)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors bg-white"
+                    >
+                      <span>Sort & Filter</span>
+                      <span className="text-xs">
+                        {filters.stage || filters.sector ? (
+                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            {[filters.stage, filters.sector].filter(Boolean).length}
+                          </span>
+                        ) : (
+                          '▼'
+                        )}
                   </span>
                 </button>
+                    
+                    {/* Dropdown Menu */}
+                    {showSortMenu && (
+                      <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-64 overflow-y-auto">
+                        <div className="p-2">
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 py-1">
+                            Stage
               </div>
-              
-              {/* Upload Buttons - Always visible on desktop, collapsible on mobile */}
-              <div className={`${showUploads ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto`}>
-                <FileUpload onUpload={handleFileUpload} isLoading={isLoading} />
-                <CapTableUpload onUpload={handleCapTableUpload} isLoading={isLoading} />
+                          {Array.from(new Set(companies.map(c => c.stage).filter((s): s is string => Boolean(s))))
+                            .sort()
+                            .map((stage: string) => (
+                              <button
+                                key={stage}
+                                onClick={() => setFilters({ ...filters, stage: filters.stage === stage ? '' : stage })}
+                                className={`w-full text-left px-2 py-1.5 text-sm rounded transition-colors ${
+                                  filters.stage === stage
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                {filters.stage === stage && <span className="mr-1">✓</span>}
+                                {stage}
+                              </button>
+                            ))
+                          }
+                          
+                          <div className="border-t border-gray-200 my-2"></div>
+                          
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 py-1">
+                            Sector
               </div>
-              
-              {/* User Profile - positioned to the right of all buttons */}
-              <div className="flex items-center ml-2 sm:ml-4">
-                <UserButton />
+                          {Array.from(new Set(companies.map(c => c.sector).filter((s): s is string => Boolean(s))))
+                            .sort()
+                            .map((sector: string) => (
+                              <button
+                                key={sector}
+                                onClick={() => setFilters({ ...filters, sector: filters.sector === sector ? '' : sector })}
+                                className={`w-full text-left px-2 py-1.5 text-sm rounded transition-colors ${
+                                  filters.sector === sector
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                {filters.sector === sector && <span className="mr-1">✓</span>}
+                                {sector.charAt(0).toUpperCase() + sector.slice(1)}
+                              </button>
+                            ))
+                          }
+                          
+                          {(filters.stage || filters.sector) && (
+                            <>
+                              <div className="border-t border-gray-200 my-2"></div>
+                              <button
+                                onClick={() => {
+                                  setFilters({ ...filters, stage: '', sector: '' })
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded transition-colors"
+                              >
+                                Clear All
+                              </button>
+                            </>
+                          )}
               </div>
             </div>
-          </div>
-        </div>
+                    )}
       </div>
 
-      {/* Filters */}
-      <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Filter Toggle Button (Mobile) */}
-          <div className="sm:hidden py-3">
+                  {/* Active Filters Display */}
+                  {(filters.stage || filters.sector) && (
+                    <div className="flex flex-wrap gap-1 px-3">
+                      {filters.stage && (
+                        <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                          {filters.stage}
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-            >
-              <span className="flex items-center">
-                <span className="mr-2">🔍</span>
-                Filters
-                {(filters.stage || filters.sector) && (
-                  <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
-                    {[filters.stage, filters.sector].filter(Boolean).length}
+                            onClick={() => setFilters({ ...filters, stage: '' })}
+                            className="hover:text-blue-900"
+                          >
+                            ×
+                          </button>
                   </span>
                 )}
-              </span>
-              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
+                      {filters.sector && (
+                        <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                          {filters.sector.charAt(0).toUpperCase() + filters.sector.slice(1)}
+                          <button
+                            onClick={() => setFilters({ ...filters, sector: '' })}
+                            className="hover:text-blue-900"
+                          >
+                            ×
             </button>
+                        </span>
+                      )}
           </div>
-
-          {/* Filter Content */}
-          <div className={`${showFilters ? 'block' : 'hidden'} sm:block py-3`}>
-            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-4">
-              {/* Search Input */}
-              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Search</label>
-                <div className="relative">
+                  )}
                   <input
                     type="text"
                     value={filters.search}
                     onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    placeholder="Search companies..."
-                    className="text-sm border border-gray-300 rounded px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[200px] sm:w-auto"
+                    placeholder="Search..."
+                    className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition-colors placeholder:text-gray-400 bg-white"
                   />
-                  {filters.search && (
+                </nav>
+              </div>
+              </div>
+              
+            {/* Profile Section */}
+            <div className="p-4 border-t border-gray-200">
+              <div className="flex items-center space-x-3">
+                <UserButton />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user?.firstName || user?.emailAddresses[0]?.emailAddress}
+                  </p>
+                  <p className="text-xs text-gray-500">Profile</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-200 px-8 py-6">
+              <h1 className="text-2xl font-bold text-gray-900">{getPageTitle()}</h1>
+      </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {/* Error Message */}
+              {errorMessage && (
+                <div className="mb-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex justify-between items-start">
+                    <div className="flex items-start space-x-3">
+                      <div className="text-red-600 text-xl">⚠️</div>
+                      <div>
+                        <h3 className="text-red-800 font-medium">Error</h3>
+                        <p className="text-red-700 text-sm mt-1">{errorMessage}</p>
+                      </div>
+                    </div>
                     <button
-                      onClick={() => setFilters({ ...filters, search: '' })}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      onClick={dismissError}
+                      className="text-red-600 hover:text-red-800 text-xl"
                     >
                       ×
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Portfolio View */}
+              {activeView === 'portfolio' && (
+                <>
+                  {/* Loading State */}
+                  {isLoading && companies.length === 0 && (
+                    <div className="text-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading companies...</h2>
+                      <p className="text-gray-600">Fetching data from database</p>
+                </div>
+                  )}
+
+                  {/* Stats */}
+                  {!isLoading && companies.length > 0 && (
+                    <div className="mb-6">
+                      <p className="text-sm text-gray-600">
+                        Showing {filteredCompanies.length} of {companies.length} companies
+                        {filters.search && ` matching "${filters.search}"`}
+                        {filters.sector && ` in ${filters.sector} sector`}
+                        {filters.stage && ` at ${filters.stage}`}
+                      </p>
+                      {(filters.sector || filters.stage || filters.search) && (
+                        <button
+                          onClick={() => setFilters({ stage: '', sector: '', search: '' })}
+                          className="mt-2 px-3 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200"
+                        >
+                          Clear Filters
+            </button>
+                      )}
+              </div>
+                  )}
+
+                  {/* Portfolio Grid */}
+                  {!isLoading && filteredCompanies.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">📄</div>
+                      <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+                        {companies.length === 0 ? 'No companies found' : 'No companies match your filters'}
+                      </h2>
+                      <p className="text-gray-600 mb-4">
+                        {companies.length === 0 
+                          ? 'Upload your financial PDF documents to get started'
+                          : 'Try adjusting your filters or clearing them to see more companies'
+                        }
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {filteredCompanies.map((company) => (
+                        <CompanyCard
+                          key={company.id}
+                          company={company}
+                          enrichmentData={enrichmentData[company.id]}
+                          onDelete={handleDeleteCompany}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Milestones View */}
+              {activeView === 'milestones' && (
+                <>
+                  {/* Milestone Filters */}
+                  <div className="mb-6 flex items-center gap-3">
+                  <input
+                    type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search milestones..."
+                      className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                <select
+                      value={filterPriority}
+                      onChange={(e) => setFilterPriority(e.target.value)}
+                      className="px-4 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">All Priorities</option>
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                </select>
+                    <label className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded bg-white cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showCompleted}
+                        onChange={(e) => setShowCompleted(e.target.checked)}
+                        className="rounded w-4 h-4"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Show Completed</span>
+                    </label>
+                    <button
+                      onClick={() => setShowEmailModal(true)}
+                      className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    >
+                      📧 Send Email
+                    </button>
+                    <button
+                      onClick={() => setShowCreateModal(true)}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                    >
+                      + Create Milestone
+                    </button>
+              </div>
+
+                  {/* Milestone Stats */}
+                  <div className="mb-6">
+                    <p className="text-sm text-gray-600">
+                      {filteredMilestones.length} / {milestones.length} milestones
+                    </p>
+                  </div>
+
+                  {/* Milestone List */}
+                  {isLoading && milestones.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                      <p className="text-gray-600">Loading milestones...</p>
+                    </div>
+                  ) : filteredMilestones.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">🎯</div>
+                      <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+                        {milestones.length === 0 ? 'No milestones yet' : 'No matching milestones'}
+                      </h2>
+                      <p className="text-gray-600 mb-4">
+                        {milestones.length === 0 
+                          ? 'Create your first milestone or upload board decks to get started.'
+                          : 'Try adjusting your search or filters.'}
+                      </p>
+                      {milestones.length === 0 && (
+                        <button
+                          onClick={() => setShowCreateModal(true)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded font-medium transition-colors"
+                        >
+                          Create First Milestone
+                    </button>
                   )}
                 </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredMilestones.map((milestone) => (
+                        <div 
+                          key={milestone.id}
+                          className={`bg-white border rounded-lg shadow-sm hover:shadow transition-shadow p-4 ${
+                            milestone.completed ? 'border-gray-200 opacity-70' : 'border-gray-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0 flex items-center gap-3">
+                              <button
+                                onClick={() => router.push(`/company/${milestone.company_id}`)}
+                                className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                              >
+                                {milestone.company_name || `Company #${milestone.company_id}`}
+                              </button>
+                              <span className={`px-2 py-1 text-xs font-medium rounded border ${getPriorityBadge(milestone.priority)}`}>
+                                {milestone.priority.toUpperCase()}
+                              </span>
+                              {milestone.completed && (
+                                <span className="text-sm text-gray-500">✓</span>
+                              )}
+                              <p className={`text-sm ${milestone.completed ? 'text-gray-500 line-through' : 'text-gray-700'}`}>
+                                {milestone.description}
+                              </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stage</label>
-                <select
-                  value={filters.stage}
-                  onChange={(e) => setFilters({ ...filters, stage: e.target.value })}
-                  className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[110px] sm:w-auto"
-                >
-                  <option value="">All Stages</option>
-                  {Array.from(new Set(companies.map(c => c.stage).filter(Boolean)))
-                    .sort()
-                    .map(stage => (
-                      <option key={stage} value={stage}>
-                        {stage}
-                      </option>
-                    ))
-                  }
-                </select>
-              </div>
+                            <div className="flex items-center gap-3">
+                              <div className={`text-right ${isPastDate(milestone.milestone_date) && !milestone.completed ? 'text-red-600' : 'text-gray-700'}`}>
+                                <div className="text-sm font-semibold">
+                                  {formatDate(milestone.milestone_date)}
+                                  {isPastDate(milestone.milestone_date) && !milestone.completed && (
+                                    <span className="ml-1 text-sm">⚠️</span>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleToggleCompleted(milestone)}
+                                  className={`px-2 py-1 text-xs rounded border transition-colors ${
+                                    milestone.completed
+                                      ? 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
+                                      : 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'
+                                  }`}
+                                >
+                                  {milestone.completed ? '↩️' : '✓'}
+                                </button>
+                                <button
+                                  onClick={() => openEditModal(milestone)}
+                                  className="px-2 py-1 text-xs rounded border bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 transition-colors"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteMilestone(milestone.id)}
+                                  className="px-2 py-1 text-xs rounded border bg-red-50 text-red-600 border-red-200 hover:bg-red-100 transition-colors"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                            <div>
+                              Added {formatDate(milestone.created_at)}
+                              {milestone.completed && milestone.completed_at && (
+                                <span> • Done {formatDate(milestone.completed_at)}</span>
+                              )}
+                            </div>
+                            {milestone.report_file_name ? (
+                              <div title={`From board deck: ${milestone.report_file_name}`}>
+                                📄 {cleanFileName(milestone.report_file_name)}
+                              </div>
+                            ) : (
+                              <div title="Manually created">✍️ Manual</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
 
-              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Sector</label>
-                <select
-                  value={filters.sector}
-                  onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
-                  className="text-sm border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-full sm:min-w-[110px] sm:w-auto"
-                >
-                  <option value="">All Sectors</option>
-                  {Array.from(new Set(companies.map(c => c.sector).filter(Boolean)))
-                    .sort()
-                    .map(sector => (
-                      <option key={sector} value={sector}>
-                        {sector!.charAt(0).toUpperCase() + sector!.slice(1)}
-                      </option>
-                    ))
-                  }
-                </select>
-              </div>
-
-              {(filters.sector || filters.stage || filters.search) && (
-                <button
-                  onClick={() => setFilters({ stage: '', sector: '', search: '' })}
-                  className="px-3 py-2 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium border border-slate-200 whitespace-nowrap"
-                >
-                  Clear Filters
-                </button>
+              {/* Voice View - Coming Soon */}
+              {activeView === 'voice' && (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="text-8xl mb-6">🎤</div>
+                  <h2 className="text-3xl font-bold text-gray-900 mb-4">Database Intelligence</h2>
+                  <p className="text-lg text-gray-600 mb-6 max-w-2xl text-center">
+                    Coming Soon: Interact with your portfolio database using natural language. 
+                    Ask questions, get insights, and manage your companies hands-free.
+                  </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-2xl">
+                    <h3 className="font-semibold text-blue-900 mb-3">Planned Features:</h3>
+                    <ul className="space-y-2 text-sm text-blue-800">
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>Natural language queries about company performance and metrics</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>Voice-activated data updates and milestone tracking</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>AI-powered insights and recommendations</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>Hands-free portfolio management</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* Email Modal */}
+        {showEmailModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-6">
+                <h2 className="text-lg font-bold mb-4">📧 Send Milestone Reminder</h2>
+                
+                <p className="text-sm text-gray-600 mb-4">
+                  This will send an email with all incomplete and upcoming milestones to the address below.
+                </p>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
+                  <input
+                    type="email"
+                    value={emailRecipient}
+                    onChange={(e) => setEmailRecipient(e.target.value)}
+                    placeholder="example@domain.com"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                    disabled={isSendingEmail}
+                  />
+                </div>
+                
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(false)
+                      setEmailRecipient('')
+                    }}
+                    disabled={isSendingEmail}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors disabled:opacity-50"
+                  >
+                    {isSendingEmail ? 'Sending...' : 'Send Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create/Edit Milestone Modal */}
+        {(showCreateModal || editingMilestone) && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  {editingMilestone ? 'Edit Milestone' : 'Create Milestone'}
+                </h2>
+                
+                <div className="space-y-4">
+                  {!editingMilestone && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Company *</label>
+                <select
+                        value={formData.company_id}
+                        onChange={(e) => setFormData({ ...formData, company_id: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      >
+                        <option value="">Select a company...</option>
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.id}>{company.name}</option>
+                        ))}
+                </select>
+              </div>
+                  )}
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Target Date *</label>
+                    <input
+                      type="date"
+                      value={formData.milestone_date}
+                      onChange={(e) => setFormData({ ...formData, milestone_date: e.target.value })}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Priority *</label>
+                <select
+                      value={formData.priority}
+                      onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                </select>
+              </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
+                    <textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Describe the milestone..."
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="mt-6 flex justify-end space-x-3">
+                <button
+                    onClick={() => {
+                      setShowCreateModal(false)
+                      setEditingMilestone(null)
+                      resetMilestoneForm()
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                </button>
+                  <button
+                    onClick={editingMilestone ? handleUpdateMilestone : handleCreateMilestone}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                  >
+                    {editingMilestone ? 'Update' : 'Create'}
+                  </button>
+            </div>
+          </div>
+        </div>
       </div>
+        )}
 
       {/* Debug Panel */}
       {showDebugPanel && (
-        <div className="bg-gray-100 border-b">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex flex-wrap gap-2">
+          <div className="fixed bottom-20 right-4 bg-white border border-gray-300 rounded-lg shadow-xl p-4 w-80 z-50">
+            <h3 className="font-bold text-gray-900 mb-3">Developer Tools</h3>
+            <div className="flex flex-col gap-2">
               <button
                 onClick={checkBackendHealth}
                 className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
@@ -711,88 +1466,14 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
               >
                 Cache Info
               </button>
-            </div>
           </div>
         </div>
       )}
-
-      {/* Error Message */}
-      {errorMessage && (
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex justify-between items-start">
-            <div className="flex items-start space-x-3">
-              <div className="text-red-600 text-xl">⚠️</div>
-              <div>
-                <h3 className="text-red-800 font-medium">Error</h3>
-                <p className="text-red-700 text-sm mt-1">{errorMessage}</p>
-              </div>
-            </div>
-            <button 
-              onClick={dismissError}
-              className="text-red-600 hover:text-red-800 text-xl"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Loading State */}
-      {isLoading && companies.length === 0 && (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading companies...</h2>
-          <p className="text-gray-600">Fetching data from database</p>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
-        {!isLoading && companies.length > 0 && (
-          <div className="mb-4">
-            <p className="text-sm text-gray-600">
-              Showing {filteredCompanies.length} of {companies.length} companies
-              {filters.search && ` matching "${filters.search}"`}
-              {filters.sector && ` in ${filters.sector} sector`}
-              {filters.stage && ` at ${filters.stage}`}
-            </p>
-          </div>
-        )}
-        
-        {!isLoading && filteredCompanies.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">📄</div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              {companies.length === 0 ? 'No companies found' : 'No companies match your filters'}
-            </h2>
-            <p className="text-gray-600 mb-4">
-              {companies.length === 0 
-                ? 'Upload your financial PDF documents to get started'
-                : 'Try adjusting your filters or clearing them to see more companies'
-              }
-            </p>
-            {companies.length === 0 && (
-              <p className="text-sm text-gray-500">Data is automatically synced across all your devices</p>
-            )}
-          </div>
-        ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-            {filteredCompanies.map((company) => (
-              <CompanyCard
-                key={company.id}
-                company={company}
-                enrichmentData={enrichmentData[company.id]}
-                onDelete={handleDeleteCompany}
-              />
-            ))}
-          </div>
-        )}
-      </main>
 
         {/* Developer Tools Toggle */}
         <button
           onClick={() => setShowDebugPanel(!showDebugPanel)}
-          className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 bg-gray-800 text-white p-2 sm:p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors text-sm sm:text-base"
+          className="fixed bottom-4 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors z-40"
           title="Developer Tools"
         >
           🛠️

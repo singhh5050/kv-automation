@@ -26,6 +26,40 @@ const formatCurrency = (value: string | number | null | undefined): string => {
   }
 }
 
+// Format date with abbreviations
+const formatDateAbbreviated = (dateString: string | null | undefined): string => {
+  if (!dateString || dateString === 'N/A' || dateString === '') {
+    return 'N/A'
+  }
+  
+  try {
+    let date: Date
+    
+    // Handle "Month Year" format like "May 2027"
+    const monthYearMatch = dateString.match(/^([A-Za-z]+)\s+(\d{4})$/)
+    if (monthYearMatch) {
+      const [, monthName, year] = monthYearMatch
+      // Use the 1st day of the month for consistent parsing
+      const dateStringFull = `${monthName} 1, ${year}`
+      date = new Date(dateStringFull)
+    } else {
+      // Try to parse as regular date
+      date = new Date(dateString)
+    }
+    
+    if (isNaN(date.getTime())) {
+      return 'N/A'
+    }
+    
+    // Format as "Mon YYYY" (e.g., "May 2027")
+    const month = date.toLocaleString('en-US', { month: 'short' })
+    const year = date.getFullYear().toString()
+    return `${month} ${year}`
+  } catch {
+    return 'N/A'
+  }
+}
+
 // Cash out date formatting and risk assessment
 const formatCashOutDate = (cashOutDate: string | null | undefined) => {
   if (!cashOutDate || cashOutDate === 'N/A' || cashOutDate === '') {
@@ -247,30 +281,30 @@ export default function CompanyCard({ company, onClick, enrichmentData, onDelete
                 cashOutDateInfo.risk === 'medium' ? 'text-yellow-600' :
                 'text-green-600'
               }`}>
-                Cash Out Date
+                Cash Out
               </p>
-              <p className={`text-xs font-bold ${
+              <p className={`text-sm font-bold ${
                 cashOutDateInfo === 'N/A' ? 'text-gray-900' :
                 cashOutDateInfo.risk === 'critical' ? 'text-red-700' :
                 cashOutDateInfo.risk === 'high' ? 'text-orange-700' :
                 cashOutDateInfo.risk === 'medium' ? 'text-yellow-700' :
                 'text-green-700'
               }`}>
-                {cashOutDate || 'N/A'}
+                {formatDateAbbreviated(cashOutDate)}
               </p>
             </div>
           </div>
 
-          {/* Second Row - KV Ownership and KV Investment */}
+          {/* Second Row - Ownership and Investment */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-blue-50 rounded p-2 border border-blue-100">
-              <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-0.5">KV Ownership</p>
+              <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-0.5">Ownership</p>
               <p className="text-sm font-bold text-blue-700">
                 {kvStake > 0 ? `${(kvStake * 100).toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             <div className="bg-gray-50 rounded p-2">
-              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-0.5">KV Investment</p>
+              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-0.5">Investment</p>
               <p className="text-sm font-bold text-gray-900">
                 {formatCurrency(kvTotalInvestment)}
               </p>
