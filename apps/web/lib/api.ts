@@ -411,3 +411,18 @@ export async function getLatestHealthCheck(companyId: number) {
     return { error: e instanceof Error ? e.message : 'Get health check failed' };
   }
 }
+
+/** ---------------- Milestones ---------------- */
+
+export async function getMilestones(companyId?: number) {
+  try {
+    const url = companyId ? `/api/milestones?company_id=${companyId}` : '/api/milestones';
+    const res = await fetch(url, { method: 'GET', headers: JSON_HDR });
+    if (!res.ok) throw new Error((await res.json()).error || `Get milestones failed: ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (e: any) {
+    console.error('❌ Get milestones error:', e);
+    return { error: e instanceof Error ? e.message : 'Get milestones failed' };
+  }
+}

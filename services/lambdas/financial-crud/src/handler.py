@@ -127,6 +127,8 @@ def lambda_handler(event, context):
         result = save_company_executive(db_config, body)
     elif operation == "delete_company_executive":
         result = delete_company_executive(db_config, body.get("executive_id"))
+    elif operation == "get_milestones":
+        result = get_milestones(db_config, body.get("company_id"))
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -3592,4 +3594,82 @@ def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any
         return {
             'success': False,
             'error': f'Failed to delete manual override: {str(e)}'
+        }
+
+def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
+    """
+    Get all milestones, optionally filtered by company_id.
+    Returns milestones with company name joined from companies table.
+    """
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Base query with company name join
+        query = """
+            SELECT 
+                cm.id,
+                cm.company_id,
+                c.name as company_name,
+                cm.financial_report_id,
+                cm.milestone_date,
+                cm.description,
+                cm.priority,
+                cm.created_at,
+                cm.updated_at
+            FROM company_milestones cm
+            LEFT JOIN companies c ON cm.company_id = c.id
+        """
+        
+        params = []
+        
+        # Add company filter if provided
+        if company_id:
+            query += " WHERE cm.company_id = %s"
+            params.append(int(company_id))
+        
+        # Order by date (most recent first) and priority
+        query += " ORDER BY cm.milestone_date DESC, cm.priority ASC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        milestones = []
+        for row in rows:
+            milestone = {
+                'id': row[0],
+                'company_id': row[1],
+                'company_name': row[2],
+                'financial_report_id': row[3],
+                'milestone_date': row[4].isoformat() if row[4] else None,
+                'description': row[5],
+                'priority': row[6],
+                'created_at': row[7].isoformat() if row[7] else None,
+                'updated_at': row[8].isoformat() if row[8] else None
+            }
+            milestones.append(milestone)
+        
+        cursor.close()
+        conn.close()
+        
+        print(f"✅ Retrieved {len(milestones)} milestone(s)" + 
+              (f" for company {company_id}" if company_id else ""))
+        
+        return {
+            'success': True,
+            'data': {
+                'milestones': milestones,
+                'count': len(milestones)
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to get milestones: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to get milestones: {str(e)}'
         } 

@@ -115,4 +115,16 @@ export interface FinancialReport {
     manual_override?: boolean
     analysis_timestamp: string
     error?: string
+  }
+
+  export interface Milestone {
+    id: number
+    company_id: number
+    company_name?: string
+    financial_report_id: number | null
+    milestone_date: string
+    description: string
+    priority: 'critical' | 'high' | 'medium' | 'low'
+    created_at: string
+    updated_at: string
   } 

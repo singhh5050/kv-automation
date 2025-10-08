@@ -508,6 +508,14 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               <button
+                onClick={() => window.location.href = '/milestones'}
+                className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+              >
+                <span>🎯</span>
+                <span>Milestones</span>
+              </button>
+              
+              <button
                 onClick={() => loadCompanies(true)}
                 disabled={isLoading}
                 className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
