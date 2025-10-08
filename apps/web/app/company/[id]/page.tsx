@@ -8,6 +8,7 @@ import EditableMetric from '@/components/company/EditableMetric'
 import SimpleExecutivesList from '@/components/company/SimpleExecutivesList'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
+import MilestoneDisplay from '@/components/shared/MilestoneDisplay'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
 import HealthCheckModal from '@/components/company/HealthCheckModal'
@@ -1552,7 +1553,7 @@ export default function CompanyDetailPage() {
                   
                   {(currentReport as any)?.next_milestones ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100 min-h-[160px] max-h-[420px] overflow-y-auto">
-                      <MarkdownContent content={(currentReport as any).next_milestones} className="text-sm leading-7" />
+                      <MilestoneDisplay content={(currentReport as any).next_milestones} className="text-sm leading-7" />
                     </div>
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-lg border-2 border-dashed border-gray-200 text-center">

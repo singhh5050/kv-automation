@@ -552,12 +552,36 @@ def normalize_analysis_for_db(d: dict) -> dict:
     for k in req:
         d.setdefault(k, None)
 
-    # Force string-ish fields to strings
+    # Force string-ish fields to strings (except nextMilestones which can be JSON array)
     for k in ['companyName','reportDate','reportPeriod','cashOutDate','sector',
               'budgetVsActual','financialSummary','sectorHighlightA','sectorHighlightB',
-              'keyRisks','personnelUpdates','nextMilestones','filename']:
+              'keyRisks','personnelUpdates','filename']:
         if d[k] is not None and not isinstance(d[k], str):
             d[k] = str(d[k])
+    
+    # Handle nextMilestones - can be either string (legacy) or JSON array (new format)
+    milestones = d.get('nextMilestones')
+    if milestones is not None:
+        if isinstance(milestones, list):
+            # New JSON format - validate structure and convert to JSON string for storage
+            try:
+                import json
+                # Validate each milestone has required fields
+                for milestone in milestones:
+                    if not isinstance(milestone, dict):
+                        raise ValueError("Each milestone must be an object")
+                    if 'date' not in milestone or 'description' not in milestone or 'priority' not in milestone:
+                        raise ValueError("Each milestone must have date, description, and priority fields")
+                    # Validate priority values
+                    if milestone['priority'] not in ['critical', 'high', 'medium', 'low']:
+                        milestone['priority'] = 'medium'  # Default fallback
+                d['nextMilestones'] = json.dumps(milestones)
+            except Exception as e:
+                print(f"⚠️ Invalid milestone JSON structure: {e}, converting to string")
+                d['nextMilestones'] = str(milestones)
+        elif not isinstance(milestones, str):
+            # Convert other types to string
+            d['nextMilestones'] = str(milestones)
 
     # Force numeric fields to None or number
     for k in ['cashOnHand','monthlyBurnRate']:
@@ -673,14 +697,35 @@ ALL text fields must use **Markdown formatting** for better readability:
 | CPA | $XXX | $XXX | -X% |
 ```
 
-### For lists (nextMilestones, keyRisks, personnelUpdates) - Use markdown bullets with context:
-```
-- ✅ **Q3-24**: Close Keen Insurance acquisition and integrate 50-state footprint *↺ strategic expansion to capture national market*
-- 🚀 **Jul 31**: Launch ML Bidder v2 and AI Sales Rep; target CPA 550 entering AEP *critical for AEP performance optimization*
-- ⚠️ **Q4-24**: Deploy automated commission management system before AEP *timeline pressure due to agent scaling needs*
+### For nextMilestones - Use structured JSON array:
+```json
+[
+  {
+    "date": "2024-09-30",
+    "description": "Close Keen Insurance acquisition and integrate 50-state footprint for strategic expansion to capture national market",
+    "priority": "high"
+  },
+  {
+    "date": "2024-07-31", 
+    "description": "Launch ML Bidder v2 and AI Sales Rep with target CPA of $550 entering AEP for performance optimization",
+    "priority": "critical"
+  },
+  {
+    "date": "2024-12-15",
+    "description": "Deploy automated commission management system before AEP due to timeline pressure from agent scaling needs",
+    "priority": "medium"
+  }
+]
 ```
 
-**Emoji Guide**: ✅ committed/on-track, 🚀 growth initiatives, ⚠️ at-risk, 🎯 strategic milestones
+**Date Format**: Use YYYY-MM-DD for exact dates, or YYYY-MM-01 for month estimates, or YYYY-03-01/YYYY-06-01/YYYY-09-01/YYYY-12-01 for quarters
+**Priority Levels**: "critical", "high", "medium", "low"
+
+### For other lists (keyRisks, personnelUpdates) - Use markdown bullets with context:
+```
+- ⚠️ **Risk**: Description with context and impact
+- 👤 **Personnel**: Team changes with strategic implications
+```
 
 ### For sector highlights - Use structured format with narrative + metrics:
 ```
@@ -747,7 +792,7 @@ For every section that contains numbers, weave a compelling narrative that answe
   "sectorHighlightB": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**", 
   "keyRisks": "Markdown bullet list with emoji status (⚠️) and strategic risk context",
   "personnelUpdates": "Markdown bullet list with team changes and strategic impact",
-  "nextMilestones": "Markdown bullet list with emoji status (✅🚀⚠️) and milestone context"
+  "nextMilestones": [{"date": "YYYY-MM-DD", "description": "Detailed milestone description with context", "priority": "critical|high|medium|low"}]
 }
 
 EXAMPLES:
