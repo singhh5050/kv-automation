@@ -788,16 +788,24 @@ EXAMPLES:
 - If document shows "$1.2M monthly burn" → monthlyBurnRate: 1200000  
 - If document shows "18 month runway" → runway: 18
 
-CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. Return valid JSON without code blocks. Be detailed and helpful."""
+CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. 
+
+**OUTPUT FORMAT - EXTREMELY IMPORTANT:**
+Your response must be ONLY the raw JSON object. Do NOT wrap it in markdown code blocks. Do NOT add any explanatory text before or after the JSON.
+
+WRONG: ```json {{ ... }}```
+CORRECT: {{ ... }}
+
+Start your response with the opening brace {{ and end with the closing brace }}. Nothing else."""
 
         # Add the user prompt with document analysis instructions
-        user_prompt = f"""Analyze this business document and return valid JSON WITH STORY CONTEXT:
+        user_prompt = f"""Analyze this business document and return ONLY raw JSON (no code blocks, no markdown formatting, just the JSON object itself):
 
 Filename: {filename}
 
-IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use emojis for milestone status, and connect dots between different data points with detailed and readable analysis. No code blocks, only raw markdown.
+IMPORTANT: Follow STORYTELLING GUIDELINES and FORMATTING REQUIREMENTS exactly—weave compelling narratives around metrics, use structured milestone JSON, and connect dots between different data points with detailed and readable analysis.
 
-Return ONLY valid JSON in the exact format specified in the system prompt."""
+Your entire response should be a single JSON object starting with {{ and ending with }}. Do not use ```json``` or any markdown formatting."""
 
         # --- Build single-user message: system prompt + user prompt + file ---
         content_parts = [{"type": "input_text", "text": system_prompt}]
@@ -819,29 +827,16 @@ Return ONLY valid JSON in the exact format specified in the system prompt."""
         if not raw.strip():
             raise ValueError("Empty output_text from model")
 
-        # --- Parse JSON (with tiny fallback extractor) ---
-        def _extract_json(s: str) -> dict:
-            s = (s or "").strip().replace('\ufeff', '')
-            # strip triple-fence blocks if present
-            if s.startswith("```"):
-                s = s.split("```", 1)[-1]
-                if "```" in s:
-                    s = s.rsplit("```", 1)[0]
-            # normalize smart quotes
-            s = (s.replace('“','"').replace('”','"')
-                   .replace('’',"'").replace('`', "'"))
-            start, end = s.find('{'), s.rfind('}')
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("No JSON object found")
-            return _json.loads(s[start:end+1])
-
+        # --- Parse JSON (strict - no fallback) ---
+        print(f"📥 Raw output preview (first 300 chars): {raw[:300]}")
+        
         try:
-            data = _json.loads(raw)
+            data = _json.loads(raw.strip())
             print("✅ Valid JSON from model")
         except Exception as e:
-            print(f"❌ JSON parse failed: {e}; preview: {raw[:300]}")
-            data = _extract_json(raw)
-            print("✅ Fallback JSON extraction succeeded")
+            print(f"❌ JSON parse failed: {e}")
+            print(f"❌ Full raw output: {raw}")
+            raise ValueError(f"Model did not return valid JSON. Error: {e}. Output started with: {raw[:200]}")
 
         # Attach filename & override company name (if flagged as user-provided)
         data["filename"] = filename
