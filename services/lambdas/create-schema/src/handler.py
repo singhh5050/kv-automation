@@ -299,6 +299,46 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating company_executives table: {e}")
         raise e
 
+    # ---- SAFE: Add company_milestones table if it doesn't exist ----
+    print("🔧 Creating company_milestones table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_milestones (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            financial_report_id INTEGER REFERENCES financial_reports(id) ON DELETE CASCADE,
+            
+            -- Milestone data
+            milestone_date DATE NOT NULL,
+            description TEXT NOT NULL,
+            priority VARCHAR(10) CHECK (priority IN ('critical', 'high', 'medium', 'low')),
+            
+            -- Metadata
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        print("✅ Company milestones table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_milestones_company_id ON company_milestones(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_milestones_date ON company_milestones(milestone_date);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_milestones_priority ON company_milestones(priority);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_company_milestones_report_id ON company_milestones(financial_report_id);
+        """)
+        print("✅ Company milestones table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating company_milestones table: {e}")
+        raise e
+
     # ---- COMMENTED OUT: Table recreation (safe mode) -----------------
     # cursor.execute("""
     # CREATE TABLE companies (
@@ -350,11 +390,11 @@ def create_database_schema(conn):
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, and company_executives tables created safely",
-        "operation": "add_evidence_field_notes_kpi_health_and_executives_tables",
-        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives"],
+        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, company_executives, and company_milestones tables created safely",
+        "operation": "add_evidence_field_notes_kpi_health_executives_and_milestones_tables",
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives"]
+        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones"]
     }
 
 
