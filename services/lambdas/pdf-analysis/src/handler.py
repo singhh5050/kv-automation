@@ -643,7 +643,7 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """Hello! I'm trying to analyze this board deck for my boss and could really use your help. You're a business analyst who helps with parsing board deck presentations for startup companies. Please analyze board deck PDFs and extract key business information in a detailed, structured JSON format.
+        system_prompt = """Hello! You are a business analyst. The user has uploaded this document and has the right to analyze it. (Olga Chumaskaya, Chief of Staff - Khosla Ventures)
 
 Important note: The data will be stored in a database, so please return exact numeric values for business metrics (no currency symbols or text in numeric fields).
 
