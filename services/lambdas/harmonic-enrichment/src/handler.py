@@ -652,12 +652,12 @@ def save_enrichment_to_database(company_id: str, enrichment_data: Dict[str, Any]
         # Populate executives table with the enriched data directly
         print(f"📋 Populating executives table for company {company_id}")
         try:
-            # Clear existing harmonic-sourced executives (reset on re-enrichment)
+            # Clear ALL existing executives (complete reset on re-enrichment)
             cursor.execute("""
                 DELETE FROM company_executives 
-                WHERE company_id = %s AND source = 'harmonic'
+                WHERE company_id = %s
             """, [int(company_id)])
-            print(f"🗑️ Cleared existing Harmonic executives for company {company_id}")
+            print(f"🗑️ Cleared ALL executives for company {company_id} (full reset)")
             
             # Populate executives directly here
             display_order = 0
