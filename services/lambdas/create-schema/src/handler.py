@@ -313,12 +313,33 @@ def create_database_schema(conn):
             description TEXT NOT NULL,
             priority VARCHAR(10) CHECK (priority IN ('critical', 'high', 'medium', 'low')),
             
+            -- Completion tracking
+            completed BOOLEAN DEFAULT FALSE,
+            completed_at TIMESTAMP,
+            
             -- Metadata
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
         print("✅ Company milestones table created successfully")
+        
+        # Add completed columns if they don't exist (for existing tables)
+        try:
+            cursor.execute("""
+            ALTER TABLE company_milestones 
+            ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT FALSE;
+            """)
+            cursor.execute("""
+            ALTER TABLE company_milestones 
+            ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+            """)
+            print("✅ Completion columns added to company_milestones table")
+        except Exception as e:
+            if "already exists" in str(e).lower() or "duplicate column" in str(e).lower():
+                print("ℹ️ Completion columns already exist")
+            else:
+                print(f"⚠️ Warning adding completion columns: {e}")
         
         # Add indexes for efficient queries
         cursor.execute("""

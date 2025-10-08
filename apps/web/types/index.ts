@@ -122,9 +122,12 @@ export interface FinancialReport {
     company_id: number
     company_name?: string
     financial_report_id: number | null
+    report_file_name?: string
     milestone_date: string
     description: string
     priority: 'critical' | 'high' | 'medium' | 'low'
+    completed: boolean
+    completed_at?: string
     created_at: string
     updated_at: string
   } 

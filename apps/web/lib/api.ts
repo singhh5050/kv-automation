@@ -426,3 +426,24 @@ export async function getMilestones(companyId?: number) {
     return { error: e instanceof Error ? e.message : 'Get milestones failed' };
   }
 }
+
+export const createMilestone = (data: {
+  company_id: number;
+  milestone_date: string;
+  description: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  financial_report_id?: number;
+}) => op('create_milestone', data);
+
+export const updateMilestone = (data: {
+  milestone_id: number;
+  milestone_date?: string;
+  description?: string;
+  priority?: 'critical' | 'high' | 'medium' | 'low';
+}) => op('update_milestone', data);
+
+export const deleteMilestone = (milestoneId: number) =>
+  op('delete_milestone', { milestone_id: milestoneId });
+
+export const markMilestoneCompleted = (milestoneId: number, completed: boolean) =>
+  op('mark_milestone_completed', { milestone_id: milestoneId, completed });

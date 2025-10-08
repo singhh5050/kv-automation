@@ -129,6 +129,14 @@ def lambda_handler(event, context):
         result = delete_company_executive(db_config, body.get("executive_id"))
     elif operation == "get_milestones":
         result = get_milestones(db_config, body.get("company_id"))
+    elif operation == "create_milestone":
+        result = create_milestone(db_config, body)
+    elif operation == "update_milestone":
+        result = update_milestone(db_config, body)
+    elif operation == "delete_milestone":
+        result = delete_milestone(db_config, body.get("milestone_id"))
+    elif operation == "mark_milestone_completed":
+        result = mark_milestone_completed(db_config, body)
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -3599,7 +3607,7 @@ def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any
 def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
     """
     Get all milestones, optionally filtered by company_id.
-    Returns milestones with company name joined from companies table.
+    Returns milestones with company name and report file name.
     """
     try:
         conn_result = get_database_connection(db_config)
@@ -3609,20 +3617,24 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
         
-        # Base query with company name join
+        # Base query with company name and report file name joins
         query = """
             SELECT 
                 cm.id,
                 cm.company_id,
                 c.name as company_name,
                 cm.financial_report_id,
+                fr.file_name as report_file_name,
                 cm.milestone_date,
                 cm.description,
                 cm.priority,
+                cm.completed,
+                cm.completed_at,
                 cm.created_at,
                 cm.updated_at
             FROM company_milestones cm
             LEFT JOIN companies c ON cm.company_id = c.id
+            LEFT JOIN financial_reports fr ON cm.financial_report_id = fr.id
         """
         
         params = []
@@ -3632,8 +3644,8 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
             query += " WHERE cm.company_id = %s"
             params.append(int(company_id))
         
-        # Order by date (most recent first) and priority
-        query += " ORDER BY cm.milestone_date DESC, cm.priority ASC"
+        # Order by completion status (incomplete first), then date, then priority
+        query += " ORDER BY cm.completed ASC, cm.milestone_date DESC, cm.priority ASC"
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
@@ -3645,11 +3657,14 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
                 'company_id': row[1],
                 'company_name': row[2],
                 'financial_report_id': row[3],
-                'milestone_date': row[4].isoformat() if row[4] else None,
-                'description': row[5],
-                'priority': row[6],
-                'created_at': row[7].isoformat() if row[7] else None,
-                'updated_at': row[8].isoformat() if row[8] else None
+                'report_file_name': row[4],
+                'milestone_date': row[5].isoformat() if row[5] else None,
+                'description': row[6],
+                'priority': row[7],
+                'completed': row[8] if row[8] is not None else False,
+                'completed_at': row[9].isoformat() if row[9] else None,
+                'created_at': row[10].isoformat() if row[10] else None,
+                'updated_at': row[11].isoformat() if row[11] else None
             }
             milestones.append(milestone)
         
@@ -3672,4 +3687,283 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
         return {
             'success': False,
             'error': f'Failed to get milestones: {str(e)}'
+        }
+
+def create_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Create a new milestone manually.
+    Required: company_id, milestone_date, description, priority
+    Optional: financial_report_id
+    """
+    company_id = data.get('company_id')
+    milestone_date = data.get('milestone_date')
+    description = data.get('description')
+    priority = data.get('priority', 'medium')
+    financial_report_id = data.get('financial_report_id')
+    
+    if not company_id or not milestone_date or not description:
+        return {
+            'success': False,
+            'error': 'company_id, milestone_date, and description are required'
+        }
+    
+    if priority not in ['critical', 'high', 'medium', 'low']:
+        return {
+            'success': False,
+            'error': 'priority must be one of: critical, high, medium, low'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO company_milestones 
+            (company_id, financial_report_id, milestone_date, description, priority)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, [int(company_id), financial_report_id, milestone_date, description, priority])
+        
+        milestone_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"✅ Created milestone {milestone_id} for company {company_id}")
+        
+        return {
+            'success': True,
+            'data': {
+                'id': milestone_id,
+                'company_id': int(company_id),
+                'milestone_date': milestone_date,
+                'description': description,
+                'priority': priority
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to create milestone: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to create milestone: {str(e)}'
+        }
+
+def update_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Update an existing milestone.
+    Required: milestone_id
+    Optional: milestone_date, description, priority
+    """
+    milestone_id = data.get('milestone_id')
+    
+    if not milestone_id:
+        return {
+            'success': False,
+            'error': 'milestone_id is required'
+        }
+    
+    # Build update fields dynamically
+    update_fields = []
+    params = []
+    
+    if 'milestone_date' in data:
+        update_fields.append('milestone_date = %s')
+        params.append(data['milestone_date'])
+    
+    if 'description' in data:
+        update_fields.append('description = %s')
+        params.append(data['description'])
+    
+    if 'priority' in data:
+        priority = data['priority']
+        if priority not in ['critical', 'high', 'medium', 'low']:
+            return {
+                'success': False,
+                'error': 'priority must be one of: critical, high, medium, low'
+            }
+        update_fields.append('priority = %s')
+        params.append(priority)
+    
+    if not update_fields:
+        return {
+            'success': False,
+            'error': 'No fields to update'
+        }
+    
+    # Always update the updated_at timestamp
+    update_fields.append('updated_at = CURRENT_TIMESTAMP')
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # Add milestone_id to params
+        params.append(int(milestone_id))
+        
+        query = f"""
+            UPDATE company_milestones 
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+        """
+        
+        cursor.execute(query, params)
+        rows_affected = cursor.rowcount
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if rows_affected == 0:
+            return {
+                'success': False,
+                'error': f'Milestone {milestone_id} not found'
+            }
+        
+        print(f"✅ Updated milestone {milestone_id}")
+        
+        return {
+            'success': True,
+            'data': {
+                'id': int(milestone_id),
+                'updated': True
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to update milestone: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to update milestone: {str(e)}'
+        }
+
+def delete_milestone(db_config: Dict, milestone_id: int) -> Dict[str, Any]:
+    """
+    Hard delete a milestone.
+    """
+    if not milestone_id:
+        return {
+            'success': False,
+            'error': 'milestone_id is required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM company_milestones
+            WHERE id = %s
+        """, [int(milestone_id)])
+        
+        rows_affected = cursor.rowcount
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if rows_affected == 0:
+            return {
+                'success': False,
+                'error': f'Milestone {milestone_id} not found'
+            }
+        
+        print(f"✅ Deleted milestone {milestone_id}")
+        
+        return {
+            'success': True,
+            'data': {
+                'id': int(milestone_id),
+                'deleted': True
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to delete milestone: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to delete milestone: {str(e)}'
+        }
+
+def mark_milestone_completed(db_config: Dict, data: Dict) -> Dict[str, Any]:
+    """
+    Mark a milestone as completed or uncompleted.
+    Required: milestone_id, completed (boolean)
+    """
+    milestone_id = data.get('milestone_id')
+    completed = data.get('completed')
+    
+    if not milestone_id or completed is None:
+        return {
+            'success': False,
+            'error': 'milestone_id and completed are required'
+        }
+    
+    try:
+        conn_result = get_database_connection(db_config)
+        if not conn_result['success']:
+            return conn_result
+        
+        conn = conn_result['connection']
+        cursor = conn.cursor()
+        
+        # If marking as completed, set completed_at to now, else set to null
+        if completed:
+            cursor.execute("""
+                UPDATE company_milestones 
+                SET completed = TRUE, 
+                    completed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, [int(milestone_id)])
+        else:
+            cursor.execute("""
+                UPDATE company_milestones 
+                SET completed = FALSE, 
+                    completed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, [int(milestone_id)])
+        
+        rows_affected = cursor.rowcount
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        if rows_affected == 0:
+            return {
+                'success': False,
+                'error': f'Milestone {milestone_id} not found'
+            }
+        
+        status = 'completed' if completed else 'uncompleted'
+        print(f"✅ Marked milestone {milestone_id} as {status}")
+        
+        return {
+            'success': True,
+            'data': {
+                'id': int(milestone_id),
+                'completed': completed
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to mark milestone completed: {str(e)}")
+        return {
+            'success': False,
+            'error': f'Failed to mark milestone completed: {str(e)}'
         } 

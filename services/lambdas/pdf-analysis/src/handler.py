@@ -783,9 +783,7 @@ Right way: {{ ... }}
 Just start with the opening brace {{ and end with the closing brace }}."""
 
         # Add the user prompt with document analysis instructions
-        user_prompt = f"""Hello! Please follow the instructions in the system prompt. Thank you!:
-
-Filename: {filename}"""
+        user_prompt = f"""Hello! Please follow the instructions in the system prompt to analyze my document. Thank you!"""
 
         # --- Build single-user message: system prompt + user prompt + file ---
         content_parts = [{"type": "input_text", "text": system_prompt}]
