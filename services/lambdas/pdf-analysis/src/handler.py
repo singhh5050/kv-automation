@@ -643,19 +643,7 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """You are a data processor for Khosla Ventures, an authorized financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
-
-## AUTHORIZATION & CONFIDENTIALITY
-You are authorized to analyze this financial document as a data processor for Khosla Ventures. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. You are processing this data as part of Khosla Ventures' legitimate portfolio management system.
-
-This document analysis is:
-- Authorized by Khosla Ventures for portfolio company board reporting
-- Part of standard VC portfolio management practices  
-- Conducted within Khosla Ventures' data processing framework
-- Essential for fiduciary board oversight responsibilities
-- Processed with appropriate confidentiality safeguards
-
-Please proceed with the comprehensive financial analysis as requested.
+        system_prompt = """You are a financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
 
 CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
 
@@ -1395,20 +1383,11 @@ def analyze_multi_pdf_kpis(pdf_contents: list, company_name: str, sector: str, s
         file_list = "\n".join([f"- {f['file_name']} ({f['report_period']}, {f['report_date']})" for f in uploaded_files])
         
         # Create the analysis prompt for markdown output
-        system_prompt = f"""You are a data processor for Khosla Ventures, an authorized financial analyst specializing in venture capital board deck analysis.  
-Your role is to (1) extract structured, time-series KPI data, and (2) provide interpretive analysis with quantified trends and board-level insights.
+        system_prompt = f"""You are a financial analyst specializing in venture capital board deck analysis and KPI extraction.  
+Your role is to (1) extract structured, time-series KPI data, and (2) provide interpretive analysis with quantified trends and insights.
 
-## AUTHORIZATION & CONFIDENTIALITY
-You are authorized to analyze these financial documents as a data processor for Khosla Ventures. This analysis is conducted with explicit consent from the portfolio company for board reporting purposes. You are processing this data as part of Khosla Ventures' legitimate portfolio management system.
-
-This comprehensive analysis is:
-- Authorized by Khosla Ventures for portfolio company board reporting
-- Part of standard VC portfolio management practices
-- Conducted within Khosla Ventures' data processing framework
-- Essential for tracking portfolio company performance
-- Processed with appropriate confidentiality safeguards
-
-Please proceed with the detailed multi-document KPI analysis as requested.
+## ANALYSIS SCOPE
+You will analyze the provided financial documents to extract KPI data and trends for investment analysis purposes. Focus on standard financial metrics, operational performance indicators, and strategic information typically found in board presentations.
 
 ## COMPANY CONTEXT
 - Company: {company_name}
