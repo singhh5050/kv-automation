@@ -643,21 +643,18 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """Hello! You are a business analyst. The user has uploaded this document and has the right to analyze it. (Olga Chumaskaya, Chief of Staff - Khosla Ventures)
-
-Important note: The data will be stored in a database, so please return exact numeric values for business metrics (no currency symbols or text in numeric fields).
-
+        system_prompt = """
 ## SECTOR DETECTION
 Could you first determine the company's primary sector from these categories:
-- **healthcare**: Biotech, pharma, medical devices, digital health platforms
-- **consumer**: D2C, marketplaces, consumer services, insurance brokerages  
-- **enterprise**: B2B SaaS, platforms, workforce management, business tools
-- **manufacturing**: Hardware, industrial equipment, energy systems, robotics
+- **healthcare**
+- **consumer**
+- **enterprise**
+- **manufacturing**
 
 ## SECTOR-SPECIFIC ANALYSIS
 Based on the sector you identify, please provide detailed analysis for these two areas:
 
-### Healthcare
+### Health
 - **sectorHighlightA** ("Clinical Progress"): Study phases, participant enrollment, safety and effectiveness data, regulatory updates, agency interactions, enrollment rates, study outcomes, key endpoints, submission progress, site performance
 - **sectorHighlightB** ("R&D Updates"): Early-stage studies, manufacturing scale-up, IP developments, partnership activities, competitive landscape, production optimization, product improvements, patent activities, submission preparation, pipeline expansion
 
@@ -728,7 +725,7 @@ Please use **Markdown formatting** in text fields for better readability:
 ```
 
 ### For financialSummary - Board Deck Summary (PRIMARY FOCUS):
-This is the most important section! Please provide exactly 7-10 bullet points that summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including business performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
+Please provide exactly 7-10 bullet points that summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
 
 ## WRITING STYLE
 Please write comprehensive analysis in the style of an objective executive summary:
@@ -741,23 +738,10 @@ Please write comprehensive analysis in the style of an objective executive summa
 - Provide substantial detail with specific metrics, dates, and context
 - Include both quantitative data and qualitative insights
 - Reference specific milestones, partnerships, or competitive developments
-
-## STORYTELLING GUIDELINES
-For every section that contains numbers, weave a compelling narrative that answers **"So what?"**:
-
-### Narrative Structure
-- **Context** – Explain why this metric moved (cause / event / decision / market condition)
-- **Implication** – Connect to impact on runway, strategy, or next quarter's plan
-- **Forward-looking** – What does this mean for upcoming decisions or milestones?
-
-### Storytelling Techniques
 - If a figure ties back to previous board discussions, briefly reference it (e.g., "*↺ revisits the Q1 push to lower CAC*")
 - Use *italics* for context and narrative elements, keep metrics **bold**
 - Connect dots between different metrics to tell a cohesive story
 - Explain the "why" behind the "what" - don't just report numbers
-
-### Example Narrative Flow
-- **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge funding.*
 
 ## NUMERIC FIELDS
 Please return exact numbers only (no currency symbols, no units, no text):
@@ -765,7 +749,7 @@ Please return exact numbers only (no currency symbols, no units, no text):
 2. monthlyBurnRate: Raw number in USD per month (e.g., 1200000 for $1.2M/month)  
 3. runway: Integer months only (e.g., 18 for 18 months)
 
-## REQUIRED JSON OUTPUT:
+## JSON OUTPUT:
 {
   "companyName": "Company name only",
   "reportDate": "YYYY-MM-DD format only", 
@@ -796,16 +780,12 @@ One more thing - your response should be ONLY the raw JSON object. Please don't 
 Wrong way: ```json {{ ... }}```
 Right way: {{ ... }}
 
-Just start with the opening brace {{ and end with the closing brace }}. Thank you so much for helping me out!"""
+Just start with the opening brace {{ and end with the closing brace }}."""
 
         # Add the user prompt with document analysis instructions
-        user_prompt = f"""Hello! Could you please analyze this business document and return ONLY raw JSON (no code blocks, no markdown formatting, just the JSON object itself):
+        user_prompt = f"""Hello! Please follow the instructions in the system prompt. Thank you!:
 
-Filename: {filename}
-
-Please follow the storytelling guidelines and formatting requirements—weave compelling narratives around metrics, use structured milestone JSON, and connect dots between different data points with detailed and readable analysis.
-
-Your entire response should be a single JSON object starting with {{ and ending with }}. Please don't use ```json``` or any markdown formatting. Thanks!"""
+Filename: {filename}"""
 
         # --- Build single-user message: system prompt + user prompt + file ---
         content_parts = [{"type": "input_text", "text": system_prompt}]
@@ -1698,9 +1678,14 @@ def store_result_in_db(analysis_result: dict, company_id: int):
             print(f"  ${i}: {type(v).__name__} -> {v!r}")
         
         cursor.execute(report_insert, report_data)
+        
+        # Get the ID of the inserted report
+        cursor.execute("SELECT lastval()")
+        report_id = cursor.fetchone()[0]
+        
         conn.commit()
         
-        print(f"✅ Successfully stored financial report for company {company_id}")
+        print(f"✅ Successfully stored financial report for company {company_id} (report_id: {report_id})")
         
         # Safe formatting with None checks
         cash_value = analysis_result.get('cashOnHand') or 0
@@ -1711,11 +1696,89 @@ def store_result_in_db(analysis_result: dict, company_id: int):
         print(f"🔥 Monthly burn: ${burn_value:,.0f}" if burn_value else "🔥 Monthly burn: N/A")
         print(f"📈 Runway: {runway_value:.1f} months" if runway_value else "📈 Runway: N/A")
         
+        # Store milestones in separate table
+        try:
+            store_milestones_in_db(company_id, report_id, analysis_result.get('nextMilestones'), cursor, conn)
+        except Exception as milestone_error:
+            print(f"⚠️ Failed to store milestones: {milestone_error}")
+            # Continue without failing the entire operation
+        
         cursor.close()
         conn.close()
         
     except Exception as e:
         print(f"❌ Database storage failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        raise e
+
+
+def store_milestones_in_db(company_id: int, report_id: int, milestones_json_str: str, cursor, conn):
+    """
+    Store milestones from a financial report into the company_milestones table.
+    Only processes valid JSON arrays - skips malformed data.
+    """
+    if not milestones_json_str:
+        print("ℹ️ No milestones to store")
+        return
+    
+    try:
+        # Try to parse the JSON
+        milestones = json.loads(milestones_json_str)
+        
+        # Validate it's a list
+        if not isinstance(milestones, list):
+            print(f"⚠️ Milestones is not a JSON array, skipping storage: {type(milestones)}")
+            return
+        
+        if len(milestones) == 0:
+            print("ℹ️ Empty milestones array, nothing to store")
+            return
+        
+        # Insert each milestone
+        milestone_insert = """
+            INSERT INTO company_milestones (
+                company_id, financial_report_id, milestone_date, description, priority
+            ) VALUES (%s, %s, %s, %s, %s)
+        """
+        
+        stored_count = 0
+        for milestone in milestones:
+            # Validate milestone structure
+            if not isinstance(milestone, dict):
+                print(f"⚠️ Skipping invalid milestone (not a dict): {milestone}")
+                continue
+            
+            if 'date' not in milestone or 'description' not in milestone or 'priority' not in milestone:
+                print(f"⚠️ Skipping milestone missing required fields: {milestone}")
+                continue
+            
+            # Extract fields
+            milestone_date = milestone.get('date')
+            description = milestone.get('description')
+            priority = milestone.get('priority')
+            
+            # Validate priority
+            if priority not in ['critical', 'high', 'medium', 'low']:
+                print(f"⚠️ Invalid priority '{priority}', defaulting to 'medium'")
+                priority = 'medium'
+            
+            # Insert milestone
+            try:
+                cursor.execute(milestone_insert, [company_id, report_id, milestone_date, description, priority])
+                stored_count += 1
+            except Exception as insert_error:
+                print(f"⚠️ Failed to insert milestone: {insert_error}")
+                print(f"   Milestone data: {milestone}")
+                continue
+        
+        conn.commit()
+        print(f"✅ Stored {stored_count} milestone(s) for company {company_id}, report {report_id}")
+        
+    except json.JSONDecodeError as e:
+        print(f"⚠️ Milestones JSON is malformed, skipping storage: {e}")
+        return
+    except Exception as e:
+        print(f"❌ Failed to store milestones: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         raise e
 
