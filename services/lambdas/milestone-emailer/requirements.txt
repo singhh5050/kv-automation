@@ -1,0 +1,6 @@
+# Database connectivity (already in your database layer)
+pg8000>=1.30.0
+
+# No other dependencies needed!
+# Uses Python's built-in urllib for HTTP requests (no SendGrid SDK)
+

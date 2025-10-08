@@ -21,6 +21,9 @@ export default function MilestonesPage() {
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailRecipient, setEmailRecipient] = useState('')
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
   
   // Form state
   const [formData, setFormData] = useState({
@@ -177,19 +180,42 @@ export default function MilestonesPage() {
     })
   }
 
+  const handleSendEmail = async () => {
+    if (!emailRecipient || !emailRecipient.includes('@')) {
+      alert('Please enter a valid email address')
+      return
+    }
+
+    setIsSendingEmail(true)
+    
+    try {
+      const response = await fetch('/api/send-milestone-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailRecipient })
+      })
+
+      const result = await response.json()
+
+      if (result.error) {
+        alert(`Failed to send email: ${result.error}`)
+        return
+      }
+
+      alert(`✅ Email sent successfully to ${emailRecipient}!`)
+      setShowEmailModal(false)
+      setEmailRecipient('')
+    } catch (error) {
+      alert(`Failed to send email: ${error}`)
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
   // Filter milestones
   const filteredMilestones = milestones.filter(milestone => {
-    // Completed filter
-    if (!showCompleted && milestone.completed) {
-      return false
-    }
-    
-    // Priority filter
-    if (filterPriority && milestone.priority !== filterPriority) {
-      return false
-    }
-    
-    // Search filter
+    if (!showCompleted && milestone.completed) return false
+    if (filterPriority && milestone.priority !== filterPriority) return false
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       return (
@@ -197,7 +223,6 @@ export default function MilestonesPage() {
         milestone.description?.toLowerCase().includes(query)
       )
     }
-    
     return true
   })
 
@@ -205,15 +230,15 @@ export default function MilestonesPage() {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case 'critical':
-        return 'bg-red-100 text-red-800 border-red-200'
+        return 'bg-red-100 text-red-700 border-red-200'
       case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200'
+        return 'bg-orange-100 text-orange-700 border-orange-200'
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200'
       case 'low':
-        return 'bg-green-100 text-green-800 border-green-200'
+        return 'bg-green-100 text-green-700 border-green-200'
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-gray-100 text-gray-700 border-gray-200'
     }
   }
 
@@ -262,49 +287,49 @@ export default function MilestonesPage() {
         <div className="min-h-screen flex items-center justify-center">
           <div className="max-w-md mx-auto text-center p-8">
             <div className="text-6xl mb-6">🎯</div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              Milestone Tracker
-            </h1>
-            <p className="text-gray-600 mb-8">
-              Please sign in to view portfolio milestones.
-            </p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Milestone Tracker</h1>
+            <p className="text-gray-600 mb-8">Please sign in to view portfolio milestones.</p>
           </div>
         </div>
       </SignedOut>
 
       <SignedIn>
-        {/* Header */}
+        {/* Ultra-Compact Header */}
         <div className="bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-4">
-              <div className="flex items-center space-x-4">
+            <div className="flex justify-between items-center py-2.5">
+              <div className="flex items-center space-x-2">
                 <button
                   onClick={() => router.push('/')}
                   className="text-gray-600 hover:text-gray-900 transition-colors"
                   title="Back to Portfolio"
                 >
-                  <span className="text-2xl">←</span>
+                  <span className="text-lg">←</span>
                 </button>
-                <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+                <h1 className="text-lg font-bold text-gray-900">
                   🎯 Milestone Tracker
                 </h1>
               </div>
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setShowEmailModal(true)}
+                  className="px-2.5 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                  title="Send milestone reminder email"
+                >
+                  📧 Send Email
+                </button>
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                  className="px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
                 >
-                  <span>+</span>
-                  <span className="hidden sm:inline">Create Milestone</span>
-                  <span className="sm:hidden">Create</span>
+                  + Create
                 </button>
                 <button
                   onClick={loadMilestones}
                   disabled={isLoading}
-                  className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                  className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
                 >
-                  <span>🔄</span>
-                  <span className="hidden sm:inline">Reload</span>
+                  🔄
                 </button>
                 <UserButton />
               </div>
@@ -312,86 +337,71 @@ export default function MilestonesPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Search */}
-              <div className="flex-1">
+        {/* Ultra-Compact Filters */}
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search..."
+                className="flex-1 px-2.5 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="px-2.5 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+              >
+                <option value="">All Priorities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <label className="flex items-center space-x-1 px-2.5 py-1 border border-gray-300 rounded bg-white cursor-pointer">
                 <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search companies or descriptions..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  type="checkbox"
+                  checked={showCompleted}
+                  onChange={(e) => setShowCompleted(e.target.checked)}
+                  className="rounded w-3 h-3"
                 />
-              </div>
-              
-              {/* Priority Filter */}
-              <div>
-                <select
-                  value={filterPriority}
-                  onChange={(e) => setFilterPriority(e.target.value)}
-                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">All Priorities</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
-              
-              {/* Show Completed Toggle */}
-              <div>
-                <label className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg bg-white cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showCompleted}
-                    onChange={(e) => setShowCompleted(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Show Completed</span>
-                </label>
-              </div>
+                <span className="text-xs font-medium text-gray-700">Completed</span>
+              </label>
             </div>
-            
-            {/* Results count */}
-            <div className="mt-3 text-sm text-gray-600">
-              Showing {filteredMilestones.length} of {milestones.length} milestone{milestones.length !== 1 ? 's' : ''}
+            <div className="mt-1 text-xs text-gray-500">
+              {filteredMilestones.length} / {milestones.length}
             </div>
           </div>
         </div>
 
         {/* Error Message */}
         {errorMessage && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-start">
-                <span className="text-red-600 text-xl mr-3">⚠️</span>
-                <div>
-                  <h3 className="text-red-800 font-semibold">Error</h3>
-                  <p className="text-red-700">{errorMessage}</p>
-                </div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+            <div className="bg-red-50 border border-red-200 rounded p-2 flex items-start">
+              <span className="text-red-600 text-sm mr-2">⚠️</span>
+              <div>
+                <h3 className="text-red-800 font-medium text-xs">Error</h3>
+                <p className="text-red-700 text-xs">{errorMessage}</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Ultra-Compact Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           {isLoading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading milestones...</p>
+            <div className="text-center py-6">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-gray-600 text-xs">Loading...</p>
             </div>
           ) : filteredMilestones.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🎯</div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <div className="text-center py-6">
+              <div className="text-3xl mb-2">🎯</div>
+              <h2 className="text-base font-semibold text-gray-900 mb-1">
                 {milestones.length === 0 ? 'No milestones yet' : 'No matching milestones'}
               </h2>
-              <p className="text-gray-600 mb-4">
+              <p className="text-gray-600 text-xs mb-2">
                 {milestones.length === 0 
                   ? 'Create your first milestone or upload board decks to get started.'
                   : 'Try adjusting your search or filters.'}
@@ -399,81 +409,76 @@ export default function MilestonesPage() {
               {milestones.length === 0 && (
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded font-medium transition-colors"
                 >
                   Create First Milestone
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-1.5">
               {filteredMilestones.map((milestone) => (
                 <div 
                   key={milestone.id}
-                  className={`bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow p-5 ${
-                    milestone.completed ? 'border-gray-200 opacity-75' : 'border-gray-200'
+                  className={`bg-white border rounded shadow-sm hover:shadow transition-shadow p-2 ${
+                    milestone.completed ? 'border-gray-200 opacity-70' : 'border-gray-200'
                   }`}
                 >
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                    {/* Left side - Company and description */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <button
-                          onClick={() => router.push(`/company/${milestone.company_id}`)}
-                          className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                        >
-                          {milestone.company_name || `Company #${milestone.company_id}`}
-                        </button>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getPriorityBadge(milestone.priority)}`}>
-                          {milestone.priority.toUpperCase()}
-                        </span>
-                        {milestone.completed && (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full border bg-gray-100 text-gray-700 border-gray-300">
-                            ✓ COMPLETED
-                          </span>
-                        )}
-                      </div>
-                      <p className={`leading-relaxed ${milestone.completed ? 'text-gray-500 line-through' : 'text-gray-700'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    {/* Left: Company, Priority, Description - All in one line */}
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <button
+                        onClick={() => router.push(`/company/${milestone.company_id}`)}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors flex-shrink-0"
+                      >
+                        {milestone.company_name || `Company #${milestone.company_id}`}
+                      </button>
+                      <span className={`px-1.5 py-0.5 text-xs font-medium rounded border flex-shrink-0 ${getPriorityBadge(milestone.priority)}`}>
+                        {milestone.priority.toUpperCase()}
+                      </span>
+                      {milestone.completed && (
+                        <span className="text-xs text-gray-500 flex-shrink-0">✓</span>
+                      )}
+                      <p className={`text-xs truncate ${milestone.completed ? 'text-gray-500 line-through' : 'text-gray-700'}`}>
                         {milestone.description}
                       </p>
                     </div>
                     
-                    {/* Right side - Date and Actions */}
-                    <div className="flex flex-col sm:flex-row lg:flex-col gap-3 items-start lg:items-end">
-                      <div className={`text-right ${isPastDate(milestone.milestone_date) && !milestone.completed ? 'text-red-600' : 'text-gray-900'}`}>
-                        <div className="text-sm font-medium text-gray-500 mb-1">Target Date</div>
-                        <div className="text-lg font-semibold whitespace-nowrap">
+                    {/* Right: Date and Actions - Compact inline */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className={`text-right ${isPastDate(milestone.milestone_date) && !milestone.completed ? 'text-red-600' : 'text-gray-700'}`}>
+                        <div className="text-xs font-semibold whitespace-nowrap">
                           {formatDate(milestone.milestone_date)}
                           {isPastDate(milestone.milestone_date) && !milestone.completed && (
-                            <span className="ml-2 text-xs" title="Past due">⚠️</span>
+                            <span className="ml-0.5 text-xs">⚠️</span>
                           )}
                         </div>
                       </div>
                       
-                      {/* Action Buttons */}
-                      <div className="flex gap-2">
+                      {/* Ultra-Compact Action Buttons */}
+                      <div className="flex gap-0.5">
                         <button
                           onClick={() => handleToggleCompleted(milestone)}
-                          className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${
+                          className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${
                             milestone.completed
-                              ? 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                              : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                              ? 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
+                              : 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'
                           }`}
-                          title={milestone.completed ? 'Mark as incomplete' : 'Mark as complete'}
+                          title={milestone.completed ? 'Mark incomplete' : 'Mark complete'}
                         >
                           {milestone.completed ? '↩️' : '✓'}
                         </button>
                         <button
                           onClick={() => openEditModal(milestone)}
-                          className="px-3 py-1 text-xs font-medium rounded border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors"
-                          title="Edit milestone"
+                          className="px-1.5 py-0.5 text-xs rounded border bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 transition-colors"
+                          title="Edit"
                         >
                           ✏️
                         </button>
                         <button
                           onClick={() => handleDeleteMilestone(milestone.id)}
-                          className="px-3 py-1 text-xs font-medium rounded border bg-red-50 text-red-700 border-red-200 hover:bg-red-100 transition-colors"
-                          title="Delete milestone"
+                          className="px-1.5 py-0.5 text-xs rounded border bg-red-50 text-red-600 border-red-200 hover:bg-red-100 transition-colors"
+                          title="Delete"
                         >
                           🗑️
                         </button>
@@ -481,22 +486,20 @@ export default function MilestonesPage() {
                     </div>
                   </div>
                   
-                  {/* Footer - metadata */}
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  {/* Footer - Now on a second line but still compact */}
+                  <div className="mt-0.5 pt-0.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
                     <div>
                       Added {formatDate(milestone.created_at)}
                       {milestone.completed && milestone.completed_at && (
-                        <span> • Completed {formatDate(milestone.completed_at)}</span>
+                        <span> • Done {formatDate(milestone.completed_at)}</span>
                       )}
                     </div>
                     {milestone.report_file_name ? (
-                      <div className="text-gray-400" title={`From board deck: ${milestone.report_file_name}`}>
+                      <div title={`From board deck: ${milestone.report_file_name}`} className="truncate max-w-xs">
                         📄 {cleanFileName(milestone.report_file_name)}
                       </div>
                     ) : (
-                      <div className="text-gray-400" title="Manually created">
-                        ✍️ Manual
-                      </div>
+                      <div title="Manually created">✍️ Manual</div>
                     )}
                   </div>
                 </div>
@@ -505,61 +508,97 @@ export default function MilestonesPage() {
           )}
         </div>
 
-        {/* Create/Edit Modal */}
+        {/* Email Modal */}
+        {showEmailModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-4">
+                <h2 className="text-base font-bold mb-3">📧 Send Milestone Reminder</h2>
+                
+                <p className="text-xs text-gray-600 mb-3">
+                  This will send an email with all incomplete and upcoming milestones to the address below.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    value={emailRecipient}
+                    onChange={(e) => setEmailRecipient(e.target.value)}
+                    placeholder="example@domain.com"
+                    className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                    disabled={isSendingEmail}
+                  />
+                </div>
+                
+                <div className="mt-3 flex justify-end space-x-1.5">
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(false)
+                      setEmailRecipient('')
+                    }}
+                    disabled={isSendingEmail}
+                    className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail}
+                    className="px-2.5 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors disabled:opacity-50"
+                  >
+                    {isSendingEmail ? 'Sending...' : 'Send Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Compact Modal */}
         {(showCreateModal || editingMilestone) && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <h2 className="text-2xl font-bold mb-4">
-                  {editingMilestone ? 'Edit Milestone' : 'Create New Milestone'}
+            <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-4">
+                <h2 className="text-base font-bold mb-3">
+                  {editingMilestone ? 'Edit Milestone' : 'Create Milestone'}
                 </h2>
                 
-                <div className="space-y-4">
-                  {/* Company Selection (only for create) */}
+                <div className="space-y-2.5">
                   {!editingMilestone && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Company *
-                      </label>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Company *</label>
                       <select
                         value={formData.company_id}
                         onChange={(e) => setFormData({ ...formData, company_id: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                         required
                       >
                         <option value="">Select a company...</option>
                         {companies.map((company) => (
-                          <option key={company.id} value={company.id}>
-                            {company.name}
-                          </option>
+                          <option key={company.id} value={company.id}>{company.name}</option>
                         ))}
                       </select>
                     </div>
                   )}
                   
-                  {/* Date */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Target Date *
-                    </label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Target Date *</label>
                     <input
                       type="date"
                       value={formData.milestone_date}
                       onChange={(e) => setFormData({ ...formData, milestone_date: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       required
                     />
                   </div>
                   
-                  {/* Priority */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Priority *
-                    </label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Priority *</label>
                     <select
                       value={formData.priority}
                       onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       required
                     >
                       <option value="low">Low</option>
@@ -569,39 +608,35 @@ export default function MilestonesPage() {
                     </select>
                   </div>
                   
-                  {/* Description */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description *
-                    </label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      rows={4}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                      className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       placeholder="Describe the milestone..."
                       required
                     />
                   </div>
                 </div>
                 
-                {/* Actions */}
-                <div className="mt-6 flex justify-end space-x-3">
+                <div className="mt-3 flex justify-end space-x-1.5">
                   <button
                     onClick={() => {
                       setShowCreateModal(false)
                       setEditingMilestone(null)
                       resetForm()
                     }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                    className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={editingMilestone ? handleUpdateMilestone : handleCreateMilestone}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                    className="px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
                   >
-                    {editingMilestone ? 'Update Milestone' : 'Create Milestone'}
+                    {editingMilestone ? 'Update' : 'Create'}
                   </button>
                 </div>
               </div>
