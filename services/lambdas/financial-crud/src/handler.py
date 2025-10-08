@@ -3182,11 +3182,11 @@ def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
             
         else:
             # Insert new executive - auto-assign display_order
-            # Get the max display_order for this company
+            # Get the max display_order for this company (including inactive to avoid conflicts)
             cursor.execute("""
                 SELECT COALESCE(MAX(display_order), -1) + 1
                 FROM company_executives
-                WHERE company_id = %s AND is_active = TRUE
+                WHERE company_id = %s
             """, [company_id])
             
             next_order = cursor.fetchone()[0]
