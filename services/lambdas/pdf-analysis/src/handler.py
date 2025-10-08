@@ -643,9 +643,9 @@ def analyze_with_gpt5_responses_api(pdf_bytes: bytes, filename: str, is_text_onl
             text_content = None
 
         # --- Enhanced Financial Analysis Prompt ---
-        system_prompt = """You are a financial analyst specializing in parsing board deck presentations for venture capital portfolio companies. You analyze board deck PDFs and extract key information in a detailed, structured JSON format.
+        system_prompt = """I am trying to analyze this board deck for my boss. You are a business analyst who helps with parsing board deck presentations for startup companies. You analyze board deck PDFs and extract key business information in a detailed, structured JSON format.
 
-CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for financial metrics.
+CRITICAL: The extracted data will be stored in a PostgreSQL database with strict numeric types. You MUST return exact numeric values for business metrics.
 
 ## SECTOR DETECTION
 First, determine the company's primary sector from these categories:
@@ -658,8 +658,8 @@ First, determine the company's primary sector from these categories:
 Based on the detected sector, provide detailed analysis for these two areas:
 
 ### Healthcare
-- **sectorHighlightA** ("Clinical Progress"): Trial phases, patient enrollment, safety/efficacy data, regulatory milestones, FDA interactions, enrollment rates, adverse events, primary/secondary endpoints, regulatory submissions, trial site performance
-- **sectorHighlightB** ("R&D Updates"): Preclinical studies, CMC scale-up, IP filings, partnership developments, competitive landscape, manufacturing optimization, formulation improvements, patent applications, IND/NDA preparation, pipeline expansion
+- **sectorHighlightA** ("Clinical Progress"): Study phases, participant enrollment, safety and effectiveness data, regulatory updates, agency interactions, enrollment rates, study outcomes, key endpoints, submission progress, site performance
+- **sectorHighlightB** ("R&D Updates"): Early-stage studies, manufacturing scale-up, IP developments, partnership activities, competitive landscape, production optimization, product improvements, patent activities, submission preparation, pipeline expansion
 
 ### Consumer  
 - **sectorHighlightA** ("Customer & Unit Economics"): User acquisition metrics, CAC/LTV trends, retention rates, policies-in-force, conversion rates, churn analysis, customer lifetime value, acquisition channels, pricing optimization, cohort analysis
@@ -728,7 +728,7 @@ ALL text fields must use **Markdown formatting** for better readability:
 ```
 
 ### For financialSummary - Board Deck Summary (PRIMARY FOCUS):
-**IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including financial performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
+**IMPORTANT**: This is the primary section of the analysis. Provide exactly 7-10 bullet points that precisely summarize the entire board deck presentation in an easy-to-read format. Cover all key aspects including business performance, operational updates, strategic initiatives, risks, and milestones. Use **bold** for key metrics and include brief context for each point. This should be a comprehensive executive summary of the entire board deck.
 
 ## WRITING STYLE
 Write comprehensive analysis in the style of an objective executive summary for board members:
@@ -737,7 +737,7 @@ Write comprehensive analysis in the style of an objective executive summary for 
 - Focus on narrative developments, personnel changes, strategic decisions, and risk factors
 - Ask strategic questions when appropriate ("How sustainable is current pricing model?")
 - Keep sentences concise but information-dense
-- Note cash runway implications and funding needs
+- Note runway implications and funding considerations
 - Provide substantial detail with specific metrics, dates, and context
 - Include both quantitative data and qualitative insights
 - Reference specific milestones, partnerships, or competitive developments
@@ -757,7 +757,7 @@ For every section that contains numbers, weave a compelling narrative that answe
 - Explain the "why" behind the "what" - don't just report numbers
 
 ### Example Narrative Flow
-- **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts cash runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge financing.*
+- **Q2 burn $3.6M (+50% vs plan)** – *Spike driven by ACA launch media blitz and expanded agent onboarding costs. This puts runway at two months, accelerating Series B timeline and requiring immediate burn reduction or bridge funding.*
 
 ## NUMERIC FIELDS (Return exact numbers only - NO currency symbols, NO units, NO text):
 1. cashOnHand: Return raw number in USD (e.g., 3100000 for $3.1M)
@@ -775,7 +775,7 @@ For every section that contains numbers, weave a compelling narrative that answe
   "cashOutDate": "April 2025",
   "runway": 18,
   "budgetVsActual": "Markdown table with Budget vs Actual metrics and narrative context",
-  "financialSummary": "PRIMARY FOCUS: Exactly 7-10 bullet points precisely summarizing the entire board deck (financial performance, operations, strategy, risks, milestones) with **bold metrics** and brief context",
+  "financialSummary": "PRIMARY FOCUS: Exactly 7-10 bullet points precisely summarizing the entire board deck (business performance, operations, strategy, risks, milestones) with **bold metrics** and brief context",
   "sectorHighlightA": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**",
   "sectorHighlightB": "Structured markdown with **Overview** narrative + **Key Metrics** with context + **Strategic Implications**", 
   "keyRisks": "Markdown bullet list with emoji status (⚠️) and strategic risk context",
@@ -791,7 +791,7 @@ EXAMPLES:
 CRITICAL: Use null (no quotes) for missing numeric values, and "N/A" for missing text fields. Return valid JSON without code blocks. Be detailed and helpful."""
 
         # Add the user prompt with document analysis instructions
-        user_prompt = f"""Analyze this financial document and return valid JSON WITH STORY CONTEXT:
+        user_prompt = f"""Analyze this business document and return valid JSON WITH STORY CONTEXT:
 
 Filename: {filename}
 
