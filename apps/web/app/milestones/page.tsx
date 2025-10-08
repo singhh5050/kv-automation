@@ -5,6 +5,7 @@ import { useUser, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { getMilestones, createMilestone, updateMilestone, deleteMilestone, markMilestoneCompleted, getCompanies } from '@/lib/api'
 import { Milestone } from '@/types'
+import { cleanFileName } from '@/lib/utils'
 
 export default function MilestonesPage() {
   const { isSignedIn, isLoaded } = useUser()
@@ -489,8 +490,8 @@ export default function MilestonesPage() {
                       )}
                     </div>
                     {milestone.report_file_name ? (
-                      <div className="text-gray-400" title="From board deck analysis">
-                        📄 {milestone.report_file_name}
+                      <div className="text-gray-400" title={`From board deck: ${milestone.report_file_name}`}>
+                        📄 {cleanFileName(milestone.report_file_name)}
                       </div>
                     ) : (
                       <div className="text-gray-400" title="Manually created">

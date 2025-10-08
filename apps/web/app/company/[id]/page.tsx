@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import SimpleExecutivesList from '@/components/company/SimpleExecutivesList'
@@ -12,7 +12,7 @@ import MilestoneDisplay from '@/components/shared/MilestoneDisplay'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
 import HealthCheckModal from '@/components/company/HealthCheckModal'
-import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig, HealthCheckConfig, HealthCheckResult } from '@/types'
+import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig, HealthCheckConfig, HealthCheckResult, Milestone } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
   ResponsiveContainer,
@@ -299,6 +299,7 @@ export default function CompanyDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [latestReportId, setLatestReportId] = useState<number | null>(null)
+  const [milestones, setMilestones] = useState<Milestone[]>([])
   
   // Enrichment state
   const [enrichmentData, setEnrichmentData] = useState<Record<string, any>>({})
@@ -492,6 +493,9 @@ export default function CompanyDetailPage() {
         if (companyData.financial_reports && companyData.financial_reports.length > 0) {
           setLatestReportId(companyData.financial_reports[0].id)
         }
+        
+        // Load milestones for this company
+        loadMilestones()
       } else {
         setError(result.error || 'Failed to load company data')
       }
@@ -499,6 +503,21 @@ export default function CompanyDetailPage() {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadMilestones = async () => {
+    if (!companyId) return
+    
+    try {
+      const result = await getMilestones(parseInt(companyId))
+      if (result.data && !result.error) {
+        const milestonesData = result.data?.data?.data?.milestones || result.data?.data?.milestones || []
+        setMilestones(milestonesData)
+      }
+    } catch (err) {
+      console.error('Failed to load milestones:', err)
+      // Don't fail the whole page if milestones don't load
     }
   }
 
@@ -1545,15 +1564,19 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
 
                 {/* 3. Upcoming Milestones */}
                 <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  <div className="flex items-center space-x-1 mb-2">
-                    <div>
-                      <h3 className="section-title">Upcoming Milestones</h3>
-                    </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="section-title">Upcoming Milestones</h3>
+                    <button
+                      onClick={() => router.push('/milestones')}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View All →
+                    </button>
                   </div>
                   
-                  {(currentReport as any)?.next_milestones ? (
+                  {milestones.length > 0 ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100 min-h-[160px] max-h-[420px] overflow-y-auto">
-                      <MilestoneDisplay content={(currentReport as any).next_milestones} className="text-sm leading-7" />
+                      <MilestoneDisplay milestones={milestones.filter(m => !m.completed)} className="text-sm leading-7" />
                     </div>
                   ) : (
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-lg border-2 border-dashed border-gray-200 text-center">

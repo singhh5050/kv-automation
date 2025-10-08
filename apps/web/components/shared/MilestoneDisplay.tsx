@@ -1,57 +1,38 @@
 import React from 'react'
 import MarkdownContent from './MarkdownContent'
+import { Milestone } from '@/types'
 
-interface Milestone {
+interface LegacyMilestone {
   date: string
   description: string
   priority: 'critical' | 'high' | 'medium' | 'low'
 }
 
 interface MilestoneDisplayProps {
-  content: string | null
+  content?: string | null
+  milestones?: Milestone[]
   className?: string
 }
 
-export default function MilestoneDisplay({ content, className = '' }: MilestoneDisplayProps) {
-  if (!content) return null
-
-  // Try to parse as JSON first (new format)
-  let milestones: Milestone[] | null = null
-  try {
-    const parsed = JSON.parse(content)
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      // Validate structure
-      const isValidMilestones = parsed.every(item => 
-        typeof item === 'object' && 
-        item !== null &&
-        'date' in item && 
-        'description' in item && 
-        'priority' in item
-      )
-      if (isValidMilestones) {
-        milestones = parsed
-      }
-    }
-  } catch {
-    // Not JSON, fall back to markdown
-  }
-
-  // If we have structured milestones, render them specially
-  if (milestones) {
+export default function MilestoneDisplay({ content, milestones, className = '' }: MilestoneDisplayProps) {
+  // If milestones array is provided directly (new format), use it
+  if (milestones && milestones.length > 0) {
     return (
       <div className={`milestone-display ${className}`}>
         <div className="space-y-3">
-          {milestones.map((milestone, index) => {
+          {milestones.map((milestone) => {
             const priorityConfig = getPriorityConfig(milestone.priority)
-            const formattedDate = formatMilestoneDate(milestone.date)
+            const formattedDate = formatMilestoneDate(milestone.milestone_date)
             
             return (
               <div 
-                key={index}
-                className={`flex items-start space-x-3 p-3 rounded-lg border-l-4 ${priorityConfig.borderColor} ${priorityConfig.bgColor}`}
+                key={milestone.id}
+                className={`flex items-start space-x-3 p-3 rounded-lg border-l-4 ${priorityConfig.borderColor} ${priorityConfig.bgColor} ${
+                  milestone.completed ? 'opacity-60' : ''
+                }`}
               >
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full ${priorityConfig.iconBg} flex items-center justify-center`}>
-                  <span className="text-sm">{priorityConfig.icon}</span>
+                  <span className="text-sm">{milestone.completed ? '✓' : priorityConfig.icon}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 mb-1">
@@ -62,7 +43,7 @@ export default function MilestoneDisplay({ content, className = '' }: MilestoneD
                       {formattedDate}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-800 leading-relaxed">
+                  <p className={`text-sm leading-relaxed ${milestone.completed ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
                     {milestone.description}
                   </p>
                 </div>
@@ -73,9 +54,72 @@ export default function MilestoneDisplay({ content, className = '' }: MilestoneD
       </div>
     )
   }
+  
+  // Legacy: Try to parse content as JSON (old format)
+  if (content) {
+    let legacyMilestones: LegacyMilestone[] | null = null
+    try {
+      const parsed = JSON.parse(content)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Validate structure
+        const isValidMilestones = parsed.every(item => 
+          typeof item === 'object' && 
+          item !== null &&
+          'date' in item && 
+          'description' in item && 
+          'priority' in item
+        )
+        if (isValidMilestones) {
+          legacyMilestones = parsed
+        }
+      }
+    } catch {
+      // Not JSON, fall back to markdown
+    }
 
-  // Fall back to markdown rendering for legacy format
-  return <MarkdownContent content={content} className={className} />
+    // If we have structured milestones, render them specially
+    if (legacyMilestones) {
+      return (
+        <div className={`milestone-display ${className}`}>
+          <div className="space-y-3">
+            {legacyMilestones.map((milestone, index) => {
+              const priorityConfig = getPriorityConfig(milestone.priority)
+              const formattedDate = formatMilestoneDate(milestone.date)
+              
+              return (
+                <div 
+                  key={index}
+                  className={`flex items-start space-x-3 p-3 rounded-lg border-l-4 ${priorityConfig.borderColor} ${priorityConfig.bgColor}`}
+                >
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full ${priorityConfig.iconBg} flex items-center justify-center`}>
+                    <span className="text-sm">{priorityConfig.icon}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${priorityConfig.badgeColor}`}>
+                        {milestone.priority.toUpperCase()}
+                      </span>
+                      <span className="text-sm font-medium text-gray-600">
+                        {formattedDate}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-800 leading-relaxed">
+                      {milestone.description}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    // Fall back to markdown rendering for legacy format
+    return <MarkdownContent content={content} className={className} />
+  }
+  
+  return null
 }
 
 function getPriorityConfig(priority: string) {
