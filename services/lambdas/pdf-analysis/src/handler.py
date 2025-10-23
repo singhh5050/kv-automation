@@ -3064,7 +3064,16 @@ Generate a concise internal summary using these EXACT headers (in this exact ord
 
 **{company_name} — {cadence}**
 
-**Snapshot**: [One line with Priority | KV Fund | Total Invested | Ownership % | Total Raised | Date of Last Raise | Last Round Raised | Series | Last Post Money]
+**Snapshot**:
+• Priority/Stage: [stage]
+• KV Fund: [funds]
+• Total KV Invested: [amount]
+• KV Ownership: [percentage]
+• Total Raised: [amount]
+• Last Raise Date: [date]
+• Last Round Raised: [amount]
+• Series: [series]
+• Last Post Money: [valuation]
 
 **One-line Description**: [Brief description of what the company does]
 

@@ -99,7 +99,7 @@ export default function PdfExportModal({ company, isOpen, onClose }: PdfExportMo
       pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 28)
       
       // Process the markdown text and add to PDF
-      pdf.setFontSize(11)
+      pdf.setFontSize(10)
       const lines = summaryText.split('\n')
       let yPosition = 40
       const pageHeight = pdf.internal.pageSize.height
@@ -113,30 +113,38 @@ export default function PdfExportModal({ company, isOpen, onClose }: PdfExportMo
           yPosition = 20
         }
         
+        // Clean markdown syntax
+        let cleanLine = line
+        
         // Handle different markdown styles
-        if (line.startsWith('**') && line.endsWith('**')) {
-          // Bold headers
+        if (line.match(/^\*\*.*\*\*:?\s*$/)) {
+          // Bold headers (lines that are fully wrapped in **)
           pdf.setFont('helvetica', 'bold')
-          const text = line.replace(/\*\*/g, '')
-          const splitText = pdf.splitTextToSize(text, maxWidth)
+          pdf.setFontSize(11)
+          cleanLine = line.replace(/\*\*/g, '').trim()
+          const splitText = pdf.splitTextToSize(cleanLine, maxWidth)
           pdf.text(splitText, margin, yPosition)
-          yPosition += splitText.length * 5 + 3
+          yPosition += splitText.length * 6 + 4
           pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(10)
         } else if (line.startsWith('• ')) {
           // Bullet points
-          const text = line.substring(2)
-          const splitText = pdf.splitTextToSize(text, maxWidth - 5)
+          cleanLine = line.substring(2).replace(/\*\*/g, '') // Remove ** from bullet content too
+          const splitText = pdf.splitTextToSize(cleanLine, maxWidth - 6)
           pdf.text('•', margin, yPosition)
-          pdf.text(splitText, margin + 5, yPosition)
-          yPosition += splitText.length * 5 + 2
+          pdf.text(splitText, margin + 6, yPosition)
+          yPosition += splitText.length * 5 + 1
         } else if (line.trim() === '') {
           // Empty line - add spacing
           yPosition += 3
         } else {
-          // Regular text
-          const splitText = pdf.splitTextToSize(line, maxWidth)
-          pdf.text(splitText, margin, yPosition)
-          yPosition += splitText.length * 5 + 2
+          // Regular text - also clean ** if present
+          cleanLine = line.replace(/\*\*/g, '')
+          if (cleanLine.trim()) {
+            const splitText = pdf.splitTextToSize(cleanLine, maxWidth)
+            pdf.text(splitText, margin, yPosition)
+            yPosition += splitText.length * 5 + 1
+          }
         }
       })
       
