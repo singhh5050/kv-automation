@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { CompanyOverview } from '@/types'
 import { generateInternalSummary } from '@/lib/api'
 import { detectCompanyStage } from '@/lib/stageDetection'
+import MarkdownContent from '@/components/shared/MarkdownContent'
+import jsPDF from 'jspdf'
 
 interface PdfExportModalProps {
   company: CompanyOverview
@@ -73,6 +75,79 @@ export default function PdfExportModal({ company, isOpen, onClose }: PdfExportMo
   const handleCopyToClipboard = () => {
     navigator.clipboard.writeText(summaryText)
     alert('Summary copied to clipboard!')
+  }
+
+  const handleDownloadPDF = () => {
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+
+      // Set font
+      pdf.setFont('helvetica')
+      
+      // Add title
+      pdf.setFontSize(16)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text(`${company.company.name} - One Pager`, 20, 20)
+      
+      // Add date
+      pdf.setFontSize(10)
+      pdf.setFont('helvetica', 'normal')
+      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 28)
+      
+      // Process the markdown text and add to PDF
+      pdf.setFontSize(11)
+      const lines = summaryText.split('\n')
+      let yPosition = 40
+      const pageHeight = pdf.internal.pageSize.height
+      const margin = 20
+      const maxWidth = 170
+      
+      lines.forEach((line) => {
+        // Check if we need a new page
+        if (yPosition > pageHeight - 20) {
+          pdf.addPage()
+          yPosition = 20
+        }
+        
+        // Handle different markdown styles
+        if (line.startsWith('**') && line.endsWith('**')) {
+          // Bold headers
+          pdf.setFont('helvetica', 'bold')
+          const text = line.replace(/\*\*/g, '')
+          const splitText = pdf.splitTextToSize(text, maxWidth)
+          pdf.text(splitText, margin, yPosition)
+          yPosition += splitText.length * 5 + 3
+          pdf.setFont('helvetica', 'normal')
+        } else if (line.startsWith('• ')) {
+          // Bullet points
+          const text = line.substring(2)
+          const splitText = pdf.splitTextToSize(text, maxWidth - 5)
+          pdf.text('•', margin, yPosition)
+          pdf.text(splitText, margin + 5, yPosition)
+          yPosition += splitText.length * 5 + 2
+        } else if (line.trim() === '') {
+          // Empty line - add spacing
+          yPosition += 3
+        } else {
+          // Regular text
+          const splitText = pdf.splitTextToSize(line, maxWidth)
+          pdf.text(splitText, margin, yPosition)
+          yPosition += splitText.length * 5 + 2
+        }
+      })
+      
+      // Download the PDF
+      const fileName = `${company.company.name.replace(/[^a-zA-Z0-9]/g, '_')}_OnePager_${new Date().toISOString().split('T')[0]}.pdf`
+      pdf.save(fileName)
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      alert('Failed to generate PDF. Please try copying to clipboard instead.')
+    }
   }
 
   if (!isOpen) return null
@@ -147,10 +222,10 @@ export default function PdfExportModal({ company, isOpen, onClose }: PdfExportMo
             {/* Summary Display */}
             {summaryText && (
               <div className="space-y-4">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                  <pre className="whitespace-pre-wrap font-sans text-sm text-gray-900 leading-relaxed">
-                    {summaryText}
-                  </pre>
+                <div className="bg-white border border-gray-200 rounded-lg p-6 max-h-[60vh] overflow-y-auto">
+                  <div className="prose prose-sm max-w-none">
+                    <MarkdownContent content={summaryText} />
+                  </div>
                 </div>
 
                 {/* Action Buttons */}
@@ -167,7 +242,14 @@ export default function PdfExportModal({ company, isOpen, onClose }: PdfExportMo
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
                   >
                     <span>📋</span>
-                    <span>Copy to Clipboard</span>
+                    <span>Copy</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadPDF}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                  >
+                    <span>📥</span>
+                    <span>Download PDF</span>
                   </button>
                 </div>
               </div>
