@@ -273,6 +273,9 @@ def lambda_handler(event, context):
     elif action == 'get_health_check':
         print("🔍 Getting latest health check")
         return handle_get_health_check_request(payload, context)
+    elif action == 'generate_internal_summary':
+        print("📝 Generating internal summary")
+        return handle_generate_internal_summary_request(payload, context)
     else:
         print(f"❌ Unknown action: {action}")
         return {
@@ -283,7 +286,7 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
             },
-            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check'})
+            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check, generate_internal_summary'})
         }
 
 
@@ -2319,6 +2322,60 @@ def handle_get_health_check_request(event, context):
         }
 
 
+def handle_generate_internal_summary_request(event, context):
+    """
+    Handle requests to generate an internal summary for a company
+    """
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        # Extract parameters from event
+        company_id = event.get('company_id')
+        company_data = event.get('company_data', {})
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        print(f"📝 Generating internal summary for company {company_id}")
+        
+        # Generate the summary
+        result = generate_internal_summary(event)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result)
+            }
+        else:
+            return {
+                'statusCode': 500,
+                'headers': cors_headers,
+                'body': json.dumps({'error': result['error']})
+            }
+            
+    except Exception as e:
+        print(f"❌ Generate internal summary failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'success': False,
+                'error': f'Generate internal summary failed: {str(e)}'
+            })
+        }
+
+
 def create_async_job_in_db(company_id: int, stage: str, custom_config: dict = None) -> str:
     """
     Create a new async analysis job in the database
@@ -2884,3 +2941,200 @@ Keep analysis concise, factual, and bullet-point focused."""
         print(f"❌ Health check analysis failed: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         return {'success': False, 'error': f'Health check failed: {str(e)}'}
+
+
+def generate_internal_summary(event_payload: dict) -> dict:
+    """
+    Generate a simple text-based internal summary for a portfolio company
+    Uses 5 most recent financial reports from PostgresDB + frontend company data
+    Returns plain markdown text with bullet points
+    """
+    try:
+        import ssl
+        
+        # Extract data from payload
+        company_id = event_payload.get('company_id')
+        company_data = event_payload.get('company_data', {})
+        
+        if not company_id:
+            return {'success': False, 'error': 'company_id is required'}
+        
+        print(f"📝 Generating internal summary for company {company_id}")
+        
+        # Database configuration
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        # Connect to database
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        # Get company name
+        cursor.execute("SELECT name FROM companies WHERE id = %s", [company_id])
+        company_row = cursor.fetchone()
+        if not company_row:
+            return {'success': False, 'error': f'Company {company_id} not found'}
+        
+        company_name = company_row[0]
+        print(f"📊 Company: {company_name}")
+        
+        # Get 5 most recent financial reports
+        cursor.execute("""
+            SELECT 
+                file_name, report_date, report_period, sector,
+                cash_on_hand, monthly_burn_rate, cash_out_date, runway,
+                budget_vs_actual, financial_summary,
+                sector_highlight_a, sector_highlight_b,
+                key_risks, personnel_updates, next_milestones
+            FROM financial_reports
+            WHERE company_id = %s
+            ORDER BY report_date DESC, processed_at DESC
+            LIMIT 5
+        """, [company_id])
+        
+        financial_reports = cursor.fetchall()
+        conn.close()
+        
+        print(f"📈 Found {len(financial_reports)} recent financial reports")
+        
+        # Format financial reports for the prompt
+        reports_text = []
+        for idx, row in enumerate(financial_reports, 1):
+            report_entry = f"""
+**Report {idx}** ({row[2] or 'N/A'} - {row[1] or 'N/A'}):
+- Cash on Hand: {row[4] or 'N/A'}
+- Monthly Burn: {row[5] or 'N/A'}
+- Runway: {row[7] or 'N/A'}
+- Cash Out Date: {row[6] or 'N/A'}
+- Budget vs Actual: {row[8] or 'N/A'}
+- Financial Summary: {row[9] or 'N/A'}
+- Sector Highlight A: {row[10] or 'N/A'}
+- Sector Highlight B: {row[11] or 'N/A'}
+- Key Risks: {row[12] or 'N/A'}
+- Personnel Updates: {row[13] or 'N/A'}
+- Next Milestones: {row[14] or 'N/A'}
+"""
+            reports_text.append(report_entry)
+        
+        # Infer cadence from report frequency
+        cadence = 'Unknown'
+        if len(financial_reports) >= 2:
+            try:
+                from datetime import datetime
+                date1 = datetime.strptime(str(financial_reports[0][1]), '%Y-%m-%d')
+                date2 = datetime.strptime(str(financial_reports[1][1]), '%Y-%m-%d')
+                days_diff = abs((date1 - date2).days)
+                if days_diff < 40:
+                    cadence = 'Monthly'
+                elif days_diff < 70:
+                    cadence = 'Bi-Monthly'
+                else:
+                    cadence = 'Quarterly'
+            except:
+                cadence = 'Unknown'
+        
+        # Build prompt with all data
+        prompt = f"""You are generating an internal investor summary for KV Capital portfolio company monitoring.
+
+**Company**: {company_name}
+**Cadence**: {cadence}
+
+**Snapshot**:
+- Priority/Stage: {company_data.get('stage', 'N/A')}
+- KV Fund(s): {company_data.get('kv_funds', 'N/A')}
+- Total KV Invested: {company_data.get('total_kv_invested', 'N/A')}
+- KV Ownership %: {company_data.get('kv_ownership', 'N/A')}
+- Total Raised: {company_data.get('total_raised', 'N/A')}
+- Date of Last Raise: {company_data.get('last_raise_date', 'N/A')}
+- Last Round Raised: {company_data.get('last_round_amount', 'N/A')}
+- Series: {company_data.get('series', 'N/A')}
+- Last Post Money: {company_data.get('valuation', 'N/A')}
+
+**Recent Financial Reports (5 most recent)**:
+{''.join(reports_text)}
+
+**Instructions**:
+Generate a concise internal summary using these EXACT headers (in this exact order):
+
+**{company_name} — {cadence}**
+
+**Snapshot**: [One line with Priority | KV Fund | Total Invested | Ownership % | Total Raised | Date of Last Raise | Last Round Raised | Series | Last Post Money]
+
+**One-line Description**: [Brief description of what the company does]
+
+**Update Status**: [Brief note on update cadence and current status]
+
+**Keys to the Next 12 Months' Success**:
+• [Bullet point 1]
+• [Bullet point 2]
+• [Bullet point 3]
+
+**Risks**:
+• [Bullet point 1]
+• [Bullet point 2]
+• [Bullet point 3]
+
+**Key Metrics**:
+• [Bullet point 1]
+• [Bullet point 2]
+• [Bullet point 3]
+
+**Financial Metrics (YTD vs Plan)**:
+• [Bullet point 1]
+• [Bullet point 2]
+
+**Hiring**:
+• [Bullet point on personnel updates]
+
+**Runway/Burn/Cash**:
+• [Bullet point summary of cash position]
+
+**REQUIREMENTS**:
+- Use ONLY bullet points (•), no prose paragraphs
+- Be concise and data-driven
+- Extract insights from the financial reports provided
+- Keep each bullet point to 1-2 lines maximum
+- If data is not available, use "N/A" or skip that bullet
+- NO fancy formatting, NO tables, NO graphics - just simple markdown text with bullet points
+"""
+        
+        # Call OpenAI API
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            return {'success': False, 'error': 'OpenAI API key not configured'}
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        print(f"🤖 Calling OpenAI for summary generation...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert investment analyst creating concise internal portfolio company summaries."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        
+        summary_text = response.choices[0].message.content.strip()
+        print(f"✅ Summary generated: {len(summary_text)} characters")
+        
+        return {
+            'success': True,
+            'summary': summary_text,
+            'company_name': company_name,
+            'report_count': len(financial_reports)
+        }
+        
+    except Exception as e:
+        print(f"❌ Summary generation failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return {'success': False, 'error': f'Summary generation failed: {str(e)}'}

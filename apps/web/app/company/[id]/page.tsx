@@ -27,8 +27,7 @@ import {
 } from 'recharts'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
-import PdfExportModal, { ExportConfig } from '@/components/company/PdfExportModal'
-import { generatePDF } from '@/lib/pdfGenerator'
+import PdfExportModal from '@/components/company/PdfExportModal'
 
 // Currency formatting utility
 const formatCurrency = (value: string | number | null | undefined): string => {
@@ -329,7 +328,6 @@ export default function CompanyDetailPage() {
 
   // PDF Export state
   const [showPdfModal, setShowPdfModal] = useState(false)
-  const [pdfExporting, setPdfExporting] = useState(false)
 
   // Health Check state
   const [showHealthCheckModal, setShowHealthCheckModal] = useState(false)
@@ -1059,22 +1057,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
     setReportToDelete(null)
   }
 
-  // PDF Export handler
-  const handlePdfExport = async (config: ExportConfig) => {
-    if (!company) return
-
-    setPdfExporting(true)
-    try {
-      await generatePDF(company, config)
-      setShowPdfModal(false)
-    } catch (error) {
-      console.error('Error generating PDF:', error)
-      alert('Failed to generate PDF. Please try again.')
-    } finally {
-      setPdfExporting(false)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Compact Header */}
@@ -1178,14 +1160,13 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               </div>
             </div>
             
-            {/* PDF Export Button */}
+            {/* One Pager Export Button */}
             <button
               onClick={() => setShowPdfModal(true)}
-              disabled={pdfExporting}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors shadow-sm"
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
             >
               <span>📄</span>
-              <span>{pdfExporting ? 'Exporting...' : 'Export PDF'}</span>
+              <span>Export One Pager</span>
             </button>
           </div>
           
@@ -3115,7 +3096,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
           company={company}
           isOpen={showPdfModal}
           onClose={() => setShowPdfModal(false)}
-          onExport={handlePdfExport}
         />
       )}
 

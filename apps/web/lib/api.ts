@@ -401,6 +401,22 @@ export async function runHealthCheck(companyId: number, criticality_level?: numb
   }
 }
 
+/** ---------------- Internal Summary Generation ---------------- */
+
+export async function generateInternalSummary(companyId: number, companyData: Record<string, any>) {
+  try {
+    const res = await fetch('/api/generate-summary', { 
+      method: 'POST', 
+      ...withJson({ company_id: companyId, company_data: companyData }) 
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `Summary generation failed: ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Summary generation error:', e);
+    return { error: e instanceof Error ? e.message : 'Summary generation failed' };
+  }
+}
+
 export async function getLatestHealthCheck(companyId: number) {
   try {
     const res = await fetch('/api/get-health-check', { method: 'POST', ...withJson({ company_id: companyId }) });

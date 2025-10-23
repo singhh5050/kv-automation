@@ -2,151 +2,77 @@
 
 import { useState } from 'react'
 import { CompanyOverview } from '@/types'
-import MDEditor from '@uiw/react-md-editor'
+import { generateInternalSummary } from '@/lib/api'
+import { detectCompanyStage } from '@/lib/stageDetection'
 
 interface PdfExportModalProps {
   company: CompanyOverview
   isOpen: boolean
   onClose: () => void
-  onExport: (config: ExportConfig) => void
 }
 
-export interface ExportConfig {
-  customHeader: string
-  sections: {
-    summary: {
-      enabled: boolean
-      subsections: {
-        cashMetrics: boolean
-        runway: boolean
-        milestones: boolean
-        team: boolean
-        teamLinkedIn: boolean
-        sectorHighlights: boolean
-        companyLogo: boolean
-      }
-    }
-    financials: {
-      enabled: boolean
-      subsections: {
-        overview: boolean
-        reports: boolean
-        charts: boolean
-        kpiAnalysis: boolean
-        trends: boolean
-      }
-    }
-    updates: {
-      enabled: boolean
-      subsections: {
-        enrichment: boolean
-        keyHighlights: boolean
-        sectorDetails: boolean
-        companyHealth: boolean
-        executiveSummary: boolean
-      }
-    }
-    capTable: {
-      enabled: boolean
-      subsections: {
-        investors: boolean
-        rounds: boolean
-        ownership: boolean
-        optionPool: boolean
-        valuation: boolean
-      }
-    }
-  }
+// Helper to format currency
+const formatCurrency = (value: number | null | undefined): string => {
+  if (!value) return 'N/A'
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
+  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
+  return `$${value.toLocaleString()}`
 }
 
-export default function PdfExportModal({ company, isOpen, onClose, onExport }: PdfExportModalProps) {
-  const [customHeader, setCustomHeader] = useState('')
-  const [config, setConfig] = useState<ExportConfig>({
-    customHeader: '',
-    sections: {
-      summary: {
-        enabled: true,
-        subsections: {
-          cashMetrics: true,
-          runway: true,
-          milestones: true,
-          team: true,
-          teamLinkedIn: true,
-          sectorHighlights: true,
-          companyLogo: true
-        }
-      },
-      financials: {
-        enabled: true,
-        subsections: {
-          overview: true,
-          reports: true,
-          charts: true,
-          kpiAnalysis: true,
-          trends: true
-        }
-      },
-      updates: {
-        enabled: true,
-        subsections: {
-          enrichment: true,
-          keyHighlights: true,
-          sectorDetails: true,
-          companyHealth: true,
-          executiveSummary: true
-        }
-      },
-      capTable: {
-        enabled: true,
-        subsections: {
-          investors: true,
-          rounds: true,
-          ownership: true,
-          optionPool: true,
-          valuation: true
-        }
-      }
-    }
-  })
+export default function PdfExportModal({ company, isOpen, onClose }: PdfExportModalProps) {
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [summaryText, setSummaryText] = useState<string>('')
+  const [error, setError] = useState<string>('')
 
-  const handleSectionToggle = (section: keyof ExportConfig['sections']) => {
-    setConfig(prev => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [section]: {
-          ...prev.sections[section],
-          enabled: !prev.sections[section].enabled
-        }
+  const handleGenerateSummary = async () => {
+    setIsGenerating(true)
+    setError('')
+    setSummaryText('')
+
+    try {
+      // Prepare company data for the summary
+      const kvInvestors = company.current_cap_table?.investors
+        ?.filter(inv => inv.investor_name.startsWith('KV')) || []
+      
+      const kvFunds = kvInvestors.map(inv => inv.investor_name).join(', ') || 'N/A'
+      const totalKvInvested = kvInvestors.reduce((sum, inv) => sum + (inv.total_invested || 0), 0)
+      const kvOwnership = kvInvestors.reduce((sum, inv) => sum + (inv.final_fds || 0), 0)
+      const stage = detectCompanyStage(company.current_cap_table?.investors || [])
+
+      const companyData = {
+        stage: stage,
+        kv_funds: kvFunds,
+        total_kv_invested: formatCurrency(totalKvInvested),
+        kv_ownership: `${(kvOwnership * 100).toFixed(1)}%`,
+        total_raised: formatCurrency(company.current_cap_table?.amount_raised),
+        last_raise_date: company.current_cap_table?.round_date || 'N/A',
+        last_round_amount: formatCurrency(company.current_cap_table?.amount_raised),
+        series: company.current_cap_table?.round_name || 'N/A',
+        valuation: formatCurrency(company.current_cap_table?.valuation)
       }
-    }))
+
+      console.log('📝 Generating summary with data:', companyData)
+
+      const result = await generateInternalSummary(parseInt(company.company.id as any), companyData)
+
+      if (result.error) {
+        setError(result.error)
+      } else if (result.summary) {
+        setSummaryText(result.summary)
+      } else {
+        setError('No summary was generated')
+      }
+    } catch (err) {
+      console.error('Error generating summary:', err)
+      setError(err instanceof Error ? err.message : 'Failed to generate summary')
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
-  const handleSubsectionToggle = (
-    section: keyof ExportConfig['sections'], 
-    subsection: string
-  ) => {
-    setConfig(prev => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [section]: {
-          ...prev.sections[section],
-          subsections: {
-            ...prev.sections[section].subsections,
-            [subsection]: !prev.sections[section].subsections[subsection as keyof typeof prev.sections[typeof section]['subsections']]
-          }
-        }
-      }
-    }))
-  }
-
-  const handleExport = () => {
-    const exportConfig = {
-      ...config,
-      customHeader
-    }
-    onExport(exportConfig)
+  const handleCopyToClipboard = () => {
+    navigator.clipboard.writeText(summaryText)
+    alert('Summary copied to clipboard!')
   }
 
   if (!isOpen) return null
@@ -158,9 +84,9 @@ export default function PdfExportModal({ company, isOpen, onClose, onExport }: P
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Export PDF Report</h2>
+              <h2 className="text-xl font-bold text-gray-900">Export One Pager</h2>
               <p className="text-sm text-gray-600 mt-1">
-                Create a custom PDF report for {company.company.name}
+                Generate a concise one-pager summary for {company.company.name}
               </p>
             </div>
             <button
@@ -171,200 +97,81 @@ export default function PdfExportModal({ company, isOpen, onClose, onExport }: P
             </button>
           </div>
 
-          <div className="space-y-6">
-            {/* Custom Header Section */}
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Custom Introduction</h3>
-              <p className="text-sm text-gray-600 mb-3">
-                Add your own analysis, summary, or notes to appear at the top of the PDF
-              </p>
-              <div data-color-mode="light">
-                <MDEditor
-                  value={customHeader}
-                  onChange={(value) => setCustomHeader(value || '')}
-                  preview="edit"
-                  height={200}
-                  visibleDragbar={false}
-                />
+          <div className="space-y-4">
+            {/* Generate Button */}
+            {!summaryText && !error && (
+              <div className="text-center py-8">
+                <p className="text-gray-600 mb-4">
+                  Click below to generate a one-pager summary using the 5 most recent financial reports
+                </p>
+                <button
+                  onClick={handleGenerateSummary}
+                  disabled={isGenerating}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? (
+                    <>
+                      <span className="animate-spin">⏳</span>
+                      <span>Generating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📝</span>
+                      <span>Generate One Pager</span>
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
+            )}
 
-            {/* Section Selection */}
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Sections to Include</h3>
-              
+            {/* Error Display */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <span className="text-red-600 text-xl">❌</span>
+                  <div>
+                    <h3 className="text-red-900 font-medium">Error Generating One Pager</h3>
+                    <p className="text-red-700 text-sm mt-1">{error}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerateSummary}
+                  disabled={isGenerating}
+                  className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium disabled:opacity-50"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {/* Summary Display */}
+            {summaryText && (
               <div className="space-y-4">
-                {/* Summary Section */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <input
-                      type="checkbox"
-                      id="summary"
-                      checked={config.sections.summary.enabled}
-                      onChange={() => handleSectionToggle('summary')}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="summary" className="flex items-center space-x-2 text-base font-medium text-gray-900">
-                      <span>💰</span>
-                      <span>Summary</span>
-                    </label>
-                  </div>
-                  
-                  {config.sections.summary.enabled && (
-                    <div className="ml-7 space-y-2">
-                      {Object.entries({
-                        cashMetrics: 'Cash Metrics',
-                        runway: 'Runway Progress Bar',
-                        milestones: 'Upcoming Milestones',
-                        team: 'Team Information',
-                        teamLinkedIn: 'Team LinkedIn Links',
-                        sectorHighlights: 'Sector Highlights',
-                        companyLogo: 'Company Logo'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`summary-${key}`}
-                            checked={config.sections.summary.subsections[key as keyof typeof config.sections.summary.subsections]}
-                            onChange={() => handleSubsectionToggle('summary', key)}
-                            className="h-3 w-3 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label htmlFor={`summary-${key}`} className="text-sm text-gray-700">
-                            {label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-gray-900 leading-relaxed">
+                    {summaryText}
+                  </pre>
                 </div>
 
-                {/* Financials Section */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <input
-                      type="checkbox"
-                      id="financials"
-                      checked={config.sections.financials.enabled}
-                      onChange={() => handleSectionToggle('financials')}
-                      className="h-4 w-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
-                    />
-                    <label htmlFor="financials" className="flex items-center space-x-2 text-base font-medium text-gray-900">
-                      <span>📊</span>
-                      <span>Financials</span>
-                    </label>
-                  </div>
-                  
-                  {config.sections.financials.enabled && (
-                    <div className="ml-7 space-y-2">
-                      {Object.entries({
-                        overview: 'Financial Overview',
-                        reports: 'Financial Reports Table',
-                        charts: 'Financial Charts',
-                        kpiAnalysis: 'KPI Analysis',
-                        trends: 'Trend Analysis'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`financials-${key}`}
-                            checked={config.sections.financials.subsections[key as keyof typeof config.sections.financials.subsections]}
-                            onChange={() => handleSubsectionToggle('financials', key)}
-                            className="h-3 w-3 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
-                          />
-                          <label htmlFor={`financials-${key}`} className="text-sm text-gray-700">
-                            {label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Latest Updates Section */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <input
-                      type="checkbox"
-                      id="updates"
-                      checked={config.sections.updates.enabled}
-                      onChange={() => handleSectionToggle('updates')}
-                      className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                    <label htmlFor="updates" className="flex items-center space-x-2 text-base font-medium text-gray-900">
-                      <span>📈</span>
-                      <span>Latest Updates</span>
-                    </label>
-                  </div>
-                  
-                  {config.sections.updates.enabled && (
-                    <div className="ml-7 space-y-2">
-                      {Object.entries({
-                        enrichment: 'Company Enrichment Data',
-                        keyHighlights: 'Key Highlights',
-                        sectorDetails: 'Sector Details',
-                        companyHealth: 'Company Health Score',
-                        executiveSummary: 'Executive Summary'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`updates-${key}`}
-                            checked={config.sections.updates.subsections[key as keyof typeof config.sections.updates.subsections]}
-                            onChange={() => handleSubsectionToggle('updates', key)}
-                            className="h-3 w-3 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                          />
-                          <label htmlFor={`updates-${key}`} className="text-sm text-gray-700">
-                            {label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Cap Table Section */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <input
-                      type="checkbox"
-                      id="capTable"
-                      checked={config.sections.capTable.enabled}
-                      onChange={() => handleSectionToggle('capTable')}
-                      className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="capTable" className="flex items-center space-x-2 text-base font-medium text-gray-900">
-                      <span>🏦</span>
-                      <span>Cap Table</span>
-                    </label>
-                  </div>
-                  
-                  {config.sections.capTable.enabled && (
-                    <div className="ml-7 space-y-2">
-                      {Object.entries({
-                        investors: 'Investor Information',
-                        rounds: 'Funding Rounds',
-                        ownership: 'Ownership Breakdown',
-                        optionPool: 'Employee Option Pool',
-                        valuation: 'Valuation Details'
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`capTable-${key}`}
-                            checked={config.sections.capTable.subsections[key as keyof typeof config.sections.capTable.subsections]}
-                            onChange={() => handleSubsectionToggle('capTable', key)}
-                            className="h-3 w-3 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                          />
-                          <label htmlFor={`capTable-${key}`} className="text-sm text-gray-700">
-                            {label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end space-x-3">
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={isGenerating}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
+                  >
+                    🔄 Regenerate
+                  </button>
+                  <button
+                    onClick={handleCopyToClipboard}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                  >
+                    <span>📋</span>
+                    <span>Copy to Clipboard</span>
+                  </button>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -373,14 +180,7 @@ export default function PdfExportModal({ company, isOpen, onClose, onExport }: P
               onClick={onClose}
               className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
             >
-              Cancel
-            </button>
-            <button
-              onClick={handleExport}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
-            >
-              <span>📄</span>
-              <span>Export PDF</span>
+              Close
             </button>
           </div>
         </div>
