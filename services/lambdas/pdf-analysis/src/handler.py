@@ -3060,7 +3060,7 @@ def generate_internal_summary(event_payload: dict) -> dict:
 {''.join(reports_text)}
 
 **Instructions**:
-Generate a slightly more detailed internal summary (roughly 10% longer than the prior format) using these EXACT headers (in this exact order). Use short paragraphs or multi-sentence bullets so each section feels substantive without becoming verbose.
+Generate a detailed, narrative-style internal summary using these EXACT headers (in this exact order). Expand on each point to provide full context. Avoid terse fragments; use complete sentences and short paragraphs to explain the significance of the data.
 
 **{company_name} — {cadence}**
 
@@ -3105,10 +3105,9 @@ Generate a slightly more detailed internal summary (roughly 10% longer than the 
 • [Bullet point summary of cash position]
 
 **REQUIREMENTS**:
-- Use bullet points (•) but allow 2–3 sentences per bullet for context
-- Target ~10% more detail than the previous concise format while staying data-driven
-- Extract insights from the financial reports provided
-- Prefer clear sentences over fragments; keep each bullet under 3 sentences
+- Use bullet points (•) but write 2-4 full sentences per bullet to fully explain the context and implications.
+- Be comprehensive and narrative. Do not use brief or clipped phrases.
+- Extract insights from the financial reports provided and explain the 'why' behind the metrics.
 - If data is not available, use "N/A" or skip that bullet
 - NO fancy formatting, NO tables, NO graphics - just simple markdown text with bullet points
 """
