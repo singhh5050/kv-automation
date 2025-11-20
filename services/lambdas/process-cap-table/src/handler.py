@@ -210,10 +210,10 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
 
-        # ——— 1 Metadata (first 6 rows) ———
+        # ——— 1 Metadata parsing with merged-cell handling ———
         try:
-            df_meta = pd.read_excel(xlsx_io, nrows=6, header=None)
-            row0 = df_meta.iloc[0]
+            df_meta_raw = pd.read_excel(xlsx_io, nrows=10, header=None)
+            row0 = df_meta_raw.iloc[0]
             extracted_company_name = next(
                 (_clean_string(c, fixes_log=defensive_fixes) for c in row0 if not _is_missing(c)), 
                 "Unknown Company"
@@ -222,13 +222,26 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
             # Use override if provided, otherwise use extracted name
             company_name = company_name_override if company_name_override else extracted_company_name
 
-            # Drop first row/col then tidy up
-            df_meta = df_meta.iloc[1:, 1:].dropna(how="all", axis=0).dropna(how="all", axis=1)
+            # Identify the first column that appears to contain metadata labels to avoid merged-cell blanks
+            label_col_idx = 0
+            for col_idx in range(min(5, df_meta_raw.shape[1])):
+                col_vals = df_meta_raw.iloc[:, col_idx].astype(str).str.lower()
+                if col_vals.str.contains(r"post[\s\-]?money|valuation|round|price").any():
+                    label_col_idx = col_idx
+                    break
+
+            # Keep only columns from the detected label column onward, drop empty borders
+            df_meta = df_meta_raw.iloc[:, label_col_idx:]
+            df_meta = df_meta.dropna(how="all", axis=0).dropna(how="all", axis=1)
+
             if not df_meta.empty:
                 df_meta.iloc[0, 0] = "Round"
                 df_meta = df_meta.T
                 df_meta.columns = df_meta.iloc[0]
                 df_meta = df_meta.iloc[1:].reset_index(drop=True)
+            if "Round" in df_meta.columns:
+                # Forward-fill Round labels to handle merged cells that only populate the first column of a block
+                df_meta["Round"] = df_meta["Round"].ffill()
 
             # Helper function to safely convert to float, removing currency symbols
             def safe_float(x):
@@ -251,66 +264,67 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 if (("amt" in str(c).lower() and "raised" in str(c).lower()) or "amount raised" in str(c).lower())
             ]
 
-            # Choose the latest round row by most recent date among date_cols.
-            # Tie-breaker: if dates match, prefer the RIGHTMOST occurrence (larger idx).
-            chosen_idx = None
+            chosen_round_raw = None
             chosen_date = None
-            if not df_meta.empty:
+
+            if not df_meta.empty and "Round" in df_meta.columns:
+                latest_date = None
+                latest_date_round = None
                 for idx in df_meta.index:
+                    round_cell = df_meta.at[idx, "Round"]
+                    if _is_missing(round_cell):
+                        continue
+                    round_label = str(round_cell).strip()
+                    if not round_label:
+                        continue
+
                     row_date = None
                     for dc in date_cols:
                         try:
                             d = pd.to_datetime(df_meta.at[idx, dc], errors="coerce")
                             if pd.notna(d):
-                                rd = d.to_pydatetime().date()
-                                if row_date is None or rd > row_date:
-                                    row_date = rd
+                                row_date = d.to_pydatetime().date()
                         except Exception:
                             continue
-                    if row_date is None:
-                        continue
+                    if row_date:
+                        if latest_date is None or row_date > latest_date:
+                            latest_date = row_date
+                            latest_date_round = round_label
 
-                    if chosen_date is None or row_date > chosen_date:
-                        chosen_idx, chosen_date = idx, row_date
-                    elif row_date == chosen_date:
-                        # tie-breaker for identical dates: prefer the RIGHTMOST occurrence (larger idx)
-                        if idx > chosen_idx:
-                            chosen_idx, chosen_date = idx, row_date
+                if latest_date_round:
+                    chosen_round_raw = latest_date_round
+                    chosen_date = latest_date
+                else:
+                    # Fallback: choose the rightmost (last) non-empty round label
+                    round_series = df_meta["Round"].astype(str).str.strip()
+                    round_series = round_series[round_series != ""]
+                    if not round_series.empty:
+                        chosen_round_raw = round_series.iloc[-1]
 
-            # Fallbacks if no date present: prefer last row that contains a 'Round' label of any sort;
-            # else just pick the last non-empty row
-            if chosen_idx is None:
-                if "Round" in df_meta.columns:
-                    non_empty_mask = df_meta["Round"].astype(str).str.strip() != ""
-                    if non_empty_mask.any():
-                        chosen_idx = non_empty_mask[non_empty_mask].index[-1]
-                if chosen_idx is None:
-                    chosen_idx = df_meta.index[-1] if len(df_meta.index) > 0 else None
-
-            # Extract round name
-            if chosen_idx is not None and "Round" in df_meta.columns:
-                round_raw = df_meta.at[chosen_idx, "Round"]
-                round_name = sanitize_round_name(round_raw)
-            else:
-                round_name = "Current"
-
-            # Helper to pick the last non-null numeric in preferred columns for the chosen row
-            def pick_value_from_cols(row_idx, cols):
-                if row_idx is None or not cols:
+            def pick_value_from_round_rows(rows_df, cols):
+                if rows_df.empty or not cols:
                     return None
                 value = None
-                for col in cols:
-                    try:
-                        cand = safe_float(df_meta.at[row_idx, col])
+                for _, row in rows_df.iterrows():
+                    for col in cols:
+                        try:
+                            cand = safe_float(row.get(col))
+                        except Exception:
+                            cand = None
                         if cand is not None:
-                            value = cand  # keep overwriting to effectively select the "last" matching column
-                    except Exception:
-                        continue
+                            value = cand
                 return value
 
-            valuation = pick_value_from_cols(chosen_idx, post_money_cols)
-            amount_raised = pick_value_from_cols(chosen_idx, amt_raised_cols)
-            # Use chosen_date if we found one, else None
+            if chosen_round_raw:
+                round_name = sanitize_round_name(chosen_round_raw)
+                round_rows = df_meta[df_meta["Round"] == chosen_round_raw]
+                valuation = pick_value_from_round_rows(round_rows, post_money_cols)
+                amount_raised = pick_value_from_round_rows(round_rows, amt_raised_cols)
+            else:
+                round_name = "Current"
+                valuation = None
+                amount_raised = None
+
             round_date = chosen_date
         except Exception as e:
             print(f"⚠️  Metadata parse error: {e}")
@@ -357,8 +371,10 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
 
         # ——— 3 Pool values ———
         def row_value(inv_name, column):
+            if column not in df.columns:
+                return 0
             row = df.loc[df["Investor"].astype(str).str.strip() == inv_name]
-            return row[column].values[0] if not row.empty and column in row else 0
+            return row[column].values[0] if not row.empty else 0
 
         # Raw values (still in whatever units the sheet stores – shares or % FDS)
         options_outstanding_raw = row_value("Options Outstanding", final_fds_col_name)
