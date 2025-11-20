@@ -5,7 +5,7 @@ import io
 import re
 import ssl
 import math
-from datetime import datetime
+from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from typing import Dict, Any
 
@@ -80,6 +80,27 @@ def find_columns_by_alias(columns, alias_patterns):
                 matches.append((idx, col_str))
                 break
     return matches
+
+
+def _json_safe(value):
+    """Convert numpy/pandas types to JSON-serializable Python primitives."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, set):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (np.integer, np.int_)):
+        return int(value)
+    if isinstance(value, (np.floating, np.float_)):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        return [_json_safe(v) for v in value.tolist()]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -170,9 +191,12 @@ def lambda_handler(event, context):
     if not xlsx_b64:
         return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Missing xlsx_data"})}
 
-    result = process_cap_table_xlsx_with_override(xlsx_b64, filename, company_name_override, user_provided_name, company_id)
+    result = process_cap_table_xlsx_with_override(
+        xlsx_b64, filename, company_name_override, user_provided_name, company_id
+    )
     status = 200 if result["success"] else 500
-    return {"statusCode": status, "headers": headers, "body": json.dumps(result)}
+    safe_body = _json_safe(result)
+    return {"statusCode": status, "headers": headers, "body": json.dumps(safe_body)}
 
 # ──────────────────────────────────────────────────────────────────────────
 # Core XLSX processing logic (metadata + investor table)
