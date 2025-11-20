@@ -50,6 +50,38 @@ def sanitize_round_name(raw: str) -> str:
     return m.group(0).title() if m else raw.strip()
 
 
+def normalize_header_text(value: Any) -> str:
+    """Lowercase alphanumeric/% tokens to compare header labels."""
+    if not isinstance(value, str):
+        return ""
+    cleaned = re.sub(r"[^A-Za-z0-9%]+", " ", value)
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+HEADER_ALIASES = {
+    "percent_fds": [r"final\s*%?\s*fds", r"%\s*fds"],
+    "total_fds": [r"final\s*fds", r"total\s*fds"],
+    "total_invested": [r"total\s*\$\s*invested\s*/\s*lp", r"total\s*\$\s*invested"],
+}
+
+
+def find_columns_by_alias(columns, alias_patterns):
+    """Return [(idx, column_name)] for headers that match any alias pattern."""
+    matches = []
+    for idx, col in enumerate(columns):
+        col_str = str(col)
+        norm = normalize_header_text(col_str)
+        for alias in alias_patterns:
+            alias_norm = normalize_header_text(alias)
+            if alias_norm and norm == alias_norm:
+                matches.append((idx, col_str))
+                break
+            if re.search(alias, col_str, re.IGNORECASE):
+                matches.append((idx, col_str))
+                break
+    return matches
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Defensive data cleaning utilities
 # ──────────────────────────────────────────────────────────────────────────
@@ -273,16 +305,30 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         df.columns = ["Investor"] + df.columns.tolist()[1:]
         df.fillna(0, inplace=True)
 
-        # Numeric conversions
-        fds_cols = [c for c in df.columns if "% FDS" in str(c)]
-        invested_cols = [c for c in df.columns if "Total $ Invested" in str(c)]
-        df[fds_cols + invested_cols] = df[fds_cols + invested_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+        # Numeric conversions with header aliases
+        fds_matches = find_columns_by_alias(df.columns, HEADER_ALIASES["percent_fds"])
+        fds_cols = [col for _, col in fds_matches] or [c for c in df.columns if "% FDS" in str(c)]
 
-        last_fds_col = fds_cols[-1] if fds_cols else None
-        if last_fds_col:
-            df["Final % FDS"] = df[last_fds_col]
+        invested_matches = find_columns_by_alias(df.columns, HEADER_ALIASES["total_invested"])
+        invested_cols = [col for _, col in invested_matches] or [c for c in df.columns if "Total $ Invested" in str(c)]
+
+        numeric_cols = list(dict.fromkeys(fds_cols + invested_cols))
+        if numeric_cols:
+            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+        final_fds_col_name = fds_cols[-1] if fds_cols else None
+        if final_fds_col_name is None:
+            final_fds_col_name = "Final % FDS"
+            df[final_fds_col_name] = 0
+            defensive_fixes.append("Missing % FDS columns; defaulted Final % FDS to 0")
+
         last_invested_col = invested_cols[-1] if invested_cols else None
-        df["Total Invested"] = df[invested_cols].sum(axis=1)
+        if invested_cols:
+            df["Total Invested"] = df[invested_cols].sum(axis=1)
+        else:
+            df["Total Invested"] = 0
+            defensive_fixes.append("Missing Total $ Invested columns; defaulted totals to 0")
+
         df["Final Round Investment"] = df[last_invested_col] if last_invested_col else 0
 
         # ——— 3 Pool values ———
@@ -291,9 +337,9 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
             return row[column].values[0] if not row.empty and column in row else 0
 
         # Raw values (still in whatever units the sheet stores – shares or % FDS)
-        options_outstanding_raw = row_value("Options Outstanding", "Final % FDS")
-        option_pool_available_raw = row_value("Option Pool Available", "Final % FDS")
-        pool_increase_raw = row_value("Pool Increase", "Final % FDS")
+        options_outstanding_raw = row_value("Options Outstanding", final_fds_col_name)
+        option_pool_available_raw = row_value("Option Pool Available", final_fds_col_name)
+        pool_increase_raw = row_value("Pool Increase", final_fds_col_name)
         
         # Correct total calculation: Options Outstanding + Options Available + Pool Increase
         total_pool_size_raw = options_outstanding_raw + option_pool_available_raw + pool_increase_raw
@@ -321,7 +367,7 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
             investors.append({
                 "investor_name": name,
                 "total_invested": float(r["Total Invested"]),
-                "final_fds": convert_fds(r["Final % FDS"]),
+                "final_fds": convert_fds(r.get(final_fds_col_name, 0)),
                 "final_round_investment": float(r["Final Round Investment"]),
             })
 
