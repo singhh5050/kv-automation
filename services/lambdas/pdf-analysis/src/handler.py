@@ -3060,7 +3060,7 @@ def generate_internal_summary(event_payload: dict) -> dict:
 {''.join(reports_text)}
 
 **Instructions**:
-Generate a concise internal summary using these EXACT headers (in this exact order):
+Generate a slightly more detailed internal summary (roughly 10% longer than the prior format) using these EXACT headers (in this exact order). Use short paragraphs or multi-sentence bullets so each section feels substantive without becoming verbose.
 
 **{company_name} — {cadence}**
 
@@ -3105,10 +3105,10 @@ Generate a concise internal summary using these EXACT headers (in this exact ord
 • [Bullet point summary of cash position]
 
 **REQUIREMENTS**:
-- Use ONLY bullet points (•), no prose paragraphs
-- Be concise and data-driven
+- Use bullet points (•) but allow 2–3 sentences per bullet for context
+- Target ~10% more detail than the previous concise format while staying data-driven
 - Extract insights from the financial reports provided
-- Keep each bullet point to 1-2 lines maximum
+- Prefer clear sentences over fragments; keep each bullet under 3 sentences
 - If data is not available, use "N/A" or skip that bullet
 - NO fancy formatting, NO tables, NO graphics - just simple markdown text with bullet points
 """
@@ -3126,7 +3126,7 @@ Generate a concise internal summary using these EXACT headers (in this exact ord
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an expert investment analyst creating concise internal portfolio company summaries."},
+                {"role": "system", "content": "You are a senior KV Capital investor-relations analyst who synthesizes private portfolio data into crisp, compliance-friendly one-pager summaries for partners."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
