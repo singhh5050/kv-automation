@@ -195,12 +195,10 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 if (("amt" in str(c).lower() and "raised" in str(c).lower()) or "amount raised" in str(c).lower())
             ]
 
-            # Choose the latest round row by most recent date among date_cols, with tie-breakers:
-            # 1) prefer 'closing' in Round
-            # 2) otherwise prefer the RIGHTMOST occurrence (larger idx)
+            # Choose the latest round row by most recent date among date_cols.
+            # Tie-breaker: if dates match, prefer the RIGHTMOST occurrence (larger idx).
             chosen_idx = None
             chosen_date = None
-            chosen_is_closing = False
             if not df_meta.empty:
                 for idx in df_meta.index:
                     row_date = None
@@ -216,21 +214,12 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                     if row_date is None:
                         continue
 
-                    cur_is_closing = (
-                        "Round" in df_meta.columns and
-                        isinstance(df_meta.at[idx, "Round"], str) and
-                        "closing" in df_meta.at[idx, "Round"].lower()
-                    )
-
                     if chosen_date is None or row_date > chosen_date:
-                        chosen_idx, chosen_date, chosen_is_closing = idx, row_date, cur_is_closing
+                        chosen_idx, chosen_date = idx, row_date
                     elif row_date == chosen_date:
-                        # tie-breakers for identical dates:
-                        # 1) prefer 'closing'
-                        # 2) otherwise prefer the RIGHTMOST occurrence (larger idx)
-                        if (cur_is_closing and not chosen_is_closing) or \
-                           (cur_is_closing == chosen_is_closing and idx > chosen_idx):
-                            chosen_idx, chosen_date, chosen_is_closing = idx, row_date, cur_is_closing
+                        # tie-breaker for identical dates: prefer the RIGHTMOST occurrence (larger idx)
+                        if idx > chosen_idx:
+                            chosen_idx, chosen_date = idx, row_date
 
             # Fallbacks if no date present: prefer last row that contains a 'Round' label of any sort;
             # else just pick the last non-empty row
