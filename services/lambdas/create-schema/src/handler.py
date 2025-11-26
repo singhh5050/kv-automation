@@ -407,16 +407,65 @@ def create_database_schema(conn):
 
     # ALL TABLE CREATION AND INDEXES COMMENTED OUT IN SAFE MODE
     # (Rest of the table creation code is commented out for safety)
+
+    ensure_vector_store_tables(cursor)
     
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
         "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, company_executives, and company_milestones tables created safely",
         "operation": "add_evidence_field_notes_kpi_health_executives_and_milestones_tables",
-        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones"],
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones"]
+        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"]
     }
+
+
+def ensure_vector_store_tables(cursor):
+    """Create pgvector extension and the tables the Vanna PG vector store relies on."""
+    print("🔧 Ensuring pgvector extension and embeddings tables exist...")
+    try:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS langchain_pg_collection (
+            uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name TEXT UNIQUE NOT NULL,
+            cmetadata JSONB
+        );
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS langchain_pg_embedding (
+            id TEXT PRIMARY KEY,
+            collection_id UUID REFERENCES langchain_pg_collection(uuid) ON DELETE CASCADE,
+            embedding vector(1536),
+            document TEXT,
+            cmetadata JSONB
+        );
+        """)
+
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_langchain_collection_name
+        ON langchain_pg_collection (name);
+        """)
+
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_langchain_embedding_collection
+        ON langchain_pg_embedding (collection_id);
+        """)
+
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_langchain_embedding_metadata
+        ON langchain_pg_embedding
+        USING GIN (cmetadata jsonb_path_ops);
+        """)
+
+        print("✅ pgvector extension and embeddings tables ready")
+    except Exception as e:
+        print(f"⚠️ Error ensuring vector store tables: {e}")
+        raise e
 
 
 # Local test runner
