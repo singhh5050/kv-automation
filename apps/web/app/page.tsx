@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import FileUpload from '@/components/ui/FileUpload'
 import CapTableUpload from '@/components/company/CapTableUpload'
 import CompanyCard from '@/components/company/CompanyCard'
+import VoiceQueryInterface from '@/components/voice/VoiceQueryInterface'
 import { FinancialReport, Company, CompanyOverview, CapTableData, PortfolioSummary, Milestone } from '@/types'
 import { 
   uploadFile, 
@@ -1244,37 +1245,9 @@ Click OK to reload the page and see updated company list, or Cancel to continue 
                 </>
               )}
 
-              {/* Voice View - Coming Soon */}
+              {/* Voice View - Vanna.AI Powered */}
               {activeView === 'voice' && (
-                <div className="flex flex-col items-center justify-center py-20">
-                  <div className="text-8xl mb-6">🎤</div>
-                  <h2 className="text-3xl font-bold text-gray-900 mb-4">Database Intelligence</h2>
-                  <p className="text-lg text-gray-600 mb-6 max-w-2xl text-center">
-                    Coming Soon: Interact with your portfolio database using natural language. 
-                    Ask questions, get insights, and manage your companies hands-free.
-                  </p>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-2xl">
-                    <h3 className="font-semibold text-blue-900 mb-3">Planned Features:</h3>
-                    <ul className="space-y-2 text-sm text-blue-800">
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>Natural language queries about company performance and metrics</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>Voice-activated data updates and milestone tracking</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>AI-powered insights and recommendations</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>Hands-free portfolio management</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
+                <VoiceQueryInterface />
               )}
             </div>
           </div>
