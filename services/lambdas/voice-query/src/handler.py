@@ -1,776 +1,631 @@
 """
-Voice Query Lambda - Natural Language to SQL using Vanna.AI
-MVP Version - Handles natural language queries about portfolio companies
+Voice Query Lambda - direct GPT-5 text-to-SQL pipeline
 """
+
+from __future__ import annotations
 
 import json
 import os
+import re
 import ssl
-from urllib.parse import quote_plus
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
 
+import httpx
 import pg8000
-from langchain_openai import OpenAIEmbeddings
-from vanna.pgvector import PG_VectorStore
-from vanna.openai import OpenAI_Chat
 
 CA_BUNDLE_PATH = os.path.join(os.path.dirname(__file__), "rds-combined-ca-bundle.pem")
+SCHEMA_CACHE: Dict[str, Optional[str]] = {"text": None}
+DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 
-# ────────────────────────────────────────────────────────────
-# Configuration
-# ────────────────────────────────────────────────────────────
 
-def get_db_config():
-    """Get database configuration from environment variables"""
+def get_env_int(name: str, default: int) -> int:
+    """Safely fetch an integer from the environment."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
+
+
+def safe_json_dumps(payload):
+    """JSON helper that handles datetime/date objects."""
+    return json.dumps(payload, default=str)
+
+
+def get_db_config() -> Dict[str, str]:
+    """Load database credentials from environment variables."""
     return {
         "host": os.environ.get("DB_HOST"),
         "port": int(os.environ.get("DB_PORT", 5432)),
         "database": os.environ.get("DB_NAME"),
         "user": os.environ.get("DB_USER"),
-        "password": os.environ.get("DB_PASSWORD")
+        "password": os.environ.get("DB_PASSWORD"),
     }
 
-class PostgresVanna(PG_VectorStore, OpenAI_Chat):
-    """Vanna stack backed by Postgres/pgvector for embeddings plus OpenAI for SQL generation."""
 
-    def __init__(
-        self,
-        *,
-        connection_string: str,
-        openai_api_key: str,
-        openai_model: str,
-        embedding_model: str,
-        n_results: int,
-    ):
-        embeddings = OpenAIEmbeddings(model=embedding_model, api_key=openai_api_key)
-        vector_config = {
-            "connection_string": connection_string,
-            "embedding_function": embeddings,
-            "n_results": n_results,
-        }
-        PG_VectorStore.__init__(self, config=vector_config)
-
-        OpenAI_Chat.__init__(
-            self,
-            config={
-                "api_key": openai_api_key,
-                "model": openai_model,
-            },
-        )
+def get_ssl_context():
+    """Return an SSL context that trusts the bundled RDS CA bundle."""
+    ca_bundle = os.environ.get("RDS_CA_PATH", CA_BUNDLE_PATH)
+    if ca_bundle and os.path.exists(ca_bundle):
+        return ssl.create_default_context(cafile=ca_bundle)
+    return ssl.create_default_context()
 
 
-_local_vanna = None
+def get_db_connection():
+    """Create a pg8000 connection using the shared SSL context."""
+    cfg = get_db_config()
+    return pg8000.connect(
+        host=cfg["host"],
+        port=cfg["port"],
+        database=cfg["database"],
+        user=cfg["user"],
+        password=cfg["password"],
+        ssl_context=get_ssl_context(),
+    )
 
 
-def get_vanna_client():
-    """Initialize (or reuse) the local Vanna instance with Postgres vector storage."""
-    global _local_vanna
-    if _local_vanna:
-        return _local_vanna
+def fetchall_dicts(cursor) -> List[Dict[str, object]]:
+    """Convert pg8000 cursor rows to a list of dicts."""
+    columns = [desc[0] for desc in cursor.description] if cursor.description else []
+    rows = cursor.fetchall()
+    return [dict(zip(columns, row)) for row in rows]
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
-    if not openai_api_key:
+
+def build_schema_text(columns: List[Dict[str, object]], foreign_keys: List[Dict[str, object]]) -> str:
+    """Convert raw information_schema rows into a compact schema summary."""
+    tables = defaultdict(list)
+    table_order: List[str] = []
+
+    for row in columns:
+        table_key = f"{row['table_schema']}.{row['table_name']}"
+        if table_key not in tables:
+            table_order.append(table_key)
+
+        column_parts = [f"{row['column_name']} {row['data_type']}"]
+        if row.get("is_nullable") == "NO":
+            column_parts.append("NOT NULL")
+        default_value = row.get("column_default")
+        if default_value:
+            column_parts.append(f"DEFAULT {default_value}")
+
+        tables[table_key].append(" ".join(column_parts))
+
+    lines: List[str] = []
+    for table in table_order:
+        lines.append(f"{table}:")
+        for column_def in tables[table]:
+            lines.append(f"  - {column_def}")
+
+    if foreign_keys:
+        lines.append("Foreign keys:")
+        for fk in foreign_keys:
+            lines.append(
+                "  - "
+                f"{fk['table_schema']}.{fk['table_name']}.{fk['column_name']} "
+                f"-> {fk['foreign_table_schema']}.{fk['foreign_table_name']}.{fk['foreign_column_name']}"
+            )
+
+    return "\n".join(lines)
+
+
+def fetch_schema_overview(force_refresh: bool = False) -> str:
+    """Pull a fresh schema snapshot from Postgres (cached between invocations)."""
+    if SCHEMA_CACHE["text"] and not force_refresh:
+        return SCHEMA_CACHE["text"]
+
+    columns_query = """
+        SELECT
+            table_schema,
+            table_name,
+            column_name,
+            data_type,
+            is_nullable,
+            column_default
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY table_schema, table_name, ordinal_position;
+    """
+
+    fk_query = """
+        SELECT
+            tc.table_schema,
+            tc.table_name,
+            kcu.column_name,
+            ccu.table_schema AS foreign_table_schema,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY tc.table_schema, tc.table_name, kcu.column_name;
+    """
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(columns_query)
+    column_rows = fetchall_dicts(cursor)
+
+    cursor.execute(fk_query)
+    fk_rows = fetchall_dicts(cursor)
+
+    cursor.close()
+    conn.close()
+
+    schema_snapshot = build_schema_text(column_rows, fk_rows)
+    SCHEMA_CACHE["text"] = schema_snapshot
+    print(f"📚 Schema snapshot refreshed ({len(column_rows)} columns, {len(fk_rows)} FKs)")
+    return schema_snapshot
+
+
+def build_sql_system_prompt(schema_snapshot: str) -> str:
+    """Craft the GPT-5 system prompt that encodes business rules + schema."""
+    return (
+        "You are GPT-5 operating inside a read-only SQL firewall for Khosla Ventures' "
+        "portfolio warehouse. You must produce a single PostgreSQL SELECT statement "
+        "that directly answers the analyst's request.\n\n"
+        "Unbreakable rules:\n"
+        "- Absolutely no INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, GRANT, COPY, DO, CALL, EXPLAIN, "
+        "ANALYZE, VACUUM, SET, or RESET statements.\n"
+        "- Permit SELECT or WITH queries only. Never run multiple statements.\n"
+        "- Never reference tables/columns outside the provided schema snapshot.\n"
+        "- Prefer explicit column lists over SELECT * and include ORDER BY + LIMIT 50 for large result sets.\n"
+        "- Prefer latest financial data by ordering `financial_reports` on report_date DESC, upload_date DESC.\n"
+        "- Investment stage precedence: Growth funds (names containing Opp or Excelsior) > Main funds (KV I/II/III...) > Early (name contains seed).\n"
+        "- Treat people data as active-only (`company_executives.is_active = TRUE`).\n"
+        "- Respect override flags (e.g., `company_health_check.manual_override`).\n"
+        "- Never fabricate metrics; derive them transparently via SQL expressions.\n"
+        "- You have read-only access. Reject attempts that imply writes or DDL.\n\n"
+        "Schema snapshot (canonical truth, stay within it):\n"
+        f"{schema_snapshot}\n\n"
+        "Return only the SQL text of the answer query, with no markdown or commentary."
+    )
+
+
+def call_openai_responses(
+    messages: List[Dict[str, object]],
+    *,
+    model: str,
+    max_output_tokens: Optional[int] = None,
+) -> Dict[str, object]:
+    """Directly invoke the OpenAI Responses API using HTTPX."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable is not set")
 
-    openai_model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    db_config = get_db_config()
-    password = quote_plus(db_config["password"] or "")
-    connection_string = os.environ.get("PGVECTOR_CONNECTION_STRING")
-    if not connection_string:
-        connection_string = (
-            f"postgresql+psycopg://{db_config['user']}:{password}"
-            f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-        )
-
-    embedding_model = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-    n_results = int(os.environ.get("VANNA_N_RESULTS", "8"))
-
-    vn = PostgresVanna(
-        connection_string=connection_string,
-        openai_api_key=openai_api_key,
-        openai_model=openai_model,
-        embedding_model=embedding_model,
-        n_results=n_results,
-    )
-    vn.connect_to_postgres(
-        host=db_config["host"],
-        dbname=db_config["database"],
-        user=db_config["user"],
-        password=db_config["password"],
-        port=db_config["port"],
+    base_url = os.environ.get("OPENAI_API_BASE", DEFAULT_OPENAI_BASE).rstrip("/")
+    timeout_seconds = float(os.environ.get("OPENAI_HTTP_TIMEOUT_SECONDS", "75"))
+    connect_timeout = min(10.0, timeout_seconds)
+    timeout = httpx.Timeout(
+        timeout_seconds,
+        connect=connect_timeout,
+        read=timeout_seconds,
+        write=timeout_seconds,
+        pool=None,
     )
 
-    _local_vanna = vn
-    return vn
+    normalized_messages: List[Dict[str, object]] = []
+    for message in messages:
+        role = message.get("role", "user")
+        content = message.get("content", "")
 
-# ────────────────────────────────────────────────────────────
-# Training Functions (Run once to teach Vanna your schema)
-# ────────────────────────────────────────────────────────────
+        if isinstance(content, str):
+            blocks = [{"type": "input_text", "text": content}]
+        elif isinstance(content, list):
+            blocks = content
+        else:
+            blocks = [{"type": "input_text", "text": str(content)}]
 
-def train_vanna_on_schema(vn):
-    """
-    Train Vanna on your database schema
-    This only needs to be run ONCE (or when schema changes)
-    """
-    
-    print("🎓 Training Vanna on database schema...")
-
-    # 1. Use automatic training plan from information_schema
-    try:
-        schema_df = vn.run_sql("""
-            SELECT table_schema, table_name, column_name, data_type
-            FROM information_schema.columns
-            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY table_schema, table_name, ordinal_position
-        """)
-        plan = vn.get_training_plan_generic(schema_df)
-        if plan:
-            print("🧠 Training plan summary:")
-            for line in plan.get_summary()[:15]:
-                print(f"   • {line}")
-            vn.train(plan=plan)
-            print("✅ Automatic schema training plan applied")
-    except Exception as plan_error:
-        print(f"⚠️ Failed to apply automatic training plan: {plan_error}")
-    
-    # Core tables DDL - Vanna learns relationships from this
-    ddl_statements = [
-        # Companies table
-        """
-        CREATE TABLE companies (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            normalized_name VARCHAR(255) UNIQUE NOT NULL,
-            sector VARCHAR(20) CHECK (sector IN ('healthcare','consumer','enterprise','manufacturing')),
-            manually_edited BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Financial reports table
-        """
-        CREATE TABLE financial_reports (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            file_name VARCHAR(500) NOT NULL,
-            report_date DATE,
-            report_period VARCHAR(50),
-            sector VARCHAR(20),
-            cash_on_hand NUMERIC(15,2),
-            monthly_burn_rate NUMERIC(15,2),
-            cash_out_date TEXT,
-            runway INTEGER,
-            budget_vs_actual TEXT,
-            financial_summary TEXT,
-            sector_highlight_a TEXT,
-            sector_highlight_b TEXT,
-            key_risks TEXT,
-            personnel_updates TEXT,
-            next_milestones TEXT,
-            upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Cap table rounds
-        """
-        CREATE TABLE cap_table_rounds (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            round_name VARCHAR(100),
-            valuation NUMERIC(15,2),
-            amount_raised NUMERIC(15,2),
-            round_date DATE,
-            total_pool_size NUMERIC(10,4),
-            pool_available NUMERIC(10,4),
-            pool_utilization NUMERIC(10,4),
-            options_outstanding NUMERIC(15,2),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Cap table investors
-        """
-        CREATE TABLE cap_table_investors (
-            id SERIAL PRIMARY KEY,
-            round_id INTEGER NOT NULL REFERENCES cap_table_rounds(id) ON DELETE CASCADE,
-            investor_name VARCHAR(255),
-            total_invested NUMERIC(15,2),
-            final_fds NUMERIC(10,4),
-            final_round_investment NUMERIC(15,2),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Company milestones
-        """
-        CREATE TABLE company_milestones (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            financial_report_id INTEGER REFERENCES financial_reports(id),
-            milestone_date DATE NOT NULL,
-            description TEXT NOT NULL,
-            priority VARCHAR(10) CHECK (priority IN ('critical', 'high', 'medium', 'low')),
-            completed BOOLEAN DEFAULT FALSE,
-            completed_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Company health check
-        """
-        CREATE TABLE company_health_check (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            health_score VARCHAR(10) NOT NULL CHECK (health_score IN ('GREEN', 'YELLOW', 'RED')),
-            justification TEXT NOT NULL,
-            criticality_level INTEGER CHECK (criticality_level >= 1 AND criticality_level <= 10),
-            manual_override BOOLEAN DEFAULT FALSE,
-            analysis_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Company executives
-        """
-        CREATE TABLE company_executives (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            full_name VARCHAR(255),
-            title VARCHAR(255),
-            linkedin_url VARCHAR(500),
-            is_ceo BOOLEAN DEFAULT FALSE,
-            is_active BOOLEAN DEFAULT TRUE,
-            display_order INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        
-        # Company notes
-        """
-        CREATE TABLE company_notes (
-            id SERIAL PRIMARY KEY,
-            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-            subject VARCHAR(255) NOT NULL,
-            content TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """
-    ]
-    
-    # Train on DDL
-    for ddl in ddl_statements:
-        vn.train(ddl=ddl)
-    
-    print("✅ Schema training complete")
-    
-    # Train on common query patterns - these teach Vanna what users want
-    example_queries = [
-        # Portfolio overview queries
-        {
-            "question": "How many companies do we have in the portfolio?",
-            "sql": "SELECT COUNT(*) as total_companies FROM companies;"
-        },
-        {
-            "question": "Show me all companies by sector",
-            "sql": "SELECT sector, COUNT(*) as count FROM companies GROUP BY sector ORDER BY count DESC;"
-        },
-        
-        # Financial queries
-        {
-            "question": "Which companies have less than 6 months runway?",
-            "sql": """
-                SELECT c.name, fr.runway, fr.cash_on_hand, fr.monthly_burn_rate
-                FROM companies c
-                JOIN financial_reports fr ON fr.company_id = c.id
-                WHERE fr.id = (
-                    SELECT id FROM financial_reports 
-                    WHERE company_id = c.id 
-                    ORDER BY report_date DESC LIMIT 1
-                )
-                AND fr.runway < 6
-                ORDER BY fr.runway ASC;
-            """
-        },
-        {
-            "question": "What's the total cash on hand across all companies?",
-            "sql": """
-                SELECT SUM(fr.cash_on_hand) as total_cash
-                FROM companies c
-                JOIN financial_reports fr ON fr.company_id = c.id
-                WHERE fr.id = (
-                    SELECT id FROM financial_reports 
-                    WHERE company_id = c.id 
-                    ORDER BY report_date DESC LIMIT 1
-                );
-            """
-        },
-        {
-            "question": "Show me companies with their latest financial data",
-            "sql": """
-                SELECT 
-                    c.name,
-                    c.sector,
-                    fr.cash_on_hand,
-                    fr.monthly_burn_rate,
-                    fr.runway,
-                    fr.report_date
-                FROM companies c
-                LEFT JOIN LATERAL (
-                    SELECT * FROM financial_reports
-                    WHERE company_id = c.id
-                    ORDER BY report_date DESC
-                    LIMIT 1
-                ) fr ON true
-                ORDER BY c.name;
-            """
-        },
-        
-        # Health check queries
-        {
-            "question": "Which companies have red health scores?",
-            "sql": """
-                SELECT c.name, hc.health_score, hc.justification
-                FROM companies c
-                JOIN company_health_check hc ON hc.company_id = c.id
-                WHERE hc.id = (
-                    SELECT id FROM company_health_check
-                    WHERE company_id = c.id
-                    ORDER BY created_at DESC LIMIT 1
-                )
-                AND hc.health_score = 'RED'
-                ORDER BY hc.created_at DESC;
-            """
-        },
-        
-        # Milestone queries
-        {
-            "question": "Show me all overdue milestones",
-            "sql": """
-                SELECT 
-                    c.name as company_name,
-                    m.description,
-                    m.milestone_date,
-                    m.priority
-                FROM company_milestones m
-                JOIN companies c ON m.company_id = c.id
-                WHERE m.completed = FALSE
-                AND m.milestone_date < CURRENT_DATE
-                ORDER BY m.priority DESC, m.milestone_date ASC;
-            """
-        },
-        {
-            "question": "What are the critical milestones due this month?",
-            "sql": """
-                SELECT 
-                    c.name as company_name,
-                    m.description,
-                    m.milestone_date
-                FROM company_milestones m
-                JOIN companies c ON m.company_id = c.id
-                WHERE m.priority = 'critical'
-                AND m.completed = FALSE
-                AND m.milestone_date >= DATE_TRUNC('month', CURRENT_DATE)
-                AND m.milestone_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
-                ORDER BY m.milestone_date ASC;
-            """
-        },
-        
-        # Cap table / ownership queries
-        {
-            "question": "What's our KV ownership across all companies?",
-            "sql": """
-                SELECT 
-                    c.name as company_name,
-                    SUM(ci.final_fds) as kv_ownership_percentage
-                FROM companies c
-                JOIN cap_table_rounds cr ON cr.company_id = c.id
-                JOIN cap_table_investors ci ON ci.round_id = cr.id
-                WHERE ci.investor_name LIKE 'KV%'
-                GROUP BY c.id, c.name
-                ORDER BY kv_ownership_percentage DESC;
-            """
-        },
-        
-        # Executive queries
-        {
-            "question": "Who are the CEOs of our portfolio companies?",
-            "sql": """
-                SELECT 
-                    c.name as company_name,
-                    ce.full_name as ceo_name,
-                    ce.linkedin_url
-                FROM companies c
-                JOIN company_executives ce ON ce.company_id = c.id
-                WHERE ce.is_ceo = TRUE
-                AND ce.is_active = TRUE
-                ORDER BY c.name;
-            """
-        },
-        
-        # Combined/complex queries
-        {
-            "question": "Show me healthcare companies with low runway and their health scores",
-            "sql": """
-                SELECT 
-                    c.name,
-                    fr.runway,
-                    fr.cash_on_hand,
-                    hc.health_score,
-                    hc.justification
-                FROM companies c
-                JOIN financial_reports fr ON fr.company_id = c.id
-                LEFT JOIN company_health_check hc ON hc.company_id = c.id
-                WHERE c.sector = 'healthcare'
-                AND fr.id = (
-                    SELECT id FROM financial_reports 
-                    WHERE company_id = c.id 
-                    ORDER BY report_date DESC LIMIT 1
-                )
-                AND hc.id = (
-                    SELECT id FROM company_health_check
-                    WHERE company_id = c.id
-                    ORDER BY created_at DESC LIMIT 1
-                )
-                AND fr.runway < 9
-                ORDER BY fr.runway ASC;
-            """
-        }
-    ]
-    
-    # Train on example queries
-    print("🎓 Training Vanna on example queries...")
-    for example in example_queries:
-        vn.train(
-            question=example["question"],
-            sql=example["sql"]
+        normalized_messages.append(
+            {
+                "role": role,
+                "content": blocks,
+            }
         )
-    
-    print("✅ Query pattern training complete")
-    print(f"🎉 Vanna is trained on {len(ddl_statements)} tables and {len(example_queries)} query patterns")
-    
-    return {
-        "success": True,
-        "tables_trained": len(ddl_statements),
-        "queries_trained": len(example_queries)
+
+    payload: Dict[str, object] = {"model": model, "input": normalized_messages}
+    if max_output_tokens is None:
+        env_cap = get_env_int("OPENAI_RESPONSE_MAX_OUTPUT_TOKENS", 0)
+        if env_cap > 0:
+            max_output_tokens = env_cap
+    if max_output_tokens:
+        payload["max_output_tokens"] = max_output_tokens
+
+    reasoning_mode = (os.environ.get("OPENAI_REASONING_MODE") or "").strip().lower()
+    if reasoning_mode in {"low", "medium", "high"}:
+        payload["reasoning"] = {"effort": reasoning_mode}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
 
-# ────────────────────────────────────────────────────────────
-# Query Functions
-# ────────────────────────────────────────────────────────────
+    fallback_model = os.environ.get("OPENAI_FALLBACK_MODEL")
+    model_sequence = [model]
+    if fallback_model and fallback_model != model:
+        model_sequence.append(fallback_model)
 
-def generate_sql_from_question(vn, question: str):
-    """
-    Convert natural language question to SQL
-    """
-    try:
-        print(f"🤔 Generating SQL for: {question}")
-        
-        # Vanna generates SQL from the question
-        sql = vn.generate_sql(question)
-        
-        print(f"✅ Generated SQL: {sql}")
-        
-        return {
-            "success": True,
-            "sql": sql,
-            "question": question
-        }
-    
-    except Exception as e:
-        print(f"❌ Error generating SQL: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "question": question
-        }
+    with httpx.Client(timeout=timeout) as client:
+        last_error: Optional[Exception] = None
+        for candidate_model in model_sequence:
+            payload["model"] = candidate_model
+            try:
+                response = client.post(f"{base_url}/responses", headers=headers, json=payload)
+                response.raise_for_status()
+                if candidate_model != model:
+                    print(f"ℹ️ OpenAI fallback model '{candidate_model}' succeeded after primary '{model}' failed.")
+                return response.json()
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                status_code = exc.response.status_code if exc.response is not None else "unknown"
+                error_body = exc.response.text if exc.response is not None else "No response body"
+                print(f"⚠️ OpenAI API error ({status_code}) using model '{candidate_model}': {error_body}")
 
-def execute_query_safely(sql: str):
-    """
-    Execute SQL query with safety checks
-    Uses pg8000 directly instead of Vanna to avoid pandas dependency
-    """
-    try:
-        # Safety check - only allow SELECT queries
-        sql_upper = sql.strip().upper()
-        if not sql_upper.startswith("SELECT"):
-            return {
-                "success": False,
-                "error": "Only SELECT queries are allowed for security"
-            }
-        
-        # Check for dangerous keywords
-        dangerous_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE", "CREATE"]
-        for keyword in dangerous_keywords:
-            if keyword in sql_upper:
-                return {
-                    "success": False,
-                    "error": f"Query contains forbidden keyword: {keyword}"
-                }
-        
-        print(f"🔍 Executing SQL: {sql}")
-        
-        # Execute query using pg8000 directly
-        db_config = get_db_config()
-        ca_bundle = os.environ.get("RDS_CA_PATH", CA_BUNDLE_PATH)
-        ssl_context = None
-        if ca_bundle and os.path.exists(ca_bundle):
-            ssl_context = ssl.create_default_context(cafile=ca_bundle)
-        else:
-            ssl_context = ssl.create_default_context()
+                if (
+                    candidate_model == model
+                    and fallback_model
+                    and status_code in (400, 403)
+                    and error_body
+                    and "model" in error_body.lower()
+                ):
+                    print(f"↪️  Attempting fallback model '{fallback_model}'...")
+                    continue
 
-        conn = pg8000.connect(
-            host=db_config["host"],
-            port=db_config["port"],
-            database=db_config["database"],
-            user=db_config["user"],
-            password=db_config["password"],
-            ssl_context=ssl_context
+                raise
+
+        if last_error:
+            raise last_error
+
+        raise RuntimeError("OpenAI request failed with no additional context.")
+
+
+def extract_text_from_response(response_payload: Dict[str, object]) -> str:
+    """Normalize OpenAI Responses output JSON into a plaintext string."""
+    if not response_payload:
+        return ""
+
+    output_text = response_payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    chunks: List[str] = []
+    for item in response_payload.get("output", []) or []:
+        content_list = item.get("content") if isinstance(item, dict) else None
+        if not isinstance(content_list, list):
+            continue
+        for content in content_list:
+            if isinstance(content, dict):
+                text_payload = content.get("text")
+                if isinstance(text_payload, dict) and text_payload.get("value"):
+                    chunks.append(text_payload["value"])
+                elif isinstance(text_payload, str):
+                    chunks.append(text_payload)
+            elif hasattr(content, "text") and hasattr(content.text, "value"):
+                chunks.append(content.text.value)
+    return "\n".join(chunk for chunk in chunks if chunk).strip()
+
+
+def extract_sql_from_text(raw_text: Optional[str]) -> str:
+    """Strip code fences and return the bare SQL string."""
+    if not raw_text:
+        return ""
+
+    text = raw_text.strip()
+    if "```" in text:
+        segments = text.split("```")
+        for segment in segments:
+            candidate = segment.strip()
+            if not candidate:
+                continue
+            if candidate.lower().startswith("sql"):
+                candidate = candidate[3:].lstrip()
+            if candidate.upper().startswith(("SELECT", "WITH")):
+                text = candidate
+                break
+    return text.strip().strip(";")
+
+
+def validate_sql_for_read_only(sql: Optional[str]) -> Tuple[bool, Optional[str]]:
+    """Apply guardrails to ensure the SQL is read-only and single-statement."""
+    if not sql or not sql.strip():
+        return False, "Model returned an empty SQL string."
+
+    statement = sql.strip().rstrip(";")
+    normalized = statement.upper()
+    if not (normalized.startswith("SELECT") or normalized.startswith("WITH")):
+        return False, "Only SELECT or WITH queries are allowed."
+
+    forbidden_keywords = [
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "ALTER",
+        "TRUNCATE",
+        "CREATE",
+        "GRANT",
+        "REVOKE",
+        "COPY",
+        "CALL",
+        "DO",
+        "EXPLAIN",
+        "ANALYZE",
+        "VACUUM",
+        "SET",
+        "RESET",
+    ]
+
+    for keyword in forbidden_keywords:
+        if re.search(rf"\b{keyword}\b", normalized):
+            return False, f"Query contains forbidden keyword: {keyword}"
+
+    statements = [segment for segment in statement.split(";") if segment.strip()]
+    if len(statements) > 1:
+        return False, "Multiple SQL statements detected; only one is allowed."
+
+    return True, None
+
+
+def generate_sql_from_question(question: str, schema_snapshot: str) -> Dict[str, object]:
+    """Use GPT-5 to translate natural language into safe SQL with retries."""
+    print(f"🤔 Generating SQL for: {question}")
+    sql_model = os.environ.get("OPENAI_SQL_MODEL") or os.environ.get("OPENAI_MODEL", "gpt-5")
+    sql_token_cap = get_env_int("OPENAI_SQL_MAX_OUTPUT_TOKENS", 800)
+    system_prompt = build_sql_system_prompt(schema_snapshot)
+
+    max_attempts = int(os.environ.get("SQL_GENERATION_ATTEMPTS", "3"))
+    feedback: Optional[str] = None
+
+    for attempt in range(1, max_attempts + 1):
+        user_prompt = (
+            f"Analyst question: {question}\n"
+            "Respond with a single PostgreSQL SELECT statement that obeys every rule."
         )
-        
+        if feedback:
+            user_prompt += f"\nPrevious attempt was rejected because: {feedback}\nRegenerate a compliant query."
+
+        response_payload = call_openai_responses(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=sql_model,
+            max_output_tokens=sql_token_cap,
+        )
+
+        raw_text = extract_text_from_response(response_payload)
+        if not raw_text:
+            print(f"⚠️ GPT-5 SQL response was empty. Payload: {json.dumps(response_payload)}")
+
+        sql_candidate = extract_sql_from_text(raw_text)
+        is_valid, reason = validate_sql_for_read_only(sql_candidate)
+
+        if is_valid:
+            print(f"✅ SQL attempt {attempt} succeeded: {sql_candidate}")
+            return {"success": True, "sql": sql_candidate}
+
+        feedback = reason or "SQL failed validation."
+        print(f"⚠️ SQL attempt {attempt} rejected: {feedback}")
+
+    return {
+        "success": False,
+        "error": f"Unable to generate a safe SQL statement: {feedback or 'unknown error'}",
+        "question": question,
+    }
+
+
+def execute_query_safely(sql: str) -> Dict[str, object]:
+    """Run the generated SQL against Postgres after a final safety check."""
+    is_valid, reason = validate_sql_for_read_only(sql)
+    if not is_valid:
+        return {"success": False, "error": reason or "Unsafe SQL detected."}
+
+    try:
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(sql)
-        
-        # Get column names
+
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        
-        # Fetch results
         rows = cursor.fetchall()
-        
-        # Convert to list of dicts
         results = [dict(zip(columns, row)) for row in rows]
-        
+
         cursor.close()
         conn.close()
-        
-        print(f"✅ Query returned {len(results)} rows")
-        
-        return {
-            "success": True,
-            "data": results,
-            "row_count": len(results)
-        }
-    
-    except Exception as e:
-        print(f"❌ Error executing query: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
 
-def format_response_for_voice(question: str, data: list, sql: str):
-    """
-    Format query results into natural language for voice response
-    Uses Claude to generate conversational response
-    """
-    import anthropic
-    
+        print(f"✅ Query executed successfully ({len(results)} rows)")
+        return {"success": True, "data": results, "row_count": len(results)}
+    except Exception as exc:
+        print(f"❌ Error executing SQL: {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+def format_response_for_voice(question: str, data: List[Dict[str, object]], sql: str) -> Dict[str, object]:
+    """Summarize raw rows into a short spoken response using GPT-5 Responses API."""
+    summary_model = os.environ.get("OPENAI_SUMMARY_MODEL") or os.environ.get("OPENAI_MODEL", "gpt-5")
+    summary_token_cap = get_env_int("OPENAI_SUMMARY_MAX_OUTPUT_TOKENS", 400)
+
+    system_prompt = (
+        "You are GPT-5 acting as Khosla Ventures' portfolio voice analyst. "
+        "Speak naturally, highlight the most important numbers, keep answers under 120 spoken words, "
+        "and clearly state when no rows returned. Never mention SQL or speculate beyond the payload."
+    )
+
+    user_payload = (
+        f"The user asked: {question}\n\n"
+        f"The executed SQL was:\n{sql}\n\n"
+        f"Result rows (JSON):\n{safe_json_dumps(data)}"
+    )
+
     try:
-        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-        
-        # Create a natural language summary of the data
-        prompt = f"""You are a helpful portfolio management assistant. 
-
-The user asked: "{question}"
-
-The database query returned this data:
-{json.dumps(data, indent=2, default=str)}
-
-Create a concise, natural language response that:
-1. Directly answers the user's question
-2. Highlights the most important findings
-3. Is suitable for voice output (conversational, not too long)
-4. Uses specific numbers and names from the data
-5. If there are many results, summarize patterns rather than listing everything
-
-Keep your response under 100 words for voice clarity."""
-
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=500,
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }]
+        response_payload = call_openai_responses(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_payload},
+            ],
+            model=summary_model,
+            max_output_tokens=summary_token_cap,
         )
-        
-        natural_response = response.content[0].text
-        
+
+        natural_response = extract_text_from_response(response_payload)
+        if not natural_response:
+            raise ValueError("GPT-5 returned an empty narrative response.")
+
         return {
             "success": True,
-            "natural_language_response": natural_response,
+            "natural_language_response": natural_response.strip(),
             "raw_data": data,
-            "sql_query": sql
-        }
-    
-    except Exception as e:
-        # Fallback: simple formatting if Claude fails
-        print(f"⚠️ Claude formatting failed, using simple fallback: {str(e)}")
-        
-        if len(data) == 0:
-            simple_response = f"No results found for: {question}"
-        elif len(data) == 1:
-            simple_response = f"Found 1 result: {json.dumps(data[0])}"
-        else:
-            simple_response = f"Found {len(data)} results. First result: {json.dumps(data[0])}"
-        
-        return {
-            "success": True,
-            "natural_language_response": simple_response,
-            "raw_data": data,
-            "sql_query": sql
+            "sql_query": sql,
         }
 
-# ────────────────────────────────────────────────────────────
-# Lambda Handler
-# ────────────────────────────────────────────────────────────
+    except Exception as exc:
+        print(f"⚠️ GPT-5 formatting failed, falling back to plain summary: {exc}")
+
+        if not data:
+            fallback_text = f"No rows were returned for \"{question}\"."
+        elif len(data) == 1:
+            fallback_text = f"One result: {safe_json_dumps(data[0])}"
+        else:
+            fallback_text = (
+                f"{len(data)} rows found. First row: {safe_json_dumps(data[0])}"
+            )
+
+        return {
+            "success": True,
+            "natural_language_response": fallback_text,
+            "raw_data": data,
+            "sql_query": sql,
+        }
+
+
+def parse_request_body(event: Dict[str, object]) -> Dict[str, object]:
+    """Best-effort JSON parsing for API Gateway + direct Lambda invocations."""
+    body = {}
+    raw_body = event.get("body")
+    if raw_body:
+        try:
+            body = json.loads(raw_body)
+        except Exception:
+            body = {}
+    return body
+
 
 def lambda_handler(event, context):
-    """
-    Main Lambda handler for voice queries
-    
-    Supported actions:
-    - train_schema: Train Vanna on database schema (run once)
-    - query: Convert natural language to SQL and execute
-    """
-    
+    """Entry point for the voice-query Lambda."""
     headers = {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
     }
-    
-    # Handle OPTIONS for CORS
+
     if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": headers, "body": json.dumps({"message": "CORS OK"})}
-    
+        return {"statusCode": 200, "headers": headers, "body": safe_json_dumps({"message": "CORS OK"})}
+
     try:
-        # Parse request body
-        body = {}
-        if event.get("body"):
-            body = json.loads(event["body"])
-        
+        body = parse_request_body(event)
         action = body.get("action") or event.get("action")
-        
+
         if not action:
             return {
                 "statusCode": 400,
                 "headers": headers,
-                "body": json.dumps({"error": "action is required (train_schema or query)"})
+                "body": safe_json_dumps({"error": "action is required (train_schema or query)"}),
             }
-        
-        # Initialize Vanna
-        vn = get_vanna_client()
-        
-        # ── Training action ──
+
         if action == "train_schema":
-            result = train_vanna_on_schema(vn)
+            snapshot = fetch_schema_overview(force_refresh=True)
             return {
                 "statusCode": 200,
                 "headers": headers,
-                "body": json.dumps({
-                    "status": "success",
-                    "action": "train_schema",
-                    "data": result
-                })
+                "body": safe_json_dumps(
+                    {
+                        "status": "success",
+                        "action": "train_schema",
+                        "schema_preview_chars": len(snapshot),
+                    }
+                ),
             }
-        
-        # ── Query action ──
-        elif action == "query":
-            question = body.get("question")
-            
+
+        if action == "query":
+            question = body.get("question") or event.get("question")
             if not question:
                 return {
                     "statusCode": 400,
                     "headers": headers,
-                    "body": json.dumps({"error": "question is required for query action"})
+                    "body": safe_json_dumps({"error": "question is required for query action"}),
                 }
-            
-            # Step 1: Generate SQL from question
-            sql_result = generate_sql_from_question(vn, question)
-            
-            if not sql_result["success"]:
+
+            schema_snapshot = fetch_schema_overview()
+            sql_result = generate_sql_from_question(question, schema_snapshot)
+            if not sql_result.get("success"):
                 return {
                     "statusCode": 500,
                     "headers": headers,
-                    "body": json.dumps({
-                        "status": "failed",
-                        "error": sql_result.get("error"),
-                        "step": "sql_generation"
-                    })
+                    "body": safe_json_dumps(
+                        {"status": "failed", "step": "sql_generation", "error": sql_result.get("error")}
+                    ),
                 }
-            
+
             sql = sql_result["sql"]
-            
-            # Step 2: Execute SQL safely (without using Vanna's run_sql to avoid pandas)
             query_result = execute_query_safely(sql)
-            
-            if not query_result["success"]:
+            if not query_result.get("success"):
                 return {
                     "statusCode": 500,
                     "headers": headers,
-                    "body": json.dumps({
-                        "status": "failed",
-                        "error": query_result.get("error"),
-                        "sql": sql,
-                        "step": "query_execution"
-                    })
+                    "body": safe_json_dumps(
+                        {"status": "failed", "step": "query_execution", "error": query_result.get("error"), "sql": sql}
+                    ),
                 }
-            
-            # Step 3: Format response for voice
-            formatted = format_response_for_voice(
-                question=question,
-                data=query_result["data"],
-                sql=sql
-            )
-            
+
+            formatted = format_response_for_voice(question, query_result["data"], sql)
             return {
                 "statusCode": 200,
                 "headers": headers,
-                "body": json.dumps({
-                    "status": "success",
-                    "action": "query",
-                    "question": question,
-                    "response": formatted["natural_language_response"],
-                    "data": formatted["raw_data"],
-                    "sql_executed": sql,
-                    "row_count": len(formatted["raw_data"])
-                })
+                "body": safe_json_dumps(
+                    {
+                        "status": "success",
+                        "action": "query",
+                        "question": question,
+                        "response": formatted["natural_language_response"],
+                        "data": formatted["raw_data"],
+                        "sql_executed": sql,
+                        "row_count": query_result.get("row_count", len(formatted["raw_data"])),
+                    }
+                ),
             }
-        
-        else:
-            return {
-                "statusCode": 400,
-                "headers": headers,
-                "body": json.dumps({"error": f"Unknown action: {action}"})
-            }
-    
-    except Exception as e:
-        print(f"💥 Lambda error: {str(e)}")
+
+        return {
+            "statusCode": 400,
+            "headers": headers,
+            "body": safe_json_dumps({"error": f"Unknown action: {action}"}),
+        }
+
+    except Exception as exc:
+        print(f"💥 Lambda error: {exc}")
         return {
             "statusCode": 500,
             "headers": headers,
-            "body": json.dumps({
-                "status": "failed",
-                "error": str(e)
-            })
+            "body": safe_json_dumps({"status": "failed", "error": str(exc)}),
         }
 
 
-# Local testing
 if __name__ == "__main__":
-    # Test training
-    test_event = {"action": "train_schema"}
-    result = lambda_handler(test_event, None)
-    print(json.dumps(json.loads(result["body"]), indent=2))
-    
-    # Test query
-    test_event = {
-        "action": "query",
-        "question": "How many companies do we have?"
-    }
-    result = lambda_handler(test_event, None)
-    print(json.dumps(json.loads(result["body"]), indent=2))
+    # Simple smoke tests when running locally
+    print("🔥 Refreshing schema snapshot...")
+    print(fetch_schema_overview(force_refresh=True)[:500], "...\n")
 
+    sample_query_event = {
+        "action": "query",
+        "question": "How many healthcare companies have less than 6 months of runway?",
+    }
+    response = lambda_handler(sample_query_event, None)
+    print(json.dumps(json.loads(response["body"]), indent=2))

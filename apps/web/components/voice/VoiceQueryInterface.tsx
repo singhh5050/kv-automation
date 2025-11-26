@@ -249,10 +249,10 @@ export default function VoiceQueryInterface() {
           <div className="flex flex-wrap gap-2">
             {[
               "How many companies are in the portfolio?",
-              "Which companies have less than 6 months runway?",
-              "Show me all companies with red health scores",
-              "What are the overdue milestones?",
-              "Who are the CEOs of healthcare companies?"
+              "List the first 10 companies alphabetically.",
+              "Show five companies with their stages.",
+              "Show the five most recent financial reports uploaded.",
+              "Show the five most recent company notes."
             ].map((example, idx) => (
               <button
                 key={idx}
