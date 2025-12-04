@@ -974,9 +974,14 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
     }
   }
 
+  // Track if we've already loaded competition analysis for this company
+  const [competitionLoaded, setCompetitionLoaded] = useState(false)
+
   // Load saved competition analysis results
-  const loadSavedCompetitionAnalysis = async () => {
-    if (!company?.company?.id) return
+  const loadSavedCompetitionAnalysis = useCallback(async () => {
+    if (!company?.company?.id || competitionLoaded) return
+    
+    setCompetitionLoaded(true) // Mark as loaded to prevent re-runs
     
     try {
       console.log('🔍 Loading saved competition analysis for company:', company.company.id)
@@ -985,7 +990,7 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
       
       if (result.error || result.found === false) {
         console.log('ℹ️ No saved competition analysis found')
-        setCompetitionResult(null)
+        // Don't set to null, just leave it as is
       } else if (result.analysis) {
         setCompetitionResult({
           analysis: result.analysis,
@@ -998,14 +1003,14 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
       console.error('❌ Failed to load saved competition analysis:', error)
       // Don't show error to user for loading saved data
     }
-  }
+  }, [company?.company?.id, competitionLoaded])
 
   // Load competition analysis when switching to that tab
   useEffect(() => {
-    if (activeTab === 'competition' && company?.company?.id && !competitionResult && !competitionLoading) {
+    if (activeTab === 'competition' && company?.company?.id && !competitionLoaded) {
       loadSavedCompetitionAnalysis()
     }
-  }, [activeTab, company?.company?.id])
+  }, [activeTab, company?.company?.id, competitionLoaded, loadSavedCompetitionAnalysis])
 
   // Health Check handler
   const handleHealthCheck = async (config: HealthCheckConfig) => {
