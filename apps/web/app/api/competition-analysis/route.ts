@@ -10,7 +10,14 @@ export async function POST(request: NextRequest) {
     console.log('🔍 Competition analysis API route called')
     
     const body = await request.json()
-    const { company_name, is_public } = body
+    const { company_id, company_name, is_public } = body
+    
+    if (!company_id) {
+      return NextResponse.json(
+        { error: 'company_id is required' },
+        { status: 400 }
+      )
+    }
     
     if (!company_name) {
       return NextResponse.json(
@@ -19,7 +26,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    console.log(`🏢 Analyzing competition for: ${company_name} (${is_public ? 'public' : 'private'})`)
+    console.log(`🏢 Analyzing competition for: ${company_name} (id=${company_id}, ${is_public ? 'public' : 'private'})`)
     
     // Validate AWS credentials
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
@@ -42,6 +49,7 @@ export async function POST(request: NextRequest) {
     // Prepare Lambda payload
     const payload = {
       action: 'competition_analysis',
+      company_id: parseInt(company_id),
       company_name,
       is_public: !!is_public
     }
@@ -99,13 +107,97 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * GET handler to fetch the latest competition analysis for a company
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const company_id = searchParams.get('company_id')
+    
+    if (!company_id) {
+      return NextResponse.json(
+        { error: 'company_id is required' },
+        { status: 400 }
+      )
+    }
+    
+    console.log(`🔍 Getting latest competition analysis for company ${company_id}`)
+    
+    // Validate AWS credentials
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      console.error('❌ AWS credentials not found in server environment')
+      return NextResponse.json(
+        { error: 'AWS credentials not configured' },
+        { status: 500 }
+      )
+    }
+    
+    // Initialize Lambda client
+    const lambdaClient = new LambdaClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    })
+    
+    // Prepare Lambda payload
+    const payload = {
+      action: 'get_competition_analysis',
+      company_id: parseInt(company_id)
+    }
+    
+    const command = new InvokeCommand({
+      FunctionName: 'kv-automation-pdf-analysis',
+      Payload: JSON.stringify(payload),
+      InvocationType: 'RequestResponse'
+    })
+    
+    const lambdaResponse = await lambdaClient.send(command)
+    
+    if (!lambdaResponse.Payload) {
+      throw new Error('No payload returned from Lambda')
+    }
+    
+    const responseString = new TextDecoder().decode(lambdaResponse.Payload)
+    const lambdaResult = JSON.parse(responseString)
+    
+    if (lambdaResult.statusCode === 404) {
+      return NextResponse.json(
+        { error: 'No competition analysis found', found: false },
+        { status: 404 }
+      )
+    }
+    
+    if (lambdaResult.statusCode !== 200) {
+      const errorBody = JSON.parse(lambdaResult.body)
+      return NextResponse.json(
+        { error: errorBody.error || 'Failed to get competition analysis' },
+        { status: lambdaResult.statusCode }
+      )
+    }
+    
+    const resultBody = JSON.parse(lambdaResult.body)
+    return NextResponse.json({ ...resultBody, found: true })
+    
+  } catch (error: any) {
+    console.error('❌ Get competition analysis error:', error)
+    
+    return NextResponse.json(
+      { error: error.message || 'Failed to get competition analysis' },
+      { status: 500 }
+    )
+  }
+}
+
 // Handle CORS preflight requests
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     },
   })

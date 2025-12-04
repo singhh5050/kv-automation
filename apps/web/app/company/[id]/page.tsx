@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones } from '@/lib/api'
+import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones, runCompetitionAnalysis, getLatestCompetitionAnalysis } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import SimpleExecutivesList from '@/components/company/SimpleExecutivesList'
@@ -12,7 +12,6 @@ import MilestoneDisplay from '@/components/shared/MilestoneDisplay'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
 import HealthCheckModal from '@/components/company/HealthCheckModal'
-import CompetitionAnalysisModal from '@/components/company/CompetitionAnalysisModal'
 import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig, HealthCheckConfig, HealthCheckResult, Milestone } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
@@ -87,7 +86,7 @@ const getSectorLabels = (sector: string = 'unknown') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes' | 'health'
+type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes' | 'health' | 'competition'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -330,14 +329,17 @@ export default function CompanyDetailPage() {
   // PDF Export state
   const [showPdfModal, setShowPdfModal] = useState(false)
 
-  // Competition Analysis state
-  const [showCompetitionModal, setShowCompetitionModal] = useState(false)
-
   // Health Check state
   const [showHealthCheckModal, setShowHealthCheckModal] = useState(false)
   const [healthCheckLoading, setHealthCheckLoading] = useState(false)
   const [healthCheckResult, setHealthCheckResult] = useState<HealthCheckResult | null>(null)
   const [healthCheckError, setHealthCheckError] = useState<string | null>(null)
+
+  // Competition Analysis state
+  const [competitionLoading, setCompetitionLoading] = useState(false)
+  const [competitionResult, setCompetitionResult] = useState<{ analysis: string; is_public: boolean; timestamp: string } | null>(null)
+  const [competitionError, setCompetitionError] = useState<string | null>(null)
+  const [competitionIsPublic, setCompetitionIsPublic] = useState(false)
 
   // Report navigation state
   const [selectedReportIndex, setSelectedReportIndex] = useState(0)
@@ -972,6 +974,39 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
     }
   }
 
+  // Load saved competition analysis results
+  const loadSavedCompetitionAnalysis = async () => {
+    if (!company?.company?.id) return
+    
+    try {
+      console.log('🔍 Loading saved competition analysis for company:', company.company.id)
+      const result = await getLatestCompetitionAnalysis(company.company.id)
+      console.log('🔍 Competition analysis API response:', result)
+      
+      if (result.error || result.found === false) {
+        console.log('ℹ️ No saved competition analysis found')
+        setCompetitionResult(null)
+      } else if (result.analysis) {
+        setCompetitionResult({
+          analysis: result.analysis,
+          is_public: result.is_public || false,
+          timestamp: result.timestamp || new Date().toISOString()
+        })
+        console.log('✅ Loaded saved competition analysis')
+      }
+    } catch (error) {
+      console.error('❌ Failed to load saved competition analysis:', error)
+      // Don't show error to user for loading saved data
+    }
+  }
+
+  // Load competition analysis when switching to that tab
+  useEffect(() => {
+    if (activeTab === 'competition' && company?.company?.id && !competitionResult && !competitionLoading) {
+      loadSavedCompetitionAnalysis()
+    }
+  }, [activeTab, company?.company?.id])
+
   // Health Check handler
   const handleHealthCheck = async (config: HealthCheckConfig) => {
     if (!company?.company?.id) {
@@ -1164,23 +1199,14 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               </div>
             </div>
             
-            {/* Action Buttons */}
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setShowCompetitionModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-              >
-                <span>🔍</span>
-                <span>Analyze Competitors</span>
-              </button>
-              <button
-                onClick={() => setShowPdfModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-              >
-                <span>📄</span>
-                <span>Export One Pager</span>
-              </button>
-            </div>
+            {/* One Pager Export Button */}
+            <button
+              onClick={() => setShowPdfModal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+            >
+              <span>📄</span>
+              <span>Export One Pager</span>
+            </button>
           </div>
           
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
@@ -1298,6 +1324,7 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             <option value="overview">📈 Latest Updates</option>
             <option value="health">🏥 Health Check</option>
             <option value="financials">📊 Financials</option>
+            <option value="competition">🔍 Competition</option>
             <option value="captable">🏦 Cap Table</option>
             <option value="notes">📝 Notes</option>
             <option value="reports">📄 Reports ({company.financial_reports.length})</option>
@@ -1351,6 +1378,17 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             >
               <span>📊</span>
               <span>Financials</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('competition')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
+                activeTab === 'competition'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <span>🔍</span>
+              <span>Competition</span>
             </button>
             <button
               onClick={() => setActiveTab('captable')}
@@ -3002,6 +3040,165 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
                 </div>
               </div>
             )}
+
+            {activeTab === 'competition' && (
+              <div className="space-y-4">
+                {/* Competition Analysis Section */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xl">🔍</span>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">Competition Analysis</h3>
+                        <p className="text-gray-600 text-sm">Real-time competitor insights via web search</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      {/* Company Type Toggle */}
+                      <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
+                        <button
+                          onClick={() => setCompetitionIsPublic(false)}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                            !competitionIsPublic
+                              ? 'bg-white text-indigo-700 shadow-sm'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          🏢 Private
+                        </button>
+                        <button
+                          onClick={() => setCompetitionIsPublic(true)}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                            competitionIsPublic
+                              ? 'bg-white text-purple-700 shadow-sm'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          📈 Public
+                        </button>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setCompetitionLoading(true)
+                          setCompetitionError(null)
+                          try {
+                            const result = await runCompetitionAnalysis(
+                              parseInt(companyId),
+                              company?.company?.name || 'Unknown',
+                              competitionIsPublic
+                            )
+                            if (result.error) {
+                              setCompetitionError(result.error)
+                            } else {
+                              setCompetitionResult({
+                                analysis: result.analysis,
+                                is_public: result.is_public,
+                                timestamp: result.timestamp
+                              })
+                            }
+                          } catch (e: any) {
+                            setCompetitionError(e.message || 'Analysis failed')
+                          } finally {
+                            setCompetitionLoading(false)
+                          }
+                        }}
+                        disabled={competitionLoading}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          competitionLoading
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-md hover:shadow-lg'
+                        }`}
+                      >
+                        {competitionLoading ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            <span>Searching...</span>
+                          </div>
+                        ) : (
+                          'Run Analysis'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Error Display */}
+                  {competitionError && (
+                    <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div className="flex items-start space-x-3">
+                        <span className="text-red-500 text-lg">⚠️</span>
+                        <div>
+                          <p className="font-medium text-red-800">Analysis Failed</p>
+                          <p className="text-sm text-red-600 mt-1">{competitionError}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Results Display */}
+                  {competitionResult && (
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-green-500">✓</span>
+                          <span className="font-medium text-gray-900">Analysis Complete</span>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            competitionResult.is_public 
+                              ? 'bg-purple-100 text-purple-700' 
+                              : 'bg-indigo-100 text-indigo-700'
+                          }`}>
+                            {competitionResult.is_public ? 'Public Company' : 'Private Company'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(competitionResult.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                        <MarkdownContent content={competitionResult.analysis} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  {!competitionResult && !competitionError && !competitionLoading && (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-2xl">🔍</span>
+                      </div>
+                      <h4 className="text-lg font-semibold text-gray-900 mb-2">Ready to Analyze Competition</h4>
+                      <p className="text-gray-600 text-sm mb-4 max-w-md mx-auto">
+                        Click "Run Analysis" to search the web for competitor information, funding data, and recent news.
+                        Toggle between Private and Public company modes for relevant data.
+                      </p>
+                      <div className="flex items-center justify-center space-x-6 text-xs text-gray-500">
+                        <div className="flex items-center space-x-1">
+                          <span>🏢</span>
+                          <span>Private: Funding, investors, news</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <span>📈</span>
+                          <span>Public: Stock, market cap, news</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Loading State */}
+                  {competitionLoading && (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div className="relative">
+                        <div className="w-16 h-16 border-4 border-indigo-200 rounded-full animate-spin border-t-indigo-600"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-xl">🔍</span>
+                        </div>
+                      </div>
+                      <p className="mt-4 text-gray-600 font-medium">Searching the web...</p>
+                      <p className="text-sm text-gray-500 mt-1">This may take 15-30 seconds</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -3121,12 +3318,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
         companyName={company?.company?.name || 'Unknown Company'}
       />
 
-      {/* Competition Analysis Modal */}
-      <CompetitionAnalysisModal
-        isOpen={showCompetitionModal}
-        onClose={() => setShowCompetitionModal(false)}
-        companyName={company?.company?.name || 'Unknown Company'}
-      />
     </div>
   )
 } 

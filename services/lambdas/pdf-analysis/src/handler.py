@@ -279,6 +279,9 @@ def lambda_handler(event, context):
     elif action == 'competition_analysis':
         print("🔍 Processing competition analysis request")
         return handle_competition_analysis_request(payload, context)
+    elif action == 'get_competition_analysis':
+        print("🔍 Getting latest competition analysis")
+        return handle_get_competition_analysis_request(payload, context)
     else:
         print(f"❌ Unknown action: {action}")
         return {
@@ -289,7 +292,7 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
             },
-            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check, generate_internal_summary, competition_analysis'})
+            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check, generate_internal_summary, competition_analysis, get_competition_analysis'})
         }
 
 
@@ -3162,8 +3165,16 @@ def handle_competition_analysis_request(event, context):
     }
     
     try:
+        company_id = event.get('company_id')
         company_name = event.get('company_name')
         is_public = event.get('is_public', False)
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
         
         if not company_name:
             return {
@@ -3172,9 +3183,9 @@ def handle_competition_analysis_request(event, context):
                 'body': json.dumps({'error': 'company_name is required'})
             }
         
-        print(f"🔍 Competition analysis for: {company_name} (public={is_public})")
+        print(f"🔍 Competition analysis for: {company_name} (id={company_id}, public={is_public})")
         
-        result = analyze_competition(company_name, is_public)
+        result = analyze_competition(company_id, company_name, is_public)
         
         if result['success']:
             return {
@@ -3206,15 +3217,66 @@ def handle_competition_analysis_request(event, context):
         }
 
 
-def analyze_competition(company_name: str, is_public: bool = False) -> dict:
+def handle_get_competition_analysis_request(event, context):
+    """
+    Handle requests to get the latest competition analysis for a company
+    """
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        company_id = event.get('company_id')
+        
+        if not company_id:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_id is required'})
+            }
+        
+        print(f"🔍 Getting latest competition analysis for company {company_id}")
+        
+        result = get_latest_competition_analysis(company_id)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result['data'])
+            }
+        else:
+            return {
+                'statusCode': 404 if 'not found' in result.get('error', '').lower() else 500,
+                'headers': cors_headers,
+                'body': json.dumps({'error': result['error']})
+            }
+            
+    except Exception as e:
+        print(f"❌ Get competition analysis failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'error': f'Get competition analysis failed: {str(e)}'
+            })
+        }
+
+
+def analyze_competition(company_id: int, company_name: str, is_public: bool = False) -> dict:
     """
     Analyze competition using OpenAI's web search capabilities
     Returns competitor info, stock data (if public), and latest news
+    Stores results in company_competition_analysis table
     """
     from datetime import datetime
     
     try:
-        print(f"🔍 Starting competition analysis for {company_name}")
+        print(f"🔍 Starting competition analysis for {company_name} (id={company_id})")
         
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
@@ -3279,14 +3341,28 @@ Format the response in clear sections with markdown. Be specific with numbers an
         
         print(f"✅ Competition analysis completed: {len(analysis_text)} chars")
         
+        # Store the analysis in the database
+        timestamp = datetime.utcnow()
+        try:
+            store_competition_analysis_in_db(
+                company_id=company_id,
+                analysis_content=analysis_text,
+                is_public=is_public
+            )
+            print(f"✅ Competition analysis stored in database for company {company_id}")
+        except Exception as storage_error:
+            print(f"⚠️ Failed to store competition analysis: {storage_error}")
+            # Continue without failing the operation
+        
         return {
             'success': True,
             'data': {
                 'success': True,
+                'company_id': company_id,
                 'company_name': company_name,
                 'is_public': is_public,
                 'analysis': analysis_text,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'timestamp': timestamp.isoformat() + 'Z'
             }
         }
         
@@ -3303,3 +3379,107 @@ Format the response in clear sections with markdown. Be specific with numbers an
             error_code = 'BAD_REQUEST'
         
         return {'success': False, 'error': str(e), 'error_code': error_code}
+
+
+def store_competition_analysis_in_db(company_id: int, analysis_content: str, is_public: bool = False):
+    """
+    Store competition analysis results in the company_competition_analysis table
+    """
+    import ssl
+    from datetime import datetime
+    
+    try:
+        print(f"💾 Storing competition analysis for company {company_id}")
+        
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO company_competition_analysis 
+            (company_id, analysis_content, is_public, analysis_timestamp, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, [
+            company_id,
+            analysis_content,
+            is_public,
+            datetime.utcnow(),
+            datetime.utcnow(),
+            datetime.utcnow()
+        ])
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"💾 Successfully stored competition analysis ({len(analysis_content)} chars)")
+        
+    except Exception as e:
+        print(f"❌ Failed to store competition analysis: {str(e)}")
+        raise e
+
+
+def get_latest_competition_analysis(company_id: int) -> dict:
+    """
+    Get the latest competition analysis for a company from the database
+    """
+    import ssl
+    
+    try:
+        print(f"🔍 Getting latest competition analysis for company {company_id}")
+        
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 5432)),
+            'database': os.environ.get('DB_NAME'),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD')
+        }
+        
+        ctx = ssl.create_default_context()
+        conn = pg8000.connect(**db_config, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, analysis_content, is_public, analysis_timestamp
+            FROM company_competition_analysis
+            WHERE company_id = %s
+            ORDER BY analysis_timestamp DESC
+            LIMIT 1
+        """, [company_id])
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not row:
+            return {
+                'success': False,
+                'error': f'No competition analysis found for company {company_id}'
+            }
+        
+        analysis_id, analysis_content, is_public, analysis_timestamp = row
+        
+        return {
+            'success': True,
+            'data': {
+                'id': analysis_id,
+                'company_id': company_id,
+                'analysis': analysis_content,
+                'is_public': is_public,
+                'timestamp': analysis_timestamp.isoformat() + 'Z' if analysis_timestamp else None
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to get competition analysis: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return {'success': False, 'error': str(e)}

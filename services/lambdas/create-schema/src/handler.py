@@ -299,6 +299,40 @@ def create_database_schema(conn):
         print(f"⚠️ Error creating company_executives table: {e}")
         raise e
 
+    # ---- SAFE: Add company_competition_analysis table if it doesn't exist ----
+    print("🔧 Creating company_competition_analysis table...")
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_competition_analysis (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            
+            -- Analysis content
+            analysis_content TEXT NOT NULL,
+            is_public BOOLEAN DEFAULT FALSE,
+            
+            -- Metadata
+            analysis_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100) DEFAULT 'system'
+        );
+        """)
+        print("✅ Company competition analysis table created successfully")
+        
+        # Add indexes for efficient queries
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_competition_analysis_company_id ON company_competition_analysis(company_id);
+        """)
+        cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_competition_analysis_timestamp ON company_competition_analysis(analysis_timestamp DESC);
+        """)
+        print("✅ Company competition analysis table indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating company_competition_analysis table: {e}")
+        raise e
+
     # ---- SAFE: Add company_milestones table if it doesn't exist ----
     print("🔧 Creating company_milestones table...")
     try:
@@ -413,11 +447,11 @@ def create_database_schema(conn):
     print("🎉 Schema migration completed successfully")
     return {
         "success": True,
-        "message": "Evidence field added to financial_reports table, company_notes, company_kpi_analysis, company_health_check, company_executives, and company_milestones tables created safely",
-        "operation": "add_evidence_field_notes_kpi_health_executives_and_milestones_tables",
-        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"],
+        "message": "Schema migration complete with all tables including company_competition_analysis",
+        "operation": "full_schema_migration",
+        "affected_tables": ["financial_reports", "company_notes", "company_kpi_analysis", "company_health_check", "company_competition_analysis", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"],
         "new_columns": ["evidence JSONB"],
-        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"]
+        "new_tables": ["company_notes", "company_kpi_analysis", "company_health_check", "company_competition_analysis", "company_executives", "company_milestones", "langchain_pg_collection", "langchain_pg_embedding"]
     }
 
 

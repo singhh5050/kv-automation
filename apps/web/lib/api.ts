@@ -222,12 +222,12 @@ export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: str
   return post('/process-cap-table', body);
 }
 
-export async function getCompetitiveLandscape(companyName: string, isPublic: boolean = false) {
+export async function runCompetitionAnalysis(companyId: number, companyName: string, isPublic: boolean = false) {
   try {
-    console.log(`🔍 Competition analysis for: ${companyName} (${isPublic ? 'public' : 'private'})`);
+    console.log(`🔍 Competition analysis for: ${companyName} (id=${companyId}, ${isPublic ? 'public' : 'private'})`);
     const res = await fetch('/api/competition-analysis', {
       method: 'POST',
-      ...withJson({ company_name: companyName, is_public: isPublic })
+      ...withJson({ company_id: companyId, company_name: companyName, is_public: isPublic })
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -237,6 +237,27 @@ export async function getCompetitiveLandscape(companyName: string, isPublic: boo
   } catch (e: any) {
     console.error('❌ Competition analysis error:', e);
     return { error: e instanceof Error ? e.message : 'Competition analysis failed' };
+  }
+}
+
+export async function getLatestCompetitionAnalysis(companyId: number) {
+  try {
+    console.log(`🔍 Getting latest competition analysis for company ${companyId}`);
+    const res = await fetch(`/api/competition-analysis?company_id=${companyId}`, {
+      method: 'GET',
+      headers: JSON_HDR
+    });
+    if (res.status === 404) {
+      return { found: false };
+    }
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Get competition analysis failed: ${res.status}`);
+    }
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Get competition analysis error:', e);
+    return { error: e instanceof Error ? e.message : 'Get competition analysis failed' };
   }
 }
 
