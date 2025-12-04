@@ -12,6 +12,7 @@ import MilestoneDisplay from '@/components/shared/MilestoneDisplay'
 import CompanyNotes from '@/components/company/CompanyNotes'
 import CustomKpiAnalysisModal from '@/components/company/CustomKpiAnalysisModal'
 import HealthCheckModal from '@/components/company/HealthCheckModal'
+import CompetitionAnalysisModal from '@/components/company/CompetitionAnalysisModal'
 import { CompanyOverview, CapTableInvestor, FinancialReport, KpiAnalysisConfig, HealthCheckConfig, HealthCheckResult, Milestone } from '@/types'
 import { detectCompanyStage } from '@/lib/stageDetection'
 import {
@@ -328,6 +329,9 @@ export default function CompanyDetailPage() {
 
   // PDF Export state
   const [showPdfModal, setShowPdfModal] = useState(false)
+
+  // Competition Analysis state
+  const [showCompetitionModal, setShowCompetitionModal] = useState(false)
 
   // Health Check state
   const [showHealthCheckModal, setShowHealthCheckModal] = useState(false)
@@ -1160,14 +1164,23 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               </div>
             </div>
             
-            {/* One Pager Export Button */}
-            <button
-              onClick={() => setShowPdfModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-            >
-              <span>📄</span>
-              <span>Export One Pager</span>
-            </button>
+            {/* Action Buttons */}
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowCompetitionModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+              >
+                <span>🔍</span>
+                <span>Analyze Competitors</span>
+              </button>
+              <button
+                onClick={() => setShowPdfModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+              >
+                <span>📄</span>
+                <span>Export One Pager</span>
+              </button>
+            </div>
           </div>
           
           {/* Stats Grid - Desktop: Multi-column, Mobile: 2 per row */}
@@ -3105,6 +3118,13 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
         onClose={() => setShowHealthCheckModal(false)}
         onSubmit={handleHealthCheck}
         isLoading={healthCheckLoading}
+        companyName={company?.company?.name || 'Unknown Company'}
+      />
+
+      {/* Competition Analysis Modal */}
+      <CompetitionAnalysisModal
+        isOpen={showCompetitionModal}
+        onClose={() => setShowCompetitionModal(false)}
         companyName={company?.company?.name || 'Unknown Company'}
       />
     </div>

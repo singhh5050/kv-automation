@@ -222,8 +222,23 @@ export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: str
   return post('/process-cap-table', body);
 }
 
-export const getCompetitiveLandscape = (_financialData: any) =>
-  ({ error: 'Competitive landscape analysis not yet implemented in Lambda backend' });
+export async function getCompetitiveLandscape(companyName: string, isPublic: boolean = false) {
+  try {
+    console.log(`🔍 Competition analysis for: ${companyName} (${isPublic ? 'public' : 'private'})`);
+    const res = await fetch('/api/competition-analysis', {
+      method: 'POST',
+      ...withJson({ company_name: companyName, is_public: isPublic })
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Competition analysis failed: ${res.status}`);
+    }
+    return await res.json();
+  } catch (e: any) {
+    console.error('❌ Competition analysis error:', e);
+    return { error: e instanceof Error ? e.message : 'Competition analysis failed' };
+  }
+}
 
 /** ---------------- KPI / Files ---------------- */
 

@@ -276,6 +276,9 @@ def lambda_handler(event, context):
     elif action == 'generate_internal_summary':
         print("📝 Generating internal summary")
         return handle_generate_internal_summary_request(payload, context)
+    elif action == 'competition_analysis':
+        print("🔍 Processing competition analysis request")
+        return handle_competition_analysis_request(payload, context)
     else:
         print(f"❌ Unknown action: {action}")
         return {
@@ -286,7 +289,7 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
             },
-            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check, generate_internal_summary'})
+            'body': json.dumps({'error': f'Unknown action: {action}. Supported actions: list_pdfs, analyze_kpis, create_async_kpi_job, get_job_status, get_latest_completed_job, process_async_kpi_job, health_check, get_health_check, generate_internal_summary, competition_analysis'})
         }
 
 
@@ -3146,3 +3149,157 @@ Generate a detailed, narrative-style internal summary using these EXACT headers 
         print(f"❌ Summary generation failed: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         return {'success': False, 'error': f'Summary generation failed: {str(e)}'}
+
+
+def handle_competition_analysis_request(event, context):
+    """
+    Handle competition analysis requests using OpenAI web search
+    """
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+    }
+    
+    try:
+        company_name = event.get('company_name')
+        is_public = event.get('is_public', False)
+        
+        if not company_name:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'company_name is required'})
+            }
+        
+        print(f"🔍 Competition analysis for: {company_name} (public={is_public})")
+        
+        result = analyze_competition(company_name, is_public)
+        
+        if result['success']:
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps(result['data'])
+            }
+        else:
+            return {
+                'statusCode': 500,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'error': result['error'],
+                    'error_code': result.get('error_code', 'UNKNOWN_ERROR')
+                })
+            }
+            
+    except Exception as e:
+        print(f"❌ Competition analysis failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'error': f'Competition analysis failed: {str(e)}',
+                'error_code': 'INTERNAL_ERROR'
+            })
+        }
+
+
+def analyze_competition(company_name: str, is_public: bool = False) -> dict:
+    """
+    Analyze competition using OpenAI's web search capabilities
+    Returns competitor info, stock data (if public), and latest news
+    """
+    from datetime import datetime
+    
+    try:
+        print(f"🔍 Starting competition analysis for {company_name}")
+        
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            return {'success': False, 'error': 'OpenAI API key not configured', 'error_code': 'AUTH_ERROR'}
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        # Build prompt based on company type
+        if is_public:
+            prompt = f"""Search the web for the latest information about {company_name} and its competitors. Provide:
+
+1. **Stock Information** (if publicly traded):
+   - Current stock price and ticker symbol
+   - Market capitalization
+   - Recent stock performance (1 week, 1 month trends)
+
+2. **Key Competitors**:
+   - List 3-5 main competitors with brief descriptions
+   - Their market positions relative to {company_name}
+
+3. **Latest News** (from the past 2-4 weeks):
+   - 3-5 significant news items about {company_name}
+   - Any major industry developments affecting competition
+
+Format the response in clear sections with markdown. Be specific with numbers and dates. If exact data is not available, note that clearly."""
+        else:
+            prompt = f"""Search the web for the latest information about {company_name} (a private company) and its competitors. Provide:
+
+1. **Funding & Valuation**:
+   - Latest known funding round (amount, date, investors)
+   - Total funding raised to date
+   - Last known valuation (if available)
+
+2. **Key Competitors**:
+   - List 3-5 main competitors (both private and public)
+   - Their funding stages and recent raises
+   - Market positioning relative to {company_name}
+
+3. **Latest News** (from the past 2-4 weeks):
+   - 3-5 significant news items about {company_name}
+   - Hiring announcements, product launches, partnerships
+   - Any major industry developments
+
+Format the response in clear sections with markdown. Be specific with numbers and dates. If exact data is not available, note that clearly."""
+
+        print(f"🤖 Calling OpenAI with web_search tool...")
+        
+        # Use the Responses API with web_search tool
+        resp = client.responses.create(
+            model="gpt-4o",
+            tools=[{"type": "web_search"}],
+            input=prompt
+        )
+        
+        # Extract text from response
+        analysis_text = extract_output_text(resp)
+        
+        if not analysis_text:
+            print(f"❌ No text extracted from OpenAI response")
+            return {'success': False, 'error': 'Failed to extract analysis from OpenAI response', 'error_code': 'PARSE_ERROR'}
+        
+        print(f"✅ Competition analysis completed: {len(analysis_text)} chars")
+        
+        return {
+            'success': True,
+            'data': {
+                'success': True,
+                'company_name': company_name,
+                'is_public': is_public,
+                'analysis': analysis_text,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Competition analysis failed: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        error_code = 'UNKNOWN_ERROR'
+        if 'authentication' in str(e).lower() or 'api key' in str(e).lower():
+            error_code = 'AUTH_ERROR'
+        elif 'rate limit' in str(e).lower():
+            error_code = 'RATE_LIMIT'
+        elif 'invalid' in str(e).lower():
+            error_code = 'BAD_REQUEST'
+        
+        return {'success': False, 'error': str(e), 'error_code': error_code}
