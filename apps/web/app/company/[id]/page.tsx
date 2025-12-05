@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones, runCompetitionAnalysis, getLatestCompetitionAnalysis } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
