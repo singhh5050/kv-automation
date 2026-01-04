@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones, runCompetitionAnalysis, getLatestCompetitionAnalysis } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
+import EditableTextField from '@/components/company/EditableTextField'
 import SimpleExecutivesList from '@/components/company/SimpleExecutivesList'
 import UniversalDatabaseEditor from '@/components/shared/UniversalDatabaseEditor'
 import MarkdownContent from '@/components/shared/MarkdownContent'
@@ -1879,41 +1880,43 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
                          <h3 className="section-title">Sector Updates</h3>
                        </div>
                        <ReportNavigator title="Sector Analysis" />
-                       <div className="space-y-3">
-                         <div>
-                          <div className="flex items-center space-x-1 mb-2">
-                            <span className="text-xs">{sectorLabels.icon}</span>
-                            <h4 className="font-semibold text-orange-900 text-sm">{sectorLabels.highlightA}</h4>
-                           </div>
-                           {(currentReport as any)?.sector_highlight_a ? (
-                             <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-3 rounded border border-orange-100">
-                               <MarkdownContent content={(currentReport as any).sector_highlight_a} className="text-sm leading-7" />
-                             </div>
-                           ) : (
-                             <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
-                               <div className="text-lg mb-1">{sectorLabels.icon}</div>
-                               <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightA.toLowerCase()} data</p>
-                             </div>
-                           )}
-                         </div>
+                      <div className="space-y-3">
+                        <div>
+                         <div className="flex items-center space-x-1 mb-2">
+                           <span className="text-xs">{sectorLabels.icon}</span>
+                           <h4 className="font-semibold text-orange-900 text-sm">{sectorLabels.highlightA}</h4>
+                          </div>
+                          <EditableTextField
+                            value={(currentReport as any)?.sector_highlight_a}
+                            reportId={(currentReport as any)?.id}
+                            field="sector_highlight_a"
+                            onUpdate={loadCompanyData}
+                            placeholder={`Add ${sectorLabels.highlightA.toLowerCase()} details...`}
+                            emptyStateIcon={sectorLabels.icon}
+                            emptyStateText={`No ${sectorLabels.highlightA.toLowerCase()} data`}
+                            gradientClassName="from-orange-50 to-amber-50"
+                            borderClassName="border-orange-100"
+                          />
+                        </div>
 
-                         <div>
-                            <div className="flex items-center space-x-1 mb-2">
-                              <span className="text-xs">🔬</span>
-                              <h4 className="font-semibold text-indigo-900 text-sm">{sectorLabels.highlightB}</h4>
-                           </div>
-                           {(currentReport as any)?.sector_highlight_b ? (
-                             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded border border-indigo-100">
-                               <MarkdownContent content={(currentReport as any).sector_highlight_b} className="text-sm leading-7" />
-                             </div>
-                           ) : (
-                             <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
-                               <div className="text-lg mb-1">🔬</div>
-                               <p className="text-gray-500 text-sm font-medium mb-1">No {sectorLabels.highlightB.toLowerCase()} data</p>
-                             </div>
-                           )}
-                         </div>
-                       </div>
+                        <div>
+                           <div className="flex items-center space-x-1 mb-2">
+                             <span className="text-xs">🔬</span>
+                             <h4 className="font-semibold text-indigo-900 text-sm">{sectorLabels.highlightB}</h4>
+                          </div>
+                          <EditableTextField
+                            value={(currentReport as any)?.sector_highlight_b}
+                            reportId={(currentReport as any)?.id}
+                            field="sector_highlight_b"
+                            onUpdate={loadCompanyData}
+                            placeholder={`Add ${sectorLabels.highlightB.toLowerCase()} details...`}
+                            emptyStateIcon="🔬"
+                            emptyStateText={`No ${sectorLabels.highlightB.toLowerCase()} data`}
+                            gradientClassName="from-indigo-50 to-purple-50"
+                            borderClassName="border-indigo-100"
+                          />
+                        </div>
+                      </div>
                      </div>
                    )}
 
