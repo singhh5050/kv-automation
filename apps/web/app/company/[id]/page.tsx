@@ -87,7 +87,7 @@ const getSectorLabels = (sector: string = 'unknown') => {
   }
 }
 
-type TabType = 'metrics' | 'financials' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes' | 'health' | 'competition'
+type TabType = 'metrics' | 'overview' | 'captable' | 'reports' | 'database' | 'enrichment' | 'notes' | 'health' | 'competition'
 
 // Chart component for cash history using Recharts
 const SimpleCashChart = ({ reports }: { reports: any[] }) => {
@@ -1327,7 +1327,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             <option value="metrics">💰 Summary</option>
             <option value="overview">📈 Latest Updates</option>
             <option value="health">🏥 Health Check</option>
-            <option value="financials">📊 Financials</option>
             <option value="competition">🔍 Competition</option>
             <option value="captable">🏦 Cap Table</option>
             <option value="notes">📝 Notes</option>
@@ -1371,17 +1370,6 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
             >
               <span>🏥</span>
               <span>Health Check</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('financials')}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-md font-medium text-sm transition-all duration-200 ${
-                activeTab === 'financials'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <span>📊</span>
-              <span>Financials</span>
             </button>
             <button
               onClick={() => setActiveTab('competition')}
@@ -1667,145 +1655,7 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
               </div>
             )}
 
-            {activeTab === 'financials' && (
-              <div className="grid grid-cols-1 gap-4">
-                {/* Financial Overview - Full Width */}
-                <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-md font-bold text-gray-900">Financial Overview</h3>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {company?.current_cap_table?.investors && detectCompanyStage(company.current_cap_table.investors) !== 'Unknown' && (
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {detectCompanyStage(company.current_cap_table.investors)}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => setShowCustomKpiModal(true)}
-                        disabled={asyncAnalysis.isLoading || !company?.company?.id}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          asyncAnalysis.isLoading || !company?.company?.id
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-md hover:shadow-lg'
-                        }`}
-                      >
-                        {asyncAnalysis.isLoading ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                            <span>
-                              {asyncAnalysis.currentJob?.status === 'queued' ? 'Queuing...' :
-                               asyncAnalysis.currentJob?.status === 'processing' ? `Processing... ${asyncAnalysis.progress}%` :
-                               'Analyzing KPIs...'}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <span>📊</span>
-                            <span>Custom KPI Analysis</span>
-                          </div>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* KPI Analysis Results */}
-                  {asyncAnalysis.error && (
-                    <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-red-500">❌</span>
-                          <div>
-                            <h4 className="text-sm font-bold text-red-800">Analysis Failed</h4>
-                            <p className="text-red-700 text-xs mt-1">{asyncAnalysis.error}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={asyncAnalysis.clearJob}
-                          className="text-red-500 hover:text-red-700 text-xs"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Progress indicator for async jobs */}
-                  {asyncAnalysis.isLoading && asyncAnalysis.currentJob && (
-                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
-                        <div className="flex-1">
-                          <h4 className="text-sm font-bold text-blue-800">
-                            Analysis in Progress
-                          </h4>
-                          <p className="text-blue-700 text-xs mt-1">
-                            Analyzing your reports...
-                            {asyncAnalysis.currentJob.reports_analyzed && (
-                              <span> • {asyncAnalysis.currentJob.reports_analyzed} reports processed</span>
-                            )}
-                          </p>
-                          {asyncAnalysis.progress > 0 && (
-                            <div className="mt-2 bg-blue-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${asyncAnalysis.progress}%` }}
-                              ></div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Display KPI Analysis Results - Priority: Async results, then legacy results */}
-                  {(asyncAnalysis.results || kpiAnalysisResult) ? (
-                    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center space-x-2">
-                          <span>📊</span>
-                          <h3 className="text-sm font-bold text-gray-900">KPI Trend Analysis</h3>
-                          {asyncAnalysis.results && (
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              Latest
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {asyncAnalysis.currentJob?.completed_at && (
-                            <span className="text-xs text-gray-500">
-                              Completed {new Date(asyncAnalysis.currentJob.completed_at).toLocaleString()}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => {
-                              asyncAnalysis.clearJob()
-                              setKpiAnalysisResult(null)
-                            }}
-                            className="text-gray-400 hover:text-gray-600 text-xs"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
-                      <div className="prose prose-sm max-w-none">
-                        <MarkdownContent content={asyncAnalysis.results || kpiAnalysisResult || ''} />
-                      </div>
-                    </div>
-                  ) : !asyncAnalysis.isLoading && !asyncAnalysis.error && (
-                    <div className="p-4 text-center">
-                      <div className="text-gray-400 text-lg mb-2">📊</div>
-                      <h4 className="text-xs font-medium text-gray-900 mb-2">No KPI Analysis</h4>
-                      <p className="text-gray-500 text-xs">Analyze trends across your most recent board deck presentations to track KPIs specific to your sector and stage.</p>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-            )}
-
-                          {activeTab === 'overview' && (
+            {activeTab === 'overview' && (
                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                  {/* Left vertical nav */}
                  <aside className="lg:col-span-3 bg-white rounded-lg border border-gray-200 p-3 h-max sticky top-4">
@@ -1846,33 +1696,50 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
                  {/* Right content - only render selected section */}
                  <section className="lg:col-span-9 space-y-4">
                    {activeOverviewSection === 'key' && (
-                     <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                       <div className="mb-2">
-                         <h3 className="section-title">Key Updates</h3>
-                       </div>
-                       <ReportNavigator title="Board Deck Summary" />
-                       {currentReport ? (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 space-y-3">
-                            <MarkdownContent content={(currentReport as any).financial_summary || 'No key summary available'} className="text-sm leading-7 text-blue-900" />
-                            {(currentReport as any)?.key_risks && (
-                              <div className="bg-gradient-to-br from-red-50 to-pink-50 p-3 rounded border border-red-100">
-                                <div className="flex items-center space-x-1 mb-2">
-                                  <span className="text-xs">⚠️</span>
-                                  <h4 className="font-semibold text-red-900 text-sm">Key Risks</h4>
-                                </div>
-                                <MarkdownContent content={(currentReport as any).key_risks} className="text-sm leading-7" />
-                              </div>
-                            )}
+                    <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                      <div className="mb-2">
+                        <h3 className="section-title">Key Updates</h3>
+                      </div>
+                      <ReportNavigator title="Board Deck Summary" />
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center space-x-1 mb-2">
+                            <span className="text-xs">📋</span>
+                            <h4 className="font-semibold text-blue-900 text-sm">Board Deck Summary</h4>
                           </div>
-                       ) : (
-                         <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border-2 border-dashed border-gray-200 text-center">
-                           <div className="text-2xl mb-3">📋</div>
-                           <p className="text-gray-500 font-medium mb-2">No key summary available</p>
-                           <p className="text-gray-400 text-sm">Upload a recent board deck to see the comprehensive overview</p>
-                         </div>
-                       )}
-                     </div>
-                   )}
+                          <EditableTextField
+                            value={(currentReport as any)?.financial_summary}
+                            reportId={(currentReport as any)?.id}
+                            field="financial_summary"
+                            onUpdate={loadCompanyData}
+                            placeholder="Add board deck summary..."
+                            emptyStateIcon="📋"
+                            emptyStateText="No key summary available"
+                            gradientClassName="from-blue-50 to-indigo-50"
+                            borderClassName="border-blue-200"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center space-x-1 mb-2">
+                            <span className="text-xs">⚠️</span>
+                            <h4 className="font-semibold text-red-900 text-sm">Key Risks</h4>
+                          </div>
+                          <EditableTextField
+                            value={(currentReport as any)?.key_risks}
+                            reportId={(currentReport as any)?.id}
+                            field="key_risks"
+                            onUpdate={loadCompanyData}
+                            placeholder="Add key risks..."
+                            emptyStateIcon="⚠️"
+                            emptyStateText="No key risks identified"
+                            gradientClassName="from-red-50 to-pink-50"
+                            borderClassName="border-red-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                    {activeOverviewSection === 'sector' && (
                      <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
@@ -1921,42 +1788,50 @@ Click OK to reload the page and see updated data, or Cancel to continue without 
                    )}
 
                    {activeOverviewSection === 'details' && (
-                     <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                       <div className="mb-2">
-                         <h3 className="section-title">Additional Details</h3>
-                       </div>
-                       <ReportNavigator title="Additional Details" />
-                       {currentReport ? (
-                         <div className="grid grid-cols-1 gap-3">
-                           <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-3 rounded border border-purple-100">
-                              <div className="flex items-center space-x-1 mb-2">
-                                <span className="text-xs">⚖️</span>
-                                <h4 className="font-semibold text-purple-900 text-sm">Budget vs Actual</h4>
-                             </div>
-                             <MarkdownContent content={(currentReport as any).budget_vs_actual || 'N/A'} className="text-sm leading-7 text-purple-800" />
-                           </div>
-                         
-                           {(currentReport as any)?.personnel_updates && (
-                             <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-3 rounded border border-green-100">
-                                <div className="flex items-center space-x-1 mb-2">
-                                  <span className="text-xs">👥</span>
-                                  <h4 className="font-semibold text-green-900 text-sm">Personnel Updates</h4>
-                               </div>
-                               <MarkdownContent content={(currentReport as any).personnel_updates} className="text-sm leading-7" />
-                             </div>
-                           )}
-                         
-                          {/* Key Risks moved into Key Updates card above */}
-                         </div>
-                       ) : (
-                         <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded border-2 border-dashed border-gray-200 text-center">
-                           <div className="text-lg mb-2">📊</div>
-                           <p className="text-gray-500 font-medium mb-1 text-sm">No financial reports available</p>
-                           <p className="text-gray-400 text-sm">Upload board decks to see financial insights</p>
-                         </div>
-                       )}
-                     </div>
-                   )}
+                    <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                      <div className="mb-2">
+                        <h3 className="section-title">Additional Details</h3>
+                      </div>
+                      <ReportNavigator title="Additional Details" />
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <div className="flex items-center space-x-1 mb-2">
+                            <span className="text-xs">⚖️</span>
+                            <h4 className="font-semibold text-purple-900 text-sm">Budget vs Actual</h4>
+                          </div>
+                          <EditableTextField
+                            value={(currentReport as any)?.budget_vs_actual}
+                            reportId={(currentReport as any)?.id}
+                            field="budget_vs_actual"
+                            onUpdate={loadCompanyData}
+                            placeholder="Add budget vs actual analysis..."
+                            emptyStateIcon="⚖️"
+                            emptyStateText="No budget vs actual data"
+                            gradientClassName="from-purple-50 to-pink-50"
+                            borderClassName="border-purple-100"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center space-x-1 mb-2">
+                            <span className="text-xs">👥</span>
+                            <h4 className="font-semibold text-green-900 text-sm">Personnel Updates</h4>
+                          </div>
+                          <EditableTextField
+                            value={(currentReport as any)?.personnel_updates}
+                            reportId={(currentReport as any)?.id}
+                            field="personnel_updates"
+                            onUpdate={loadCompanyData}
+                            placeholder="Add personnel updates..."
+                            emptyStateIcon="👥"
+                            emptyStateText="No personnel updates"
+                            gradientClassName="from-green-50 to-emerald-50"
+                            borderClassName="border-green-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                  </section>
                </div>
             )}

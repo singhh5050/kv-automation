@@ -210,122 +210,138 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
     try:
         xlsx_io = io.BytesIO(base64.b64decode(xlsx_b64))
 
-        # ——— 1 Metadata parsing with merged-cell handling ———
+        # ——— 1 Metadata Parsing (Robust) ———
         try:
-            df_meta_raw = pd.read_excel(xlsx_io, nrows=10, header=None)
+            # Read enough rows to be safe
+            df_meta_raw = pd.read_excel(xlsx_io, nrows=20, header=None)
+            
+            # 1. Extract Company Name (usually Row 0 or 1)
             row0 = df_meta_raw.iloc[0]
             extracted_company_name = next(
                 (_clean_string(c, fixes_log=defensive_fixes) for c in row0 if not _is_missing(c)), 
                 "Unknown Company"
             )
-            
-            # Use override if provided, otherwise use extracted name
             company_name = company_name_override if company_name_override else extracted_company_name
 
-            # Identify the first column that appears to contain metadata labels to avoid merged-cell blanks
-            label_col_idx = 0
-            for col_idx in range(min(5, df_meta_raw.shape[1])):
+            # 2. Identify the "Label Column" (row headers like "Round", "Price", "Valuation")
+            label_col_idx = 0 # Default to first column
+            for col_idx in range(min(5, len(df_meta_raw.columns))):
                 col_vals = df_meta_raw.iloc[:, col_idx].astype(str).str.lower()
-                if col_vals.str.contains(r"post[\s\-]?money|valuation|round|price").any():
+                if col_vals.str.contains(r"post[\s\-]?money|valuation|price|raised").any():
                     label_col_idx = col_idx
                     break
-
-            # Keep only columns from the detected label column onward, drop empty borders
+            
+            # Slice metadata from the label column
             df_meta = df_meta_raw.iloc[:, label_col_idx:]
+            
+            # Drop fully empty rows/cols
             df_meta = df_meta.dropna(how="all", axis=0).dropna(how="all", axis=1)
 
+            # 3. Identify the "Round Row"
+            # The row that actually contains "Series A", "Seed", etc. might not be the first row.
+            round_row_idx = 0
             if not df_meta.empty:
-                df_meta.iloc[0, 0] = "Round"
+                # Scan first 10 rows for round keywords
+                for r_idx in range(min(10, len(df_meta))):
+                    # exclude the label column itself (index 0 of sliced df) from check
+                    row_vals = df_meta.iloc[r_idx, 1:].astype(str)
+                    if row_vals.str.contains(r"Series|Seed|Preferred|Common|Class", case=False, regex=True).any():
+                        round_row_idx = r_idx
+                        break
+                
+                # Force the label for this row to be "Round" so it becomes the index name upon transpose
+                df_meta.iat[round_row_idx, 0] = "Round"
+
+                # 4. Transpose: Rows become Columns
                 df_meta = df_meta.T
-                df_meta.columns = df_meta.iloc[0]
+                
+                # Set headers from the first row (which corresponds to the Original Label Column)
+                # This aligns "Price", "Valuation" labels with their data columns
+                df_meta.columns = make_unique_columns(df_meta.iloc[0])
+                
+                # Drop the header row from the data
                 df_meta = df_meta.iloc[1:].reset_index(drop=True)
+
+            # 5. Forward Fill "Round" names to handle Merged Cells
             if "Round" in df_meta.columns:
-                # Forward-fill Round labels to handle merged cells that only populate the first column of a block
                 df_meta["Round"] = df_meta["Round"].ffill()
 
-            # Helper function to safely convert to float, removing currency symbols
+            # Helper function to safely convert to float
             def safe_float(x):
                 try:
-                    # remove commas, €, $ etc. before casting
                     return float(re.sub(r"[^\d.\-]", "", str(x))) if pd.notna(x) else None
                 except ValueError:
                     return None
 
             # Identify candidate columns
             date_cols = [c for c in df_meta.columns if "date" in str(c).lower()]
-            # Be flexible: include any column mentioning Post-Money (accept hyphen or en-dash)
-            post_money_cols = [
-                c for c in df_meta.columns
-                if re.search(r"post[\s\-–]?money", str(c).lower())
-            ]
-            # Amount raised variants
-            amt_raised_cols = [
-                c for c in df_meta.columns
-                if (("amt" in str(c).lower() and "raised" in str(c).lower()) or "amount raised" in str(c).lower())
-            ]
+            post_money_cols = [c for c in df_meta.columns if re.search(r"post[\s\-–]?money", str(c).lower())]
+            amt_raised_cols = [c for c in df_meta.columns if (("amt" in str(c).lower() and "raised" in str(c).lower()) or "amount raised" in str(c).lower())]
 
-            chosen_round_raw = None
+            # 6. Selection Logic: Find the Rightmost Round
+            chosen_round_name = None
             chosen_date = None
-
+            
+            # Try to find latest date first
+            latest_date = None
+            latest_date_round = None
+            
             if not df_meta.empty and "Round" in df_meta.columns:
-                latest_date = None
-                latest_date_round = None
                 for idx in df_meta.index:
-                    round_cell = df_meta.at[idx, "Round"]
-                    if _is_missing(round_cell):
-                        continue
-                    round_label = str(round_cell).strip()
-                    if not round_label:
-                        continue
-
-                    row_date = None
+                    # Date Check
+                    r_date = None
                     for dc in date_cols:
                         try:
                             d = pd.to_datetime(df_meta.at[idx, dc], errors="coerce")
                             if pd.notna(d):
-                                row_date = d.to_pydatetime().date()
-                        except Exception:
-                            continue
-                    if row_date:
-                        if latest_date is None or row_date > latest_date:
-                            latest_date = row_date
-                            latest_date_round = round_label
+                                r_date = d.to_pydatetime().date()
+                        except: pass
+                    
+                    r_name = str(df_meta.at[idx, "Round"]).strip()
+                    if not r_name or r_name.lower() in ["nan", "none", ""]:
+                        continue
 
-                if latest_date_round:
-                    chosen_round_raw = latest_date_round
-                    chosen_date = latest_date
-                else:
-                    # Fallback: choose the rightmost (last) non-empty round label
-                    round_series = df_meta["Round"].astype(str).str.strip()
-                    round_series = round_series[round_series != ""]
-                    if not round_series.empty:
-                        chosen_round_raw = round_series.iloc[-1]
+                    if r_date:
+                        if latest_date is None or r_date > latest_date:
+                            latest_date = r_date
+                            latest_date_round = r_name
+            
+            if latest_date:
+                chosen_round_name = latest_date_round
+                chosen_date = latest_date
+            else:
+                # Fallback: Pick the last Round Name in the dataframe (Rightmost)
+                if "Round" in df_meta.columns:
+                    # Get unique rounds preserving order
+                    unique_rounds = df_meta["Round"].dropna().unique()
+                    if len(unique_rounds) > 0:
+                        chosen_round_name = unique_rounds[-1] # Last one is rightmost
 
-            def pick_value_from_round_rows(rows_df, cols):
-                if rows_df.empty or not cols:
-                    return None
-                value = None
-                for _, row in rows_df.iterrows():
-                    for col in cols:
-                        try:
-                            cand = safe_float(row.get(col))
-                        except Exception:
-                            cand = None
-                        if cand is not None:
-                            value = cand
-                return value
-
-            if chosen_round_raw:
-                round_name = sanitize_round_name(chosen_round_raw)
-                round_rows = df_meta[df_meta["Round"] == chosen_round_raw]
-                valuation = pick_value_from_round_rows(round_rows, post_money_cols)
-                amount_raised = pick_value_from_round_rows(round_rows, amt_raised_cols)
+            # 7. Extract Values for the Chosen Round
+            valuation = None
+            amount_raised = None
+            
+            if chosen_round_name:
+                round_name = sanitize_round_name(chosen_round_name)
+                # Filter meta rows for this round
+                round_rows = df_meta[df_meta["Round"] == chosen_round_name]
+                
+                # Scan these rows for our values
+                for idx, row in round_rows.iterrows():
+                    for col in post_money_cols:
+                        val = safe_float(row.get(col))
+                        if val is not None:
+                            valuation = val
+                    
+                    for col in amt_raised_cols:
+                        val = safe_float(row.get(col))
+                        if val is not None:
+                            amount_raised = val
             else:
                 round_name = "Current"
-                valuation = None
-                amount_raised = None
 
             round_date = chosen_date
+
         except Exception as e:
             print(f"⚠️  Metadata parse error: {e}")
             company_name, round_name, valuation, amount_raised, round_date = "Unknown Company", "Current", None, None, None
@@ -333,14 +349,34 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         # Reset buffer for main table read
         xlsx_io.seek(0)
 
-        # ——— 2 Main investor table ———
-        df = pd.read_excel(xlsx_io, skiprows=5).iloc[:, 1:]
+        # ——— 2 Main investor table (Dynamic Header Search) ———
+        df_raw = pd.read_excel(xlsx_io, header=None)
+        
+        header_row_idx = None
+        # Scan first 20 rows for the header
+        for idx, row in df_raw.head(20).iterrows():
+            row_str = row.astype(str).str.cat(sep=" ")
+            # Look for a row containing both "Total" and either "FDS" or "Common"
+            if "Total" in row_str and ("FDS" in row_str or "%" in row_str) and ("Invested" in row_str or "Common" in row_str):
+                header_row_idx = idx
+                break
+        
+        if header_row_idx is None:
+            header_row_idx = 6 # Fallback
+
+        # Slice from the found header row
+        df = df_raw.iloc[header_row_idx:]
+        df = df.iloc[:, 1:] # Drop Column A (often empty margin)
+        df.columns = make_unique_columns(df.iloc[0])
+        df = df.iloc[1:].reset_index(drop=True)
+
         if df.empty:
             return {"success": False, "error": "No data rows found in XLSX"}
 
-        df.columns = make_unique_columns(df.iloc[0])
-        df = df.iloc[1:].reset_index(drop=True)
-        df.columns = ["Investor"] + df.columns.tolist()[1:]
+        # Ensure we have a clean "Investor" column name
+        cols = df.columns.tolist()
+        cols[0] = "Investor"
+        df.columns = cols
         df.fillna(0, inplace=True)
 
         # Numeric conversions with header aliases
@@ -356,9 +392,9 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
 
         final_fds_col_name = fds_cols[-1] if fds_cols else None
         if final_fds_col_name is None:
-            final_fds_col_name = "Final % FDS"
-            df[final_fds_col_name] = 0
-            defensive_fixes.append("Missing % FDS columns; defaulted Final % FDS to 0")
+             final_fds_col_name = "Final % FDS"
+             df[final_fds_col_name] = 0
+             defensive_fixes.append("Missing % FDS columns; defaulted Final % FDS to 0")
 
         last_invested_col = invested_cols[-1] if invested_cols else None
         if invested_cols:
@@ -371,27 +407,21 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
 
         # ——— 3 Pool values ———
         def row_value(inv_name, column):
-            if column not in df.columns:
-                return 0
+            if column not in df.columns: return 0
             row = df.loc[df["Investor"].astype(str).str.strip() == inv_name]
             return row[column].values[0] if not row.empty else 0
 
-        # Raw values (still in whatever units the sheet stores – shares or % FDS)
         options_outstanding_raw = row_value("Options Outstanding", final_fds_col_name)
         option_pool_available_raw = row_value("Option Pool Available", final_fds_col_name)
         pool_increase_raw = row_value("Pool Increase", final_fds_col_name)
         
-        # Correct total calculation: Options Outstanding + Options Available + Pool Increase
         total_pool_size_raw = options_outstanding_raw + option_pool_available_raw + pool_increase_raw
         
-        # Convert to decimal fractions so 6.2 % ➜ 0.062
         options_outstanding = convert_fds(options_outstanding_raw)
         options_available = convert_fds(option_pool_available_raw)
         total_pool_size = convert_fds(total_pool_size_raw)
-        available_pool = options_available  # For backwards compatibility
+        available_pool = options_available
         
-        # Handy VC KPI: what % of the pool is used?
-        # (aka "pool utilization", "pool burn", "option pool filled")
         pool_utilization = (
             options_outstanding / total_pool_size
             if total_pool_size else 0
@@ -414,17 +444,17 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
         # Bundle for DB save
         cap_table = {
             "company_name": company_name,
-            "user_provided_name": user_provided_name,  # NEW: Flag for user-provided names
-            "company_id": company_id,  # NEW: explicit target id when provided
+            "user_provided_name": user_provided_name, 
+            "company_id": company_id, 
             "round_data": {
                 "round_name": round_name,
                 "valuation": valuation,
                 "amount_raised": amount_raised,
                 "round_date": round_date,
                 "total_pool_size": total_pool_size,
-                "pool_available": available_pool,  # For backwards compatibility
-                "pool_utilization": pool_utilization,  # NEW
-                "options_outstanding": options_outstanding,  # NEW
+                "pool_available": available_pool, 
+                "pool_utilization": pool_utilization,
+                "options_outstanding": options_outstanding, 
             },
             "investors": investors,
             "defensive_fixes": defensive_fixes,
@@ -442,12 +472,11 @@ def process_cap_table_xlsx_with_override(xlsx_b64: str, filename: str, company_n
                 "amount_raised_extracted": amount_raised is not None,
                 "round_extracted": round_name != "Current",
                 "pool_data_found": bool(total_pool_size_raw > 0),
-                "option_pool_utilization": pool_utilization,   # NEW
-                "option_pool_used_pct": round(pool_utilization * 100, 2),  # human-readable
-                "options_outstanding": options_outstanding,    # NEW
-                "options_available": options_available,        # NEW (renamed for clarity)
-                "pool_increase": convert_fds(pool_increase_raw),  # NEW - for debugging
-                # Raw values for debugging
+                "option_pool_utilization": pool_utilization,
+                "option_pool_used_pct": round(pool_utilization * 100, 2), 
+                "options_outstanding": options_outstanding, 
+                "options_available": options_available,
+                "pool_increase": convert_fds(pool_increase_raw), 
                 "debug_raw_values": {
                     "options_outstanding_raw": options_outstanding_raw,
                     "option_pool_available_raw": option_pool_available_raw,
