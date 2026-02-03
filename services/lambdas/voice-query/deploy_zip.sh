@@ -23,22 +23,3 @@ zip -qr "${ZIP_PATH}" .
 echo "✅ Package ready at ${ZIP_PATH}"
 echo "➡️  Deploy with:"
 echo "aws lambda update-function-code --function-name kv-automation-voice-query --zip-file fileb://${ZIP_PATH}"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
