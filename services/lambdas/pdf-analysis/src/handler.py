@@ -303,7 +303,7 @@ def list_company_pdfs(company_id: int) -> dict:
     try:
         import boto3
         s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
         
         print(f"📁 Listing PDFs for company {company_id}")
         
@@ -913,7 +913,7 @@ def analyze_recent_pdfs_for_kpis(company_id: int, stage: str, custom_config: dic
         # Download PDFs from S3
         import boto3
         s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
         
         pdf_contents = []
         report_metadata = []
@@ -2614,7 +2614,7 @@ def trigger_async_processing(job_id: str, company_id: int, stage: str, custom_co
     
     try:
         # Initialize Lambda client
-        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
         
         # Prepare payload for async processing
         payload = {
@@ -2751,7 +2751,7 @@ def analyze_company_health(company_id: int, criticality_level: int = 5, manual_s
         # Download the most recent PDF from S3
         import boto3
         s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks-prod')
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
         
         # Try to find the PDF in S3 using common key patterns
         pdf_bytes = None

@@ -13,7 +13,7 @@ RUNTIME="python3.9"
 HANDLER="handler.lambda_handler"
 TIMEOUT=60
 MEMORY=512
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-us-west-2}"
 
 # Colors for output
 RED='\033[0;31m'

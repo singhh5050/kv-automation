@@ -4,7 +4,7 @@
 # Usage: ./deploy.sh [function-name]
 
 FUNCTION_NAME=${1:-milestone-emailer}
-REGION=${AWS_REGION:-us-east-1}
+REGION=${AWS_REGION:-us-west-2}
 
 echo "🚀 Building milestone-emailer Lambda..."
 

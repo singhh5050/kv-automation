@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     
     // Initialize S3 client with server-side credentials
     const s3Client = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
+      region: process.env.AWS_REGION || 'us-west-2',
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     
     // Upload to S3
     const command = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks-prod',
+      Bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks',
       Key: s3Key,
       Body: fileBuffer,
       ContentType: 'application/pdf',
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     
     console.log(`📤 Uploading to S3...`)
     console.log(`📊 File size: ${file.size} bytes`)
-    console.log(`🎯 Target bucket: ${process.env.S3_BUCKET_NAME || 'kv-board-decks-prod'}`)
+    console.log(`🎯 Target bucket: ${process.env.S3_BUCKET_NAME || 'kv-board-decks'}`)
     console.log(`📁 Target key: ${s3Key}`)
     
     const result = await s3Client.send(command)
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       s3Key,
-      bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks-prod',
+      bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks',
       message: 'PDF uploaded successfully. Processing will begin automatically.',
       processingNote: 'Financial data extraction and analysis will complete within 2-3 minutes. Results will appear in the company dashboard once processing is complete.',
       etag: result.ETag,

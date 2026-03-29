@@ -2352,7 +2352,7 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
         if s3_files:
             try:
                 s3_client = boto3.client('s3')
-                bucket_name = 'kv-board-decks-prod'
+                bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
                 
                 for file_name in s3_files:
                     # Skip placeholder files (they don't exist in S3)
@@ -2921,7 +2921,7 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         try:
             # Initialize S3 client
             s3_client = boto3.client('s3')
-            bucket_name = 'kv-board-decks-prod'
+            bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
             
             # Delete the file from S3
             s3_client.delete_object(
@@ -3029,7 +3029,7 @@ def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
                 
                 try:
                     s3_client = boto3.client('s3')
-                    bucket_name = 'kv-board-decks-prod'
+                    bucket_name = os.environ.get('S3_BUCKET_NAME', 'kv-board-decks')
                     
                     # Try to delete the S3 object
                     s3_client.delete_object(

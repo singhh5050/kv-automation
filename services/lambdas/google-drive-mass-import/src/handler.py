@@ -465,7 +465,7 @@ def call_cap_table_processor(xlsx_data: str, filename: str, company_name_overrid
     
     try:
         import boto3
-        lambda_client = boto3.client('lambda', region_name='us-east-1')
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
         
         payload = {
             "operation": "process_cap_table",
@@ -497,7 +497,7 @@ def call_pdf_analyzer(pdf_data_b64: str, filename: str, company_name_override: s
     
     try:
         import boto3
-        lambda_client = boto3.client('lambda', region_name='us-east-1')
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
         
         payload = {
             "operation": "analyze_pdf",
@@ -530,7 +530,7 @@ def call_financial_crud_save(financial_data: Dict[str, Any], company_name_overri
     
     try:
         import boto3
-        lambda_client = boto3.client('lambda', region_name='us-east-1')
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
         
         # Override the company name in the financial data
         financial_data_copy = financial_data.copy()

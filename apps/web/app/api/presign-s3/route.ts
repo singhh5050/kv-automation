@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     
     // Initialize S3 client
     const s3Client = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
+      region: process.env.AWS_REGION || 'us-west-2',
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     
     // Create the command for presigned URL
     const command = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks-prod',
+      Bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks',
       Key: s3Key,
       ContentType: fileType,
       Metadata: metadata,
@@ -87,14 +87,14 @@ export async function POST(request: NextRequest) {
     })
     
     console.log(`✅ Presigned URL generated successfully`)
-    console.log(`🎯 Target bucket: ${process.env.S3_BUCKET_NAME || 'kv-board-decks-prod'}`)
+    console.log(`🎯 Target bucket: ${process.env.S3_BUCKET_NAME || 'kv-board-decks'}`)
     console.log(`📁 Target key: ${s3Key}`)
     
     return NextResponse.json({
       success: true,
       presignedUrl,
       s3Key,
-      bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks-prod',
+      bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks',
       message: 'Presigned URL generated successfully',
       expiresIn: 600
     })
