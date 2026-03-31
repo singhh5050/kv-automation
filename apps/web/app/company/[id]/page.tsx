@@ -300,6 +300,7 @@ export default function CompanyDetailPage() {
   const userEmail = user?.primaryEmailAddress?.emailAddress
   if (userEmail) setCurrentUserEmail(userEmail)
 
+
   const [company, setCompany] = useState<CompanyOverview | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('metrics')
   const [isLoading, setIsLoading] = useState(true)
@@ -474,8 +475,8 @@ export default function CompanyDetailPage() {
   }
 
   useEffect(() => {
-    loadCompanyData()
-  }, [companyId])
+    if (userEmail) loadCompanyData()
+  }, [companyId, userEmail])
 
   // Load saved KPI analysis when company data is loaded
   useEffect(() => {

@@ -8,11 +8,45 @@ import pg8000
 import boto3
 import concurrent.futures
 import threading
+import ssl
 from datetime import datetime
 
 
 # Add the Lambda layer path for dependencies
 sys.path.insert(0, '/opt/python')
+
+# ── Per-user data isolation ──
+ADMIN_USERS = [u.strip() for u in os.environ.get('ADMIN_USERS', '').split(',') if u.strip()]
+
+def check_company_ownership(company_id, user_id):
+    """Verify user owns this company. Returns True if allowed."""
+    if not user_id or not company_id:
+        return True  # No context = allow (S3 triggers etc.)
+    if user_id in ADMIN_USERS:
+        return True
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        conn = pg8000.connect(
+            host=os.environ.get('DB_HOST'),
+            port=int(os.environ.get('DB_PORT', 5432)),
+            database=os.environ.get('DB_NAME', 'postgres'),
+            user=os.environ.get('DB_USER'),
+            password=os.environ.get('DB_PASSWORD'),
+            ssl_context=ctx
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT owner_id FROM companies WHERE id = %s", [int(company_id)])
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not row:
+            return False
+        return row[0] == user_id
+    except Exception as e:
+        print(f"⚠️ Ownership check failed: {e}")
+        return True  # Fail open for system calls (S3 triggers)
 
 def debug_object_recursively(obj, path="", max_depth=5, current_depth=0):
     """Recursively debug an object to find all fields and their values"""
@@ -376,6 +410,17 @@ def handle_kpi_analysis_request(event, context):
     }
     
     try:
+        # Per-user ownership check for all actions with company_id
+        action_company_id = event.get('company_id')
+        action_user_id = event.get('user_id')
+        if action_company_id and action_user_id:
+            if not check_company_ownership(action_company_id, action_user_id):
+                return {
+                    'statusCode': 403,
+                    'headers': cors_headers,
+                    'body': json.dumps({'error': 'Access denied'})
+                }
+
         # Check if this is a request to list PDFs
         if event.get('action') == 'list_pdfs':
             company_id = event.get('company_id')

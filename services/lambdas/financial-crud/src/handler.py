@@ -102,11 +102,11 @@ def lambda_handler(event, context):
     elif operation == "delete_company_enrichment":
         result = delete_company_enrichment(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_person_enrichment":
-        result = get_person_enrichment(db_config, body.get("person_urn"))
+        result = get_person_enrichment(db_config, body.get("person_urn"), user_id=user_id)
     elif operation == "get_company_people":
         result = get_company_people(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "delete_person_enrichment":
-        result = delete_person_enrichment(db_config, body.get("person_urn"))
+        result = delete_person_enrichment(db_config, body.get("person_urn"), user_id=user_id)
     elif operation == "delete_company":
         result = delete_company(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_company_names":
@@ -2237,7 +2237,7 @@ def delete_company_enrichment(db_config: Dict, company_id: int, user_id: str = N
             'error': f'Failed to delete enrichment data: {str(e)}'
         }
 
-def get_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]:
+def get_person_enrichment(db_config: Dict, person_urn: str, user_id: str = None) -> Dict[str, Any]:
     """
     Retrieve person enrichment data by person URN
     """
@@ -2366,7 +2366,7 @@ def get_company_people(db_config: Dict, company_id: int, user_id: str = None) ->
             'error': f'Failed to retrieve company people: {str(e)}'
         }
 
-def delete_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]:
+def delete_person_enrichment(db_config: Dict, person_urn: str, user_id: str = None) -> Dict[str, Any]:
     """
     Delete person enrichment data by person URN
     """
