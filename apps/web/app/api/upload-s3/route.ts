@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 
 // Server-side S3 upload API route
 export async function POST(request: NextRequest) {
@@ -16,7 +16,10 @@ export async function POST(request: NextRequest) {
     
     console.log('🚀 Server-side S3 upload initiated')
     console.log('👤 Authenticated user:', userId)
-    
+
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Parse form data
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -72,7 +75,8 @@ export async function POST(request: NextRequest) {
     if (companyName && companyName !== 'undefined') {
       metadata['company-name'] = companyName
     }
-    
+    metadata['user-email'] = userEmail || ''
+
     // Convert file to Uint8Array for S3 upload
     const fileBuffer = new Uint8Array(await file.arrayBuffer())
     

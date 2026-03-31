@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 
 // Generate presigned URLs for direct browser-to-S3 uploads
 export async function POST(request: NextRequest) {
@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
     
     console.log('🔗 Generating presigned URL for direct S3 upload')
     console.log('👤 Authenticated user:', userId)
-    
+
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     const body = await request.json()
     const { fileName, fileType, companyId, companyName } = body
     
@@ -72,7 +75,8 @@ export async function POST(request: NextRequest) {
     if (companyName && companyName !== 'undefined') {
       metadata['company-name'] = companyName
     }
-    
+    metadata['user-email'] = userEmail || ''
+
     // Create the command for presigned URL
     const command = new PutObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME || 'kv-board-decks',

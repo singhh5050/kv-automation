@@ -486,13 +486,17 @@ def handle_s3_event(event, context):
                         except ValueError:
                             pass
             
+            # Extract metadata for user context
+            s3_metadata = pdf_object.get('Metadata', {})
+            user_email = s3_metadata.get('user-email', '')
+            print(f"👤 S3 metadata user-email: {user_email or 'not set'}")
+
             if not company_id:
                 print("⚠️ No company_id found in S3 key path, checking object metadata...")
                 # Try to get company_id from S3 object metadata
                 try:
-                    metadata = pdf_object.get('Metadata', {})
-                    if 'company-id' in metadata:
-                        company_id = int(metadata['company-id'])
+                    if 'company-id' in s3_metadata:
+                        company_id = int(s3_metadata['company-id'])
                         print(f"📋 Extracted company_id from metadata: {company_id}")
                 except (ValueError, TypeError):
                     print("❌ Could not extract company_id from metadata")
@@ -510,7 +514,7 @@ def handle_s3_event(event, context):
             if company_id:
                 try:
                     print("💾 Storing analysis results in database...")
-                    store_result_in_db(analysis_result, company_id)
+                    store_result_in_db(analysis_result, company_id, user_id=user_email)
                     stored = True
                     print("✅ Analysis results stored successfully")
                     
@@ -818,7 +822,11 @@ Just start with the opening brace {{ and end with the closing brace }}."""
         print(f"📥 Raw output preview (first 300 chars): {raw[:300]}")
         
         try:
-            data = _json.loads(raw.strip())
+            cleaned = raw.strip()
+            # Fix common LLM quirk: double braces {{ ... }}
+            if cleaned.startswith('{{') and cleaned.endswith('}}'):
+                cleaned = cleaned[1:-1]
+            data = _json.loads(cleaned)
             print("✅ Valid JSON from model")
         except Exception as e:
             print(f"❌ JSON parse failed: {e}")
@@ -1582,7 +1590,7 @@ def get_kpi_requirements(sector: str, stage: str) -> str:
     return requirements_text
 
 
-def store_result_in_db(analysis_result: dict, company_id: int):
+def store_result_in_db(analysis_result: dict, company_id: int, user_id: str = None):
     """
     Store analysis results in database using the same pattern as financial-crud Lambda
     """

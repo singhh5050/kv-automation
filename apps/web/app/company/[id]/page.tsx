@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones, runCompetitionAnalysis, getLatestCompetitionAnalysis } from '@/lib/api'
+import { useUser } from '@clerk/nextjs'
+import { setCurrentUserEmail, getCompanyOverview, enrichCompany, getCompanyEnrichment, uploadFile, uploadToS3, saveFinancialReport, updateCapTableRound, analyzeCompanyKPIs, deleteFinancialReport, getCompanyKpiAnalysis, getLatestAsyncKpiAnalysis, runHealthCheck, getLatestHealthCheck, getMilestones, runCompetitionAnalysis, getLatestCompetitionAnalysis } from '@/lib/api'
 import { useAsyncAnalysis } from '@/hooks/useAsyncAnalysis'
 import EditableMetric from '@/components/company/EditableMetric'
 import EditableTextField from '@/components/company/EditableTextField'
@@ -292,7 +293,15 @@ const SimpleCashChart = ({ reports }: { reports: any[] }) => {
 export default function CompanyDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { user } = useUser()
   const companyId = params.id as string
+
+  // Set user email for per-user data isolation
+  useEffect(() => {
+    if (user?.primaryEmailAddress?.emailAddress) {
+      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
+    }
+  }, [user])
 
   const [company, setCompany] = useState<CompanyOverview | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('metrics')

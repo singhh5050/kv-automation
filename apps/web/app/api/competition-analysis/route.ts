@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 /**
  * API route for competition analysis
@@ -54,12 +55,15 @@ export async function POST(request: NextRequest) {
       is_public: !!is_public
     }
     
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     console.log(`📤 Invoking Lambda with competition analysis payload:`, payload)
-    
+
     // Invoke the PDF analysis Lambda (which handles competition analysis)
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',
-      Payload: JSON.stringify(payload),
+      Payload: JSON.stringify({ ...payload, user_id: userEmail }),
       InvocationType: 'RequestResponse'
     })
     
@@ -147,10 +151,13 @@ export async function GET(request: NextRequest) {
       action: 'get_competition_analysis',
       company_id: parseInt(company_id)
     }
-    
+
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',
-      Payload: JSON.stringify(payload),
+      Payload: JSON.stringify({ ...payload, user_id: userEmail }),
       InvocationType: 'RequestResponse'
     })
     

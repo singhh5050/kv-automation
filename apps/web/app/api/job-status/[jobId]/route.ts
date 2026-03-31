@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 // API route to check the status of an async analysis job
 export async function GET(
@@ -42,12 +43,15 @@ export async function GET(
       job_id: jobId
     }
     
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     console.log(`📤 Checking job status with payload:`, payload)
-    
+
     // Invoke the Lambda to get job status
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',
-      Payload: JSON.stringify(payload),
+      Payload: JSON.stringify({ ...payload, user_id: userEmail }),
       InvocationType: 'RequestResponse'
     })
     

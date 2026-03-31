@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 // API route to invoke the PDF analysis Lambda for health check analysis
 export async function POST(request: NextRequest) {
@@ -50,23 +51,27 @@ export async function POST(request: NextRequest) {
       },
     })
     
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Prepare Lambda payload
     const payload: any = {
       action: 'health_check',
-      company_id: parseInt(company_id)
+      company_id: parseInt(company_id),
+      user_id: userEmail
     }
-    
+
     // Add optional parameters
     if (criticality_level !== undefined) {
       payload.criticality_level = criticality_level
     }
-    
+
     if (manual_score) {
       payload.manual_score = manual_score
     }
-    
+
     console.log(`📤 Invoking Lambda with health check payload:`, payload)
-    
+
     // Invoke the PDF analysis Lambda
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',

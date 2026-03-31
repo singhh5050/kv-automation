@@ -7,6 +7,12 @@ import boto3
 from datetime import datetime, date
 from typing import Dict, Any, List
 
+# ── Per-user data isolation ──
+ADMIN_USERS = [u.strip() for u in os.environ.get('ADMIN_USERS', '').split(',') if u.strip()]
+
+def is_admin(user_id):
+    return user_id in ADMIN_USERS
+
 # ────────────────────────────────────────────────────────────
 def lambda_handler(event, context):
     """
@@ -46,23 +52,25 @@ def lambda_handler(event, context):
                     "body": json.dumps({"error": "Invalid JSON in request body"})}
 
     operation = event.get("operation") or body.get("operation")
+    user_id = body.get("user_id") or event.get("user_id")
     print(f"🔍 LAMBDA EVENT: {event}")
     print(f"🔍 PARSED BODY: {body}")
     print(f"🔍 OPERATION: {operation}")
-    
+    print(f"🔍 USER_ID: {user_id}, IS_ADMIN: {is_admin(user_id) if user_id else 'no user'}")
+
     if not operation:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": "Operation not specified"})}
 
     # ── Dispatch ──
     if operation == "save_financial_report":
-        result = save_financial_report(db_config, body)
+        result = save_financial_report(db_config, body, user_id=user_id)
     elif operation == "get_companies":
-        result = get_companies(db_config)
+        result = get_companies(db_config, user_id=user_id)
     elif operation == "get_company_reports":
-        result = get_company_reports(db_config, body.get("company_id"))
+        result = get_company_reports(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_company_by_name":
-        result = get_company_by_name(db_config, body.get("company_name"))
+        result = get_company_by_name(db_config, body.get("company_name"), user_id=user_id)
     elif operation == "test_connection":
         result = test_database_connection(db_config)
     elif operation == "debug_database":
@@ -70,73 +78,73 @@ def lambda_handler(event, context):
     elif operation == "clear_all_data":
         result = clear_all_data(db_config)
     elif operation == "save_cap_table_round":
-        result = save_cap_table_round(db_config, body)
+        result = save_cap_table_round(db_config, body, user_id=user_id)
     elif operation == "get_company_overview":
-        result = get_company_overview(db_config, body.get("company_id"))
+        result = get_company_overview(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "update_financial_metrics":
-        result = update_financial_metrics(db_config, body)
+        result = update_financial_metrics(db_config, body, user_id=user_id)
     elif operation == "update_company":
-        result = update_company(db_config, body)
+        result = update_company(db_config, body, user_id=user_id)
     elif operation == "update_cap_table_round":
-        result = update_cap_table_round(db_config, body)
+        result = update_cap_table_round(db_config, body, user_id=user_id)
     elif operation == "update_cap_table_investor":
-        result = update_cap_table_investor(db_config, body)
+        result = update_cap_table_investor(db_config, body, user_id=user_id)
     elif operation == "get_all_company_data":
-        result = get_all_company_data(db_config, body.get("company_id"))
+        result = get_all_company_data(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_company_enrichment":
-        result = get_company_enrichment(db_config, body.get("company_id"))
+        result = get_company_enrichment(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "delete_company_enrichment":
-        result = delete_company_enrichment(db_config, body.get("company_id"))
+        result = delete_company_enrichment(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_person_enrichment":
         result = get_person_enrichment(db_config, body.get("person_urn"))
     elif operation == "get_company_people":
-        result = get_company_people(db_config, body.get("company_id"))
+        result = get_company_people(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "delete_person_enrichment":
         result = delete_person_enrichment(db_config, body.get("person_urn"))
     elif operation == "delete_company":
-        result = delete_company(db_config, body.get("company_id"))
+        result = delete_company(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_company_names":
-        result = get_company_names(db_config)
+        result = get_company_names(db_config, user_id=user_id)
     elif operation == "get_portfolio_summary":
-        result = get_portfolio_summary(db_config)
+        result = get_portfolio_summary(db_config, user_id=user_id)
     elif operation == "get_company_notes":
-        result = get_company_notes(db_config, body.get("company_id"))
+        result = get_company_notes(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "create_company_note":
-        result = create_company_note(db_config, body)
+        result = create_company_note(db_config, body, user_id=user_id)
     elif operation == "update_company_note":
-        result = update_company_note(db_config, body)
+        result = update_company_note(db_config, body, user_id=user_id)
     elif operation == "delete_company_note":
-        result = delete_company_note(db_config, body.get("note_id"))
+        result = delete_company_note(db_config, body.get("note_id"), user_id=user_id)
     elif operation == "delete_financial_report":
         # Handle both direct Lambda invocation and API Gateway
         report_id = body.get("report_id") or event.get("report_id")
-        result = delete_financial_report(db_config, report_id)
+        result = delete_financial_report(db_config, report_id, user_id=user_id)
     elif operation == "get_company_kpi_analysis":
-        result = get_company_kpi_analysis(db_config, body.get("company_id"))
+        result = get_company_kpi_analysis(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "save_company_manual_override":
-        result = save_company_manual_override(db_config, body)
+        result = save_company_manual_override(db_config, body, user_id=user_id)
     elif operation == "get_company_manual_overrides":
-        result = get_company_manual_overrides(db_config, body.get("company_id"))
+        result = get_company_manual_overrides(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "delete_company_manual_override":
-        result = delete_company_manual_override(db_config, body)
+        result = delete_company_manual_override(db_config, body, user_id=user_id)
     elif operation == "delete_placeholder_pdfs":
-        result = delete_placeholder_pdfs(db_config, body.get("company_id"))
+        result = delete_placeholder_pdfs(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "get_company_executives":
-        result = get_company_executives(db_config, body.get("company_id"))
+        result = get_company_executives(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "save_company_executive":
-        result = save_company_executive(db_config, body)
+        result = save_company_executive(db_config, body, user_id=user_id)
     elif operation == "delete_company_executive":
-        result = delete_company_executive(db_config, body.get("executive_id"))
+        result = delete_company_executive(db_config, body.get("executive_id"), user_id=user_id)
     elif operation == "get_milestones":
-        result = get_milestones(db_config, body.get("company_id"))
+        result = get_milestones(db_config, body.get("company_id"), user_id=user_id)
     elif operation == "create_milestone":
-        result = create_milestone(db_config, body)
+        result = create_milestone(db_config, body, user_id=user_id)
     elif operation == "update_milestone":
-        result = update_milestone(db_config, body)
+        result = update_milestone(db_config, body, user_id=user_id)
     elif operation == "delete_milestone":
-        result = delete_milestone(db_config, body.get("milestone_id"))
+        result = delete_milestone(db_config, body.get("milestone_id"), user_id=user_id)
     elif operation == "mark_milestone_completed":
-        result = mark_milestone_completed(db_config, body)
+        result = mark_milestone_completed(db_config, body, user_id=user_id)
     else:
         return {"statusCode": 400, "headers": headers,
                 "body": json.dumps({"error": f"Unknown operation: {operation}"})}
@@ -222,7 +230,7 @@ def test_database_connection(db_config: Dict) -> Dict[str, Any]:
             'error': f'Connection test failed: {str(e)}'
         }
 
-def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_financial_metrics(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update specific financial metrics for a report.
     Expected data format:
@@ -270,7 +278,14 @@ def update_financial_metrics(db_config: Dict, data: Dict) -> Dict[str, Any]:
             }
         
         report_id, company_id = report_row
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Build dynamic update query with strict validation (match PDF prompt formats)
         set_clauses = []
         params = []
@@ -427,7 +442,7 @@ def parse_runway_value(value):
     except ValueError:
         return None
 
-def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def save_financial_report(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Save a financial report to the database
     Expected data format matches the AI extraction output
@@ -463,17 +478,18 @@ def save_financial_report(db_config: Dict, data: Dict) -> Dict[str, Any]:
             manually_edited = False
             edited_by = "system_import"
         
-        # Insert company if it doesn't exist
+        # Insert company if it doesn't exist (scoped by owner_id)
+        owner = user_id or data.get('user_id') or 'singhh@stanford.edu'
         company_insert = """
-            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (normalized_name) DO NOTHING
+            INSERT INTO companies (name, normalized_name, owner_id, manually_edited, edited_by, edited_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (normalized_name, owner_id) DO NOTHING
         """
-        
-        cursor.execute(company_insert, [data['companyName'], normalized_name, manually_edited, edited_by])
-        
-        # Get company ID
-        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
+
+        cursor.execute(company_insert, [data['companyName'], normalized_name, owner, manually_edited, edited_by])
+
+        # Get company ID (scoped by owner)
+        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s AND owner_id = %s", [normalized_name, owner])
         company_row = cursor.fetchone()
         
         if not company_row:
@@ -576,37 +592,52 @@ def _cursor_to_dict(cursor) -> List[Dict[str, Any]]:
     
     return result
 
-def get_companies(db_config: Dict) -> Dict[str, Any]:
+def check_company_access(cursor, company_id, user_id):
+    """Check if user owns this company or is admin. Returns (allowed, error_dict)."""
+    if not user_id:
+        return True, None  # No user context = allow (backward compat)
+    if is_admin(user_id):
+        return True, None
+    cursor.execute("SELECT owner_id FROM companies WHERE id = %s", [int(company_id)])
+    row = cursor.fetchone()
+    if not row:
+        return False, {'success': False, 'error': 'Company not found'}
+    if row[0] != user_id:
+        return False, {'success': False, 'error': 'Access denied'}
+    return True, None
+
+
+def get_companies(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
     """
-    Get all companies from the database, along with their latest report
+    Get companies from the database, filtered by owner_id unless admin.
     """
     try:
         conn_result = get_database_connection(db_config)
         if not conn_result['success']:
             return conn_result
-        
+
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
-        # SQL to get companies and their most recent report date
-        # This is a simplified query; a more robust solution might use a subquery
-        # or window function to get the full latest report, not just the date.
-        query = """
-            SELECT 
-                c.id, 
-                c.name, 
-                c.normalized_name, 
-                c.created_at, 
-                c.updated_at,
-                c.manually_edited,
-                (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
-            FROM 
-                companies c
-            ORDER BY 
-                c.name ASC;
-        """
-        
-        cursor.execute(query)
+
+        if user_id and not is_admin(user_id):
+            query = """
+                SELECT
+                    c.id, c.name, c.normalized_name, c.created_at, c.updated_at, c.manually_edited,
+                    (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
+                FROM companies c
+                WHERE c.owner_id = %s
+                ORDER BY c.name ASC;
+            """
+            cursor.execute(query, [user_id])
+        else:
+            query = """
+                SELECT
+                    c.id, c.name, c.normalized_name, c.created_at, c.updated_at, c.manually_edited,
+                    (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
+                FROM companies c
+                ORDER BY c.name ASC;
+            """
+            cursor.execute(query)
         
         companies = _cursor_to_dict(cursor)
         
@@ -624,7 +655,7 @@ def get_companies(db_config: Dict) -> Dict[str, Any]:
             'error': f'Failed to get companies: {str(e)}'
         }
 
-def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
+def get_company_reports(db_config: Dict, company_id: str, user_id: str = None) -> Dict[str, Any]:
     """
     Get all reports for a specific company
     """
@@ -642,7 +673,14 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Get company info and reports
         query = """
             SELECT fr.id, fr.file_name, fr.report_date, fr.report_period, fr.sector,
@@ -708,7 +746,7 @@ def get_company_reports(db_config: Dict, company_id: str) -> Dict[str, Any]:
             'error': f'Failed to get company reports: {str(e)}'
         }
 
-def get_company_by_name(db_config: Dict, company_name: str) -> Dict[str, Any]:
+def get_company_by_name(db_config: Dict, company_name: str, user_id: str = None) -> Dict[str, Any]:
     """
     Find a company by name (with normalization)
     """
@@ -968,7 +1006,7 @@ def clear_all_data(db_config: Dict) -> Dict[str, Any]:
             'error': f'Failed to clear data: {str(e)}'
         }
 
-def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def save_cap_table_round(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Save cap table round data with investors
     Expected data format:
@@ -1052,7 +1090,14 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             }
         
         company_id = company_row[0]
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Parse round date
         round_date = round_data.get('round_date')
         if isinstance(round_date, str):
@@ -1156,7 +1201,7 @@ def save_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to save cap table round: {str(e)}'
         }
 
-def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
+def get_company_overview(db_config: Dict, company_id: str, user_id: str = None) -> Dict[str, Any]:
     """
     Get complete company overview with current cap table and financial reports
     """
@@ -1174,11 +1219,18 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Get company details
         cursor.execute("""
             SELECT id, name, normalized_name, sector, created_at, updated_at
-            FROM companies 
+            FROM companies
             WHERE id = %s
         """, [company_id])
         
@@ -1341,7 +1393,7 @@ def get_company_overview(db_config: Dict, company_id: str) -> Dict[str, Any]:
             'error': f'Failed to get company overview: {str(e)}'
         }
 
-def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_company(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update company information.
     Expected data format:
@@ -1374,7 +1426,14 @@ def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if data.get('company_id'):
+            allowed, err = check_company_access(cursor, data['company_id'], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Verify company exists
         cursor.execute("SELECT id, name FROM companies WHERE id = %s", [data['company_id']])
         company_row = cursor.fetchone()
@@ -1459,7 +1518,7 @@ def update_company(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update company: {str(e)}'
         }
 
-def update_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_cap_table_round(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update cap table round information.
     Expected data format:
@@ -1507,11 +1566,18 @@ def update_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             }
         
         round_id, company_id, round_name = round_row
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Build dynamic update query
         set_clauses = []
         params = []
-        
+
         numeric_fields = ['valuation', 'amount_raised', 'total_pool_size', 'pool_available', 'options_outstanding', 'pool_utilization']
         text_fields = ['round_name']
         date_fields = ['round_date']
@@ -1575,7 +1641,7 @@ def update_cap_table_round(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update cap table round: {str(e)}'
         }
 
-def update_cap_table_investor(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_cap_table_investor(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update cap table investor information.
     Expected data format:
@@ -1623,11 +1689,21 @@ def update_cap_table_investor(db_config: Dict, data: Dict) -> Dict[str, Any]:
             }
         
         investor_id, round_id, investor_name = investor_row
-        
+
+        # Look up company_id for access check
+        cursor.execute("SELECT company_id FROM cap_table_rounds WHERE id = %s", [round_id])
+        round_company_row = cursor.fetchone()
+        if round_company_row:
+            allowed, err = check_company_access(cursor, round_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Build dynamic update query
         set_clauses = []
         params = []
-        
+
         numeric_fields = ['total_invested', 'final_round_investment']
         percentage_fields = ['final_fds']
         text_fields = ['investor_name']
@@ -1683,7 +1759,7 @@ def update_cap_table_investor(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update investor: {str(e)}'
         }
 
-def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
+def get_all_company_data(db_config: Dict, company_id: str, user_id: str = None) -> Dict[str, Any]:
     """
     Get all database data for a company for comprehensive editing view.
     Returns raw database records with full field information.
@@ -1702,11 +1778,18 @@ def get_all_company_data(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Get company data
         cursor.execute("""
             SELECT id, name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at
-            FROM companies 
+            FROM companies
             WHERE id = %s
         """, [company_id])
         
@@ -1896,7 +1979,7 @@ def normalize_company_name(name: str) -> str:
         return ""
     return name.lower().strip()
 
-def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def get_company_enrichment(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Retrieve enrichment data for a company
     """
@@ -1914,7 +1997,14 @@ def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
             
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Query enrichment data
         cursor.execute("""
             SELECT id, company_id, harmonic_entity_urn, harmonic_data, 
@@ -2067,7 +2157,7 @@ def get_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
             'error': f'Failed to retrieve enrichment data: {str(e)}'
         }
 
-def delete_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def delete_company_enrichment(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete enrichment data for a company
     """
@@ -2085,10 +2175,17 @@ def delete_company_enrichment(db_config: Dict, company_id: int) -> Dict[str, Any
             
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Delete enrichment data
         cursor.execute("""
-            DELETE FROM company_enrichments 
+            DELETE FROM company_enrichments
             WHERE company_id = %s
             RETURNING id
         """, [company_id])
@@ -2182,7 +2279,7 @@ def get_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]:
             'error': f'Failed to retrieve person enrichment data: {str(e)}'
         }
 
-def get_company_people(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def get_company_people(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Get all enriched people for a company
     """
@@ -2199,12 +2296,19 @@ def get_company_people(db_config: Dict, company_id: int) -> Dict[str, Any]:
             
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             SELECT id, person_urn, full_name, first_name, last_name,
                    title, extracted_data, enrichment_status, enriched_at
-            FROM person_enrichments 
-            WHERE company_id = %s 
+            FROM person_enrichments
+            WHERE company_id = %s
             ORDER BY enriched_at DESC
         """, [company_id])
         
@@ -2292,7 +2396,7 @@ def delete_person_enrichment(db_config: Dict, person_urn: str) -> Dict[str, Any]
             'error': f'Failed to delete person enrichment data: {str(e)}'
         }
 
-def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def delete_company(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete a company and all its associated data using CASCADE deletes.
     Returns summary of what was deleted.
@@ -2312,7 +2416,14 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
     try:
         conn.autocommit = False
         cur = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cur, company_id, user_id)
+            if not allowed:
+                cur.close()
+                conn.close()
+                return err
+
         # First, get preview of what will be deleted (for logging/audit)
         cur.execute("""
             SELECT 
@@ -2447,7 +2558,7 @@ def delete_company(db_config: Dict, company_id: int) -> Dict[str, Any]:
     finally:
         conn.close()
 
-def get_company_names(db_config: Dict) -> Dict[str, Any]:
+def get_company_names(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Get all company names for dropdown selection
     """
@@ -2458,15 +2569,24 @@ def get_company_names(db_config: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
-        # Get all company names sorted alphabetically
-        query = """
-            SELECT id, name, manually_edited
-            FROM companies
-            ORDER BY LOWER(name) ASC
-        """
-        
-        cursor.execute(query)
+
+        # Get all company names sorted alphabetically, filtered by owner if not admin
+        if user_id and not is_admin(user_id):
+            query = """
+                SELECT id, name, manually_edited
+                FROM companies
+                WHERE owner_id = %s
+                ORDER BY LOWER(name) ASC
+            """
+            cursor.execute(query, [user_id])
+        else:
+            query = """
+                SELECT id, name, manually_edited
+                FROM companies
+                ORDER BY LOWER(name) ASC
+            """
+            cursor.execute(query)
+
         companies = _cursor_to_dict(cursor)
         
         cursor.close()
@@ -2483,7 +2603,7 @@ def get_company_names(db_config: Dict) -> Dict[str, Any]:
             'error': f'Failed to get company names: {str(e)}'
         }
 
-def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
+def get_portfolio_summary(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Get optimized portfolio summary with only the fields needed for company cards.
     Single query instead of N+1 pattern - much more efficient.
@@ -2495,59 +2615,67 @@ def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Build owner filter clause
+        owner_filter = ""
+        owner_params = []
+        if user_id and not is_admin(user_id):
+            owner_filter = "WHERE c.owner_id = %s"
+            owner_params = [user_id]
+
         # Single optimized query for all portfolio data
-        query = """
+        query = f"""
             WITH latest_reports AS (
-                SELECT DISTINCT ON (company_id) 
+                SELECT DISTINCT ON (company_id)
                     company_id,
                     cash_out_date,
                     sector,
                     processed_at
-                FROM financial_reports 
+                FROM financial_reports
                 ORDER BY company_id, report_date DESC, processed_at DESC
             ),
             kv_data AS (
-                SELECT 
+                SELECT
                     c.id as company_id,
                     ctr.valuation,
                     -- Calculate total KV ownership (sum all KV-related funds)
                     COALESCE(SUM(
-                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)' 
+                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
                         THEN cti.final_fds ELSE 0 END
                     ), 0) as kv_ownership,
                     -- Calculate total KV investment amount
                     COALESCE(SUM(
-                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)' 
+                        CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
                         THEN cti.total_invested ELSE 0 END
                     ), 0) as kv_investment,
                     -- Collect KV fund names for display
                     string_agg(
                         CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
-                        THEN cti.investor_name ELSE NULL END, 
+                        THEN cti.investor_name ELSE NULL END,
                         ', ' ORDER BY cti.total_invested DESC
                     ) as kv_funds,
                     -- Determine investment stage based on fund priority (Growth > Main > Early)
-                    CASE 
+                    CASE
                         WHEN MAX(CASE WHEN cti.investor_name ~* '.*(Opp|Excelsior).*' THEN 3 ELSE 0 END) = 3 THEN 'Growth Stage'
                         WHEN MAX(CASE WHEN cti.investor_name ~* '^KV [IVX]+$' THEN 2 ELSE 0 END) = 2 THEN 'Main Stage'
                         WHEN MAX(CASE WHEN cti.investor_name ~* '.*Seed.*' THEN 1 ELSE 0 END) = 1 THEN 'Early Stage'
                         ELSE 'Unknown'
                     END as investment_stage
                 FROM companies c
+                {owner_filter}
                 LEFT JOIN cap_table_current ctc ON c.id = ctc.company_id
                 LEFT JOIN cap_table_rounds ctr ON ctc.cap_table_round_id = ctr.id
                 LEFT JOIN cap_table_investors cti ON ctr.id = cti.cap_table_round_id
                 GROUP BY c.id, ctr.valuation
             ),
             report_counts AS (
-                SELECT 
+                SELECT
                     company_id,
                     COUNT(*) as total_reports
                 FROM financial_reports
                 GROUP BY company_id
             )
-            SELECT 
+            SELECT
                 c.id,
                 c.name,
                 COALESCE(lr.sector, 'healthcare') as sector,
@@ -2561,14 +2689,16 @@ def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
                 -- Get company logo from enrichment data
                 ce.extracted_data->>'logo_url' as company_logo
             FROM companies c
+            {owner_filter}
             LEFT JOIN latest_reports lr ON c.id = lr.company_id
             LEFT JOIN kv_data kd ON c.id = kd.company_id
             LEFT JOIN report_counts rc ON c.id = rc.company_id
             LEFT JOIN company_enrichments ce ON c.id = ce.company_id
             ORDER BY c.name ASC
         """
-        
-        cursor.execute(query)
+
+        # owner_params appears twice in the query (kv_data CTE + outer SELECT)
+        cursor.execute(query, owner_params * 2)
         
         # Debug: log the query results
         raw_results = cursor.fetchall()
@@ -2614,7 +2744,7 @@ def get_portfolio_summary(db_config: Dict) -> Dict[str, Any]:
 # COMPANY NOTES OPERATIONS
 # ────────────────────────────────────────────────────────────
 
-def get_company_notes(db_config: Dict, company_id: str) -> Dict[str, Any]:
+def get_company_notes(db_config: Dict, company_id: str, user_id: str = None) -> Dict[str, Any]:
     """
     Get all notes for a specific company
     """
@@ -2631,10 +2761,17 @@ def get_company_notes(db_config: Dict, company_id: str) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             SELECT id, company_id, subject, content, created_at, updated_at, created_by, updated_by
-            FROM company_notes 
+            FROM company_notes
             WHERE company_id = %s
             ORDER BY created_at DESC
         """, [company_id])
@@ -2655,7 +2792,7 @@ def get_company_notes(db_config: Dict, company_id: str) -> Dict[str, Any]:
             'error': f'Failed to get company notes: {str(e)}'
         }
 
-def create_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def create_company_note(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Create a new note for a company
     """
@@ -2677,7 +2814,14 @@ def create_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             INSERT INTO company_notes (company_id, subject, content, created_by, updated_by)
             VALUES (%s, %s, %s, %s, %s)
@@ -2710,7 +2854,7 @@ def create_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to create company note: {str(e)}'
         }
 
-def update_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_company_note(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update an existing company note
     """
@@ -2731,11 +2875,21 @@ def update_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Check company access via note lookup
+        cursor.execute("SELECT company_id FROM company_notes WHERE id = %s", [note_id])
+        note_company_row = cursor.fetchone()
+        if note_company_row:
+            allowed, err = check_company_access(cursor, note_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Build dynamic update query
         set_clauses = []
         values = []
-        
+
         if 'subject' in updates:
             set_clauses.append('subject = %s')
             values.append(updates['subject'])
@@ -2795,7 +2949,7 @@ def update_company_note(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update company note: {str(e)}'
         }
 
-def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
+def delete_company_note(db_config: Dict, note_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete a company note
     """
@@ -2812,9 +2966,19 @@ def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Check company access via note lookup
+        cursor.execute("SELECT company_id FROM company_notes WHERE id = %s", [note_id])
+        note_company_row = cursor.fetchone()
+        if note_company_row:
+            allowed, err = check_company_access(cursor, note_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
-            DELETE FROM company_notes 
+            DELETE FROM company_notes
             WHERE id = %s
             RETURNING id
         """, [note_id])
@@ -2844,7 +3008,7 @@ def delete_company_note(db_config: Dict, note_id: int) -> Dict[str, Any]:
             'error': f'Failed to delete company note: {str(e)}'
         }
 
-def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
+def delete_financial_report(db_config: Dict, report_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete a financial report by ID from both database and S3
     """
@@ -2888,7 +3052,14 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         company_id = report_data[1]
         file_name = report_data[2]
         report_date = report_data[3]
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Delete the financial report from database
         print(f"🔍 DELETING: DELETE FROM financial_reports WHERE id = {report_id}")
         cursor.execute("""
@@ -2958,7 +3129,7 @@ def delete_financial_report(db_config: Dict, report_id: int) -> Dict[str, Any]:
         }
 
 
-def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def delete_placeholder_pdfs(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete placeholder PDFs for a specific company from both database and S3
     """
@@ -2977,7 +3148,14 @@ def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Find placeholder PDFs for this company
         print(f"🔍 SEARCHING for placeholder PDFs for company_id={company_id}")
         cursor.execute("""
@@ -3079,7 +3257,7 @@ def delete_placeholder_pdfs(db_config: Dict, company_id: int) -> Dict[str, Any]:
             'error': f'Failed to delete placeholder PDFs: {str(e)}'
         }
 
-def get_company_executives(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def get_company_executives(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Get all executives for a company from the dedicated executives table
     """
@@ -3096,9 +3274,16 @@ def get_company_executives(db_config: Dict, company_id: int) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
-            SELECT id, full_name, title, linkedin_url, display_order, 
+            SELECT id, full_name, title, linkedin_url, display_order,
                    is_ceo, is_active, harmonic_person_urn, source,
                    created_at, updated_at, created_by
             FROM company_executives
@@ -3139,7 +3324,7 @@ def get_company_executives(db_config: Dict, company_id: int) -> Dict[str, Any]:
             'error': f'Failed to get executives: {str(e)}'
         }
 
-def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def save_company_executive(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Save or update a company executive
     Handles display_order conflicts and CEO management automatically
@@ -3166,7 +3351,14 @@ def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # If marking as CEO, unmark any existing CEOs
         if is_ceo:
             cursor.execute("""
@@ -3231,7 +3423,7 @@ def save_company_executive(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to save executive: {str(e)}'
         }
 
-def delete_company_executive(db_config: Dict, executive_id: int) -> Dict[str, Any]:
+def delete_company_executive(db_config: Dict, executive_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Delete (soft delete) a company executive
     """
@@ -3248,7 +3440,17 @@ def delete_company_executive(db_config: Dict, executive_id: int) -> Dict[str, An
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Look up company_id for access check
+        cursor.execute("SELECT company_id FROM company_executives WHERE id = %s", [executive_id])
+        exec_company_row = cursor.fetchone()
+        if exec_company_row:
+            allowed, err = check_company_access(cursor, exec_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Soft delete by setting is_active to false
         cursor.execute("""
             UPDATE company_executives
@@ -3386,7 +3588,7 @@ def populate_executives_from_enrichment(db_config: Dict, company_id: int, enrich
         }
 
 
-def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]:
+def get_company_kpi_analysis(db_config: Dict, company_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Get the latest KPI analysis for a company
     """
@@ -3403,12 +3605,19 @@ def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Get the latest KPI analysis for this company
         cursor.execute("""
-            SELECT id, analysis_content, stage, reports_analyzed, 
+            SELECT id, analysis_content, stage, reports_analyzed,
                    generated_at, updated_at
-            FROM company_kpi_analysis 
+            FROM company_kpi_analysis
             WHERE company_id = %s
             ORDER BY updated_at DESC
             LIMIT 1
@@ -3447,7 +3656,7 @@ def get_company_kpi_analysis(db_config: Dict, company_id: int) -> Dict[str, Any]
             'error': f'Failed to retrieve KPI analysis: {str(e)}'
         }
 
-def save_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def save_company_manual_override(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Save or update a manual override for a company field
     """
@@ -3469,7 +3678,14 @@ def save_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Upsert the override
         cursor.execute("""
             INSERT INTO company_manual_overrides (company_id, field_name, field_value, edited_by, updated_at)
@@ -3506,7 +3722,7 @@ def save_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to save manual override: {str(e)}'
         }
 
-def get_company_manual_overrides(db_config: Dict, company_id: str) -> Dict[str, Any]:
+def get_company_manual_overrides(db_config: Dict, company_id: str, user_id: str = None) -> Dict[str, Any]:
     """
     Get all manual overrides for a company
     """
@@ -3523,7 +3739,14 @@ def get_company_manual_overrides(db_config: Dict, company_id: str) -> Dict[str, 
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             SELECT field_name, field_value, override_source, edited_by, created_at, updated_at
             FROM company_manual_overrides
@@ -3557,7 +3780,7 @@ def get_company_manual_overrides(db_config: Dict, company_id: str) -> Dict[str, 
             'error': f'Failed to get manual overrides: {str(e)}'
         }
 
-def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def delete_company_manual_override(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Delete a manual override for a company field
     """
@@ -3577,7 +3800,14 @@ def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             DELETE FROM company_manual_overrides
             WHERE company_id = %s AND field_name = %s
@@ -3604,7 +3834,7 @@ def delete_company_manual_override(db_config: Dict, data: Dict) -> Dict[str, Any
             'error': f'Failed to delete manual override: {str(e)}'
         }
 
-def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
+def get_milestones(db_config: Dict, company_id: str = None, user_id: str = None) -> Dict[str, Any]:
     """
     Get all milestones, optionally filtered by company_id.
     Returns milestones with company name and report file name.
@@ -3616,7 +3846,14 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Base query with company name and report file name joins
         query = """
             SELECT 
@@ -3689,7 +3926,7 @@ def get_milestones(db_config: Dict, company_id: str = None) -> Dict[str, Any]:
             'error': f'Failed to get milestones: {str(e)}'
         }
 
-def create_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def create_milestone(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Create a new milestone manually.
     Required: company_id, milestone_date, description, priority
@@ -3720,9 +3957,16 @@ def create_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        if company_id:
+            allowed, err = check_company_access(cursor, company_id, user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
-            INSERT INTO company_milestones 
+            INSERT INTO company_milestones
             (company_id, financial_report_id, milestone_date, description, priority)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id
@@ -3754,7 +3998,7 @@ def create_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to create milestone: {str(e)}'
         }
 
-def update_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def update_milestone(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Update an existing milestone.
     Required: milestone_id
@@ -3806,7 +4050,17 @@ def update_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Check company access via milestone lookup
+        cursor.execute("SELECT company_id FROM company_milestones WHERE id = %s", [int(milestone_id)])
+        milestone_company_row = cursor.fetchone()
+        if milestone_company_row:
+            allowed, err = check_company_access(cursor, milestone_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # Add milestone_id to params
         params.append(int(milestone_id))
         
@@ -3846,7 +4100,7 @@ def update_milestone(db_config: Dict, data: Dict) -> Dict[str, Any]:
             'error': f'Failed to update milestone: {str(e)}'
         }
 
-def delete_milestone(db_config: Dict, milestone_id: int) -> Dict[str, Any]:
+def delete_milestone(db_config: Dict, milestone_id: int, user_id: str = None) -> Dict[str, Any]:
     """
     Hard delete a milestone.
     """
@@ -3863,7 +4117,17 @@ def delete_milestone(db_config: Dict, milestone_id: int) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Check company access via milestone lookup
+        cursor.execute("SELECT company_id FROM company_milestones WHERE id = %s", [int(milestone_id)])
+        milestone_company_row = cursor.fetchone()
+        if milestone_company_row:
+            allowed, err = check_company_access(cursor, milestone_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         cursor.execute("""
             DELETE FROM company_milestones
             WHERE id = %s
@@ -3898,7 +4162,7 @@ def delete_milestone(db_config: Dict, milestone_id: int) -> Dict[str, Any]:
             'error': f'Failed to delete milestone: {str(e)}'
         }
 
-def mark_milestone_completed(db_config: Dict, data: Dict) -> Dict[str, Any]:
+def mark_milestone_completed(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str, Any]:
     """
     Mark a milestone as completed or uncompleted.
     Required: milestone_id, completed (boolean)
@@ -3919,7 +4183,17 @@ def mark_milestone_completed(db_config: Dict, data: Dict) -> Dict[str, Any]:
         
         conn = conn_result['connection']
         cursor = conn.cursor()
-        
+
+        # Check company access via milestone lookup
+        cursor.execute("SELECT company_id FROM company_milestones WHERE id = %s", [int(milestone_id)])
+        milestone_company_row = cursor.fetchone()
+        if milestone_company_row:
+            allowed, err = check_company_access(cursor, milestone_company_row[0], user_id)
+            if not allowed:
+                cursor.close()
+                conn.close()
+                return err
+
         # If marking as completed, set completed_at to now, else set to null
         if completed:
             cursor.execute("""

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 // API route to invoke the PDF analysis Lambda for KPI analysis asynchronously
 export async function POST(request: NextRequest) {
@@ -43,20 +44,24 @@ export async function POST(request: NextRequest) {
       },
     })
     
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Prepare Lambda payload for async job creation
     const payload: any = {
       action: 'create_async_kpi_job',
       company_id: parseInt(company_id),
-      stage: stage
+      stage: stage,
+      user_id: userEmail
     }
-    
+
     // Add custom config if provided
     if (custom_config) {
       payload.custom_config = custom_config
     }
-    
+
     console.log(`📤 Invoking Lambda with async payload:`, payload)
-    
+
     // Invoke the PDF analysis Lambda synchronously to create the job
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',

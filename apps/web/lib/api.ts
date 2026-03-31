@@ -5,6 +5,10 @@
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 if (!BACKEND_URL) throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set');
 
+// Per-user data isolation: set by components after Clerk auth
+let _currentUserEmail: string | null = null;
+export const setCurrentUserEmail = (email: string) => { _currentUserEmail = email; };
+
 interface ApiResponse<T = any> {
   data?: T;
   error?: string;
@@ -48,7 +52,7 @@ const post = <T = any>(path: string, body?: any, headers?: HeadersInit) =>
   apiRequest<T>(path, { method: 'POST', ...withJson(body, headers) });
 
 const op = <T = any>(operation: string, args?: Record<string, any>) => {
-  const payload = { operation, ...(args || {}) };
+  const payload = { operation, ...(args || {}), user_id: _currentUserEmail };
   console.log('🔶 API.op:', operation, payload);
   return post<T>('/financial', payload);
 };
@@ -56,7 +60,7 @@ const op = <T = any>(operation: string, args?: Record<string, any>) => {
 /** ---------------- Core features ---------------- */
 
 export async function extractPdf(pdfData: string, filename: string, companyName?: string) {
-  const body: any = { pdf_data: pdfData, filename };
+  const body: any = { pdf_data: pdfData, filename, user_id: _currentUserEmail };
   if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
   return post('/analyze-pdf', body);
 }
@@ -217,7 +221,7 @@ export const getCompanyOverview = (companyId: string) =>
   op('get_company_overview', { company_id: companyId });
 
 export function processCapTableXlsx(xlsxData: { xlsx_data: string; filename: string }, companyName?: string) {
-  const body: any = { operation: 'process_cap_table_xlsx', ...xlsxData };
+  const body: any = { operation: 'process_cap_table_xlsx', ...xlsxData, user_id: _currentUserEmail };
   if (companyName) Object.assign(body, { company_name_override: companyName, user_provided_name: true });
   return post('/process-cap-table', body);
 }
@@ -347,13 +351,13 @@ export const getAllCompanyData = (companyId: string) =>
 /** ---------------- Enrichment ---------------- */
 
 export const enrichCompany = (companyId: string, identifier: { key: string; value: string }) =>
-  post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value });
+  post('/harmonic-enrichment', { company_id: companyId, [identifier.key]: identifier.value, user_id: _currentUserEmail });
 
 export const getCompanyEnrichment = (companyId: string) =>
   op('get_company_enrichment', { company_id: companyId });
 
 export const enrichPerson = (personUrn: string) =>
-  post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn });
+  post('/harmonic-enrichment', { operation: 'enrich_person', person_urn: personUrn, user_id: _currentUserEmail });
 
 export const saveCompanyManualOverride = (companyId: string, fieldName: string, fieldValue: string) => {
   console.log('🔷 API.saveCompanyManualOverride:', { companyId, fieldName, fieldValue });

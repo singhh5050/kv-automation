@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,12 +31,16 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Call the Lambda function directly
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',
       Payload: JSON.stringify({
         action: 'get_latest_completed_job',
-        company_id: parseInt(company_id)
+        company_id: parseInt(company_id),
+        user_id: userEmail
       }),
       InvocationType: 'RequestResponse'
     })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,12 +28,16 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Prepare Lambda invocation
     const command = new InvokeCommand({
       FunctionName: 'milestone-emailer',
       InvocationType: 'RequestResponse',
       Payload: JSON.stringify({
-        recipient_email: email
+        recipient_email: email,
+        user_id: userEmail
       })
     })
 

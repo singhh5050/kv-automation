@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 const lambdaClient = new LambdaClient({
   region: process.env.AWS_REGION || 'us-west-2',
@@ -20,11 +21,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Prepare the payload for the Lambda function
     const payload = {
       body: JSON.stringify({
         operation: 'delete_financial_report',
-        report_id: reportId
+        report_id: reportId,
+        user_id: userEmail
       })
     }
 

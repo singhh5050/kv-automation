@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { currentUser } from '@clerk/nextjs/server'
 
 // API route to invoke the PDF analysis Lambda for KPI analysis
 export async function POST(request: NextRequest) {
@@ -50,19 +51,23 @@ export async function POST(request: NextRequest) {
       },
     })
     
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
     // Prepare Lambda payload
     const payload: any = {
       action: action || 'analyze_kpis',
-      company_id: parseInt(company_id)
+      company_id: parseInt(company_id),
+      user_id: userEmail
     }
-    
+
     // Add stage for KPI analysis
     if (stage) {
       payload.stage = stage
     }
-    
+
     console.log(`📤 Invoking Lambda with payload:`, payload)
-    
+
     // Invoke the PDF analysis Lambda
     const command = new InvokeCommand({
       FunctionName: 'kv-automation-pdf-analysis',

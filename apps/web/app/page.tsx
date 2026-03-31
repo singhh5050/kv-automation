@@ -9,8 +9,9 @@ import CapTableUpload from '@/components/company/CapTableUpload'
 import CompanyCard from '@/components/company/CompanyCard'
 import VoiceQueryInterface from '@/components/voice/VoiceQueryInterface'
 import { FinancialReport, Company, CompanyOverview, CapTableData, PortfolioSummary, Milestone } from '@/types'
-import { 
-  uploadFile, 
+import {
+  setCurrentUserEmail,
+  uploadFile,
   uploadToS3,
   saveFinancialReport, 
   getCompanies, 
@@ -73,6 +74,13 @@ const convertPortfolioSummaryToFrontend = (portfolioData: any[]): Company[] => {
 export default function Home() {
   const { isSignedIn, user, isLoaded } = useUser()
   const router = useRouter()
+
+  // Set user email for per-user data isolation
+  useEffect(() => {
+    if (user?.primaryEmailAddress?.emailAddress) {
+      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
+    }
+  }, [user])
   const [activeView, setActiveView] = useState<ActiveView>('portfolio')
   const [companies, setCompanies] = useState<Company[]>([])
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])

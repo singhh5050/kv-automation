@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { currentUser } from '@clerk/nextjs/server'
 
 // Simple API route that proxies to the backend Lambda
 export async function GET(request: NextRequest) {
@@ -14,11 +15,17 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const companyId = searchParams.get('company_id')
     
-    const payload: any = { operation: 'get_milestones' }
+    const clerkUser = await currentUser()
+    const userEmail = clerkUser?.emailAddresses?.[0]?.emailAddress
+
+    const payload: any = {
+      operation: 'get_milestones',
+      user_id: userEmail
+    }
     if (companyId) {
       payload.company_id = parseInt(companyId)
     }
-    
+
     console.log('📤 Calling backend with payload:', payload)
     
     const response = await fetch(`${BACKEND_URL}/financial`, {

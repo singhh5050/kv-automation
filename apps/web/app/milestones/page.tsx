@@ -3,13 +3,19 @@
 import React, { useState, useEffect } from 'react'
 import { useUser, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
-import { getMilestones, createMilestone, updateMilestone, deleteMilestone, markMilestoneCompleted, getCompanies } from '@/lib/api'
+import { setCurrentUserEmail, getMilestones, createMilestone, updateMilestone, deleteMilestone, markMilestoneCompleted, getCompanies } from '@/lib/api'
 import { Milestone } from '@/types'
 import { cleanFileName } from '@/lib/utils'
 
 export default function MilestonesPage() {
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
+
+  useEffect(() => {
+    if (user?.primaryEmailAddress?.emailAddress) {
+      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
+    }
+  }, [user])
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
