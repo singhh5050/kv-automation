@@ -74,9 +74,15 @@ def lambda_handler(event, context):
     elif operation == "test_connection":
         result = test_database_connection(db_config)
     elif operation == "debug_database":
-        result = debug_database_contents(db_config)
+        if not user_id or not is_admin(user_id):
+            result = {'success': False, 'error': 'Admin only'}
+        else:
+            result = debug_database_contents(db_config)
     elif operation == "clear_all_data":
-        result = clear_all_data(db_config)
+        if not user_id or not is_admin(user_id):
+            result = {'success': False, 'error': 'Admin only'}
+        else:
+            result = clear_all_data(db_config)
     elif operation == "save_cap_table_round":
         result = save_cap_table_round(db_config, body, user_id=user_id)
     elif operation == "get_company_overview":
@@ -773,14 +779,22 @@ def get_company_by_name(db_config: Dict, company_name: str, user_id: str = None)
         
         normalized_name = normalize_company_name(company_name)
         
-        query = """
-            SELECT id, name, normalized_name, created_at,
-                   (SELECT COUNT(*) FROM financial_reports WHERE company_id = companies.id) as report_count
-            FROM companies 
-            WHERE normalized_name = %s
-        """
-        
-        cursor.execute(query, [normalized_name])
+        if user_id and not is_admin(user_id):
+            query = """
+                SELECT id, name, normalized_name, created_at,
+                       (SELECT COUNT(*) FROM financial_reports WHERE company_id = companies.id) as report_count
+                FROM companies
+                WHERE normalized_name = %s AND owner_id = %s
+            """
+            cursor.execute(query, [normalized_name, user_id])
+        else:
+            query = """
+                SELECT id, name, normalized_name, created_at,
+                       (SELECT COUNT(*) FROM financial_reports WHERE company_id = companies.id) as report_count
+                FROM companies
+                WHERE normalized_name = %s
+            """
+            cursor.execute(query, [normalized_name])
         company = cursor.fetchone()
         
         cursor.close()
@@ -1074,17 +1088,18 @@ def save_cap_table_round(db_config: Dict, data: Dict, user_id: str = None) -> Di
             manually_edited = False
             edited_by = "system_import"
         
-        # Insert company if it doesn't exist
+        # Insert company if it doesn't exist (scoped by owner_id)
+        owner = user_id or 'singhh@stanford.edu'
         company_insert = """
-            INSERT INTO companies (name, normalized_name, manually_edited, edited_by, edited_at, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (normalized_name) DO NOTHING
+            INSERT INTO companies (name, normalized_name, owner_id, manually_edited, edited_by, edited_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (normalized_name, owner_id) DO NOTHING
         """
-        
-        cursor.execute(company_insert, [data['company_name'], normalized_name, manually_edited, edited_by])
-        
-        # Get company ID
-        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s", [normalized_name])
+
+        cursor.execute(company_insert, [data['company_name'], normalized_name, owner, manually_edited, edited_by])
+
+        # Get company ID (scoped by owner)
+        cursor.execute("SELECT id FROM companies WHERE normalized_name = %s AND owner_id = %s", [normalized_name, owner])
         company_row = cursor.fetchone()
         
         if not company_row:
@@ -1458,10 +1473,10 @@ def update_company(db_config: Dict, data: Dict, user_id: str = None) -> Dict[str
         final_name = str(updates['name']) if 'name' in updates and updates['name'] is not None else original_name
         auto_normalized = normalize_company_name(final_name)
         
-        # Prevent duplicate normalized_name collision with other companies
+        # Prevent duplicate normalized_name collision within same owner
         cursor.execute(
-            "SELECT id FROM companies WHERE normalized_name = %s AND id <> %s",
-            [auto_normalized, company_id]
+            "SELECT id FROM companies WHERE normalized_name = %s AND id <> %s AND owner_id = (SELECT owner_id FROM companies WHERE id = %s)",
+            [auto_normalized, company_id, company_id]
         )
         conflict = cursor.fetchone()
         if conflict:
@@ -2576,8 +2591,20 @@ def get_company_names(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
 
-        # Get all company names sorted alphabetically, filtered by owner if not admin
-        if user_id and not is_admin(user_id):
+        # Get company names filtered by owner
+        if not user_id:
+            cursor.close()
+            conn.close()
+            return {'success': True, 'data': []}
+
+        if is_admin(user_id):
+            query = """
+                SELECT id, name, manually_edited
+                FROM companies
+                ORDER BY LOWER(name) ASC
+            """
+            cursor.execute(query)
+        else:
             query = """
                 SELECT id, name, manually_edited
                 FROM companies
@@ -2585,13 +2612,6 @@ def get_company_names(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
                 ORDER BY LOWER(name) ASC
             """
             cursor.execute(query, [user_id])
-        else:
-            query = """
-                SELECT id, name, manually_edited
-                FROM companies
-                ORDER BY LOWER(name) ASC
-            """
-            cursor.execute(query)
 
         companies = _cursor_to_dict(cursor)
         
@@ -2622,12 +2642,17 @@ def get_portfolio_summary(db_config: Dict, user_id: str = None) -> Dict[str, Any
         conn = conn_result['connection']
         cursor = conn.cursor()
 
-        # Build owner filter clause
-        owner_filter = ""
+        # Build owner filter clause (for use after JOINs in WHERE position)
+        owner_where = ""
         owner_params = []
         if user_id and not is_admin(user_id):
-            owner_filter = "WHERE c.owner_id = %s"
+            owner_where = "AND c.owner_id = %s"
             owner_params = [user_id]
+        elif not user_id:
+            # No user = empty result
+            cursor.close()
+            conn.close()
+            return {'success': True, 'data': {'companies': []}}
 
         # Single optimized query for all portfolio data
         query = f"""
@@ -2644,23 +2669,19 @@ def get_portfolio_summary(db_config: Dict, user_id: str = None) -> Dict[str, Any
                 SELECT
                     c.id as company_id,
                     ctr.valuation,
-                    -- Calculate total KV ownership (sum all KV-related funds)
                     COALESCE(SUM(
                         CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
                         THEN cti.final_fds ELSE 0 END
                     ), 0) as kv_ownership,
-                    -- Calculate total KV investment amount
                     COALESCE(SUM(
                         CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
                         THEN cti.total_invested ELSE 0 END
                     ), 0) as kv_investment,
-                    -- Collect KV fund names for display
                     string_agg(
                         CASE WHEN cti.investor_name ~* '(^KV$|.*KV .*|.*Seed.*|.*Opp.*|.*Excelsior.*)'
                         THEN cti.investor_name ELSE NULL END,
                         ', ' ORDER BY cti.total_invested DESC
                     ) as kv_funds,
-                    -- Determine investment stage based on fund priority (Growth > Main > Early)
                     CASE
                         WHEN MAX(CASE WHEN cti.investor_name ~* '.*(Opp|Excelsior).*' THEN 3 ELSE 0 END) = 3 THEN 'Growth Stage'
                         WHEN MAX(CASE WHEN cti.investor_name ~* '^KV [IVX]+$' THEN 2 ELSE 0 END) = 2 THEN 'Main Stage'
@@ -2668,10 +2689,10 @@ def get_portfolio_summary(db_config: Dict, user_id: str = None) -> Dict[str, Any
                         ELSE 'Unknown'
                     END as investment_stage
                 FROM companies c
-                {owner_filter}
                 LEFT JOIN cap_table_current ctc ON c.id = ctc.company_id
                 LEFT JOIN cap_table_rounds ctr ON ctc.cap_table_round_id = ctr.id
                 LEFT JOIN cap_table_investors cti ON ctr.id = cti.cap_table_round_id
+                WHERE 1=1 {owner_where}
                 GROUP BY c.id, ctr.valuation
             ),
             report_counts AS (
@@ -2692,18 +2713,16 @@ def get_portfolio_summary(db_config: Dict, user_id: str = None) -> Dict[str, Any
                 kd.kv_investment,
                 kd.kv_funds,
                 kd.investment_stage,
-                -- Get company logo from enrichment data
                 ce.extracted_data->>'logo_url' as company_logo
             FROM companies c
-            {owner_filter}
             LEFT JOIN latest_reports lr ON c.id = lr.company_id
             LEFT JOIN kv_data kd ON c.id = kd.company_id
             LEFT JOIN report_counts rc ON c.id = rc.company_id
             LEFT JOIN company_enrichments ce ON c.id = ce.company_id
+            WHERE 1=1 {owner_where}
             ORDER BY c.name ASC
         """
 
-        # owner_params appears twice in the query (kv_data CTE + outer SELECT)
         cursor.execute(query, owner_params * 2)
         
         # Debug: log the query results
@@ -3881,11 +3900,25 @@ def get_milestones(db_config: Dict, company_id: str = None, user_id: str = None)
         """
         
         params = []
-        
+        conditions = []
+
         # Add company filter if provided
         if company_id:
-            query += " WHERE cm.company_id = %s"
+            conditions.append("cm.company_id = %s")
             params.append(int(company_id))
+
+        # Add owner filter when listing all milestones (no company_id)
+        if not company_id and user_id and not is_admin(user_id):
+            conditions.append("c.owner_id = %s")
+            params.append(user_id)
+        elif not company_id and not user_id:
+            # No user = empty
+            cursor.close()
+            conn.close()
+            return {'success': True, 'data': []}
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         
         # Order by completion status (incomplete first), then date, then priority
         query += " ORDER BY cm.completed ASC, cm.milestone_date DESC, cm.priority ASC"
