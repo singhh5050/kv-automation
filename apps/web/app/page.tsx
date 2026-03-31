@@ -75,12 +75,10 @@ export default function Home() {
   const { isSignedIn, user, isLoaded } = useUser()
   const router = useRouter()
 
-  // Set user email for per-user data isolation
-  useEffect(() => {
-    if (user?.primaryEmailAddress?.emailAddress) {
-      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
-    }
-  }, [user])
+  // Set user email for per-user data isolation (synchronous, before any data loads)
+  const userEmail = user?.primaryEmailAddress?.emailAddress
+  if (userEmail) setCurrentUserEmail(userEmail)
+
   const [activeView, setActiveView] = useState<ActiveView>('portfolio')
   const [companies, setCompanies] = useState<Company[]>([])
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])

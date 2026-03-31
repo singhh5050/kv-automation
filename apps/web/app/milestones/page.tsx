@@ -11,11 +11,9 @@ export default function MilestonesPage() {
   const { isSignedIn, isLoaded, user } = useUser()
   const router = useRouter()
 
-  useEffect(() => {
-    if (user?.primaryEmailAddress?.emailAddress) {
-      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
-    }
-  }, [user])
+  // Set user email for per-user data isolation (synchronous, before any data loads)
+  const userEmail = user?.primaryEmailAddress?.emailAddress
+  if (userEmail) setCurrentUserEmail(userEmail)
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)

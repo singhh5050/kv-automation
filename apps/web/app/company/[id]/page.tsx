@@ -296,12 +296,9 @@ export default function CompanyDetailPage() {
   const { user } = useUser()
   const companyId = params.id as string
 
-  // Set user email for per-user data isolation
-  useEffect(() => {
-    if (user?.primaryEmailAddress?.emailAddress) {
-      setCurrentUserEmail(user.primaryEmailAddress.emailAddress)
-    }
-  }, [user])
+  // Set user email for per-user data isolation (synchronous, before any data loads)
+  const userEmail = user?.primaryEmailAddress?.emailAddress
+  if (userEmail) setCurrentUserEmail(userEmail)
 
   const [company, setCompany] = useState<CompanyOverview | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('metrics')
