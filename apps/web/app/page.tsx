@@ -117,14 +117,14 @@ export default function Home() {
     priority: 'medium' as 'critical' | 'high' | 'medium' | 'low'
   })
 
-  // Load companies from cache or database only when user is authenticated
+  // Load companies from cache or database only when user is authenticated AND email is resolved
   useEffect(() => {
-    if (isLoaded && isSignedIn) {
+    if (isLoaded && isSignedIn && userEmail) {
       loadCompaniesWithCache()
       loadMilestones()
       checkBackendHealth()
     }
-  }, [isLoaded, isSignedIn])
+  }, [isLoaded, isSignedIn, userEmail])
 
   // Close sort menu when clicking outside
   useEffect(() => {

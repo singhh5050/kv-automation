@@ -595,7 +595,7 @@ def _cursor_to_dict(cursor) -> List[Dict[str, Any]]:
 def check_company_access(cursor, company_id, user_id):
     """Check if user owns this company or is admin. Returns (allowed, error_dict)."""
     if not user_id:
-        return True, None  # No user context = allow (backward compat)
+        return False, {'success': False, 'error': 'Access denied - no user context'}
     if is_admin(user_id):
         return True, None
     cursor.execute("SELECT owner_id FROM companies WHERE id = %s", [int(company_id)])
@@ -619,7 +619,22 @@ def get_companies(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
         conn = conn_result['connection']
         cursor = conn.cursor()
 
-        if user_id and not is_admin(user_id):
+        if not user_id:
+            # No user context = empty result (must be authenticated)
+            cursor.close()
+            conn.close()
+            return {'success': True, 'data': {'companies': []}}
+
+        if is_admin(user_id):
+            query = """
+                SELECT
+                    c.id, c.name, c.normalized_name, c.created_at, c.updated_at, c.manually_edited,
+                    (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
+                FROM companies c
+                ORDER BY c.name ASC;
+            """
+            cursor.execute(query)
+        else:
             query = """
                 SELECT
                     c.id, c.name, c.normalized_name, c.created_at, c.updated_at, c.manually_edited,
@@ -629,15 +644,6 @@ def get_companies(db_config: Dict, user_id: str = None) -> Dict[str, Any]:
                 ORDER BY c.name ASC;
             """
             cursor.execute(query, [user_id])
-        else:
-            query = """
-                SELECT
-                    c.id, c.name, c.normalized_name, c.created_at, c.updated_at, c.manually_edited,
-                    (SELECT MAX(fr.report_date) FROM financial_reports fr WHERE fr.company_id = c.id) as latest_report_date
-                FROM companies c
-                ORDER BY c.name ASC;
-            """
-            cursor.execute(query)
         
         companies = _cursor_to_dict(cursor)
         
